@@ -45,6 +45,139 @@ func TestConsolidateUsers(t *testing.T) {
 	}
 }
 
+// TestConsolidateUsersNonPVPMatch verifies that a non-PVP tracking rule (league
+// unset) does NOT register as a PVP filter, even if PVPRankingWorst happens to
+// be 0 (the Go zero value the DB may have stored because non-PVP INSERTs pass
+// the struct's zero value rather than the column default of 4096). Before the
+// fix this set userHasPvpTracks=true for every basic IV match.
+func TestConsolidateUsersNonPVPMatch(t *testing.T) {
+	cases := []struct {
+		name string
+		user webhook.MatchedUser
+	}{
+		{
+			name: "basic IV match with league=0 worst=0 (legacy Go zero-value INSERTs)",
+			user: webhook.MatchedUser{ID: "u1", PVPRankingLeague: 0, PVPRankingWorst: 0},
+		},
+		{
+			name: "basic IV match with league=0 worst=4096 (DB default, JS-style)",
+			user: webhook.MatchedUser{ID: "u1", PVPRankingLeague: 0, PVPRankingWorst: 4096},
+		},
+		{
+			name: "PVP rule with explicit worst=4096 (== any rank, not a real filter)",
+			user: webhook.MatchedUser{ID: "u1", PVPRankingLeague: 1500, PVPRankingWorst: 4096},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := consolidateUsers([]webhook.MatchedUser{tc.user})
+			if len(got) != 1 {
+				t.Fatalf("expected 1 consolidated user, got %d", len(got))
+			}
+			if len(got[0].Filters) != 0 {
+				t.Errorf("expected 0 filters, got %d (Filters=%+v)", len(got[0].Filters), got[0].Filters)
+			}
+		})
+	}
+}
+
+// TestConsolidateUsersMixedMatches covers the real multi-rule case: one user
+// matched by a basic IV rule AND a PVP rule. Only the PVP rule should become
+// a filter entry; userHasPvpTracks should be true because at least one real
+// PVP rule matched.
+func TestConsolidateUsersMixedMatches(t *testing.T) {
+	users := []webhook.MatchedUser{
+		// Basic IV match — league=0, worst=0 after Go zero-value INSERT
+		{ID: "u1", PVPRankingLeague: 0, PVPRankingWorst: 0},
+		// Real great-league PVP match
+		{ID: "u1", PVPRankingLeague: 1500, PVPRankingWorst: 10, PVPRankingCap: 50},
+	}
+	got := consolidateUsers(users)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 consolidated user, got %d", len(got))
+	}
+	if len(got[0].Filters) != 1 {
+		t.Fatalf("expected 1 filter (only the PVP rule), got %d", len(got[0].Filters))
+	}
+	if got[0].Filters[0].League != 1500 || got[0].Filters[0].Worst != 10 {
+		t.Errorf("filter mismatch: %+v", got[0].Filters[0])
+	}
+}
+
+// TestConsolidateUsersTrackDistance verifies that the largest distance
+// threshold across matching rules wins, so userDistanceTrack is true when
+// any rule was distance-based.
+func TestConsolidateUsersTrackDistance(t *testing.T) {
+	cases := []struct {
+		name       string
+		users      []webhook.MatchedUser
+		wantWinner int
+	}{
+		{
+			name:       "single distance rule",
+			users:      []webhook.MatchedUser{{ID: "u1", TrackDistance: 500}},
+			wantWinner: 500,
+		},
+		{
+			name:       "area rule only (no distance)",
+			users:      []webhook.MatchedUser{{ID: "u1", TrackDistance: 0}},
+			wantWinner: 0,
+		},
+		{
+			name: "area + distance — distance wins",
+			users: []webhook.MatchedUser{
+				{ID: "u1", TrackDistance: 0},
+				{ID: "u1", TrackDistance: 500},
+			},
+			wantWinner: 500,
+		},
+		{
+			name: "two distance rules — larger wins",
+			users: []webhook.MatchedUser{
+				{ID: "u1", TrackDistance: 500},
+				{ID: "u1", TrackDistance: 1000},
+			},
+			wantWinner: 1000,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := consolidateUsers(tc.users)
+			if len(got) != 1 {
+				t.Fatalf("expected 1 consolidated user, got %d", len(got))
+			}
+			if got[0].TrackDistance != tc.wantWinner {
+				t.Errorf("TrackDistance = %d, want %d", got[0].TrackDistance, tc.wantWinner)
+			}
+		})
+	}
+}
+
+// TestPokemonPerUserDistanceTrack verifies the userDistanceTrack flag is
+// correctly set on the per-user enrichment for pokemon matches.
+func TestPokemonPerUserDistanceTrack(t *testing.T) {
+	enricher := &Enricher{
+		PVPDisplay: &PVPDisplayConfig{MaxRank: 10, GreatMinCP: 1400},
+	}
+	matched := []webhook.MatchedUser{
+		{ID: "u_dist", Language: "en", TrackDistance: 500},
+		{ID: "u_area", Language: "en", TrackDistance: 0},
+	}
+	result := enricher.PokemonPerUser(map[string]map[string]any{"en": {}}, matched)
+	if result["u_dist"]["userDistanceTrack"] != true {
+		t.Errorf("u_dist userDistanceTrack = %v, want true", result["u_dist"]["userDistanceTrack"])
+	}
+	if result["u_dist"]["userTrackDistance"] != 500 {
+		t.Errorf("u_dist userTrackDistance = %v, want 500", result["u_dist"]["userTrackDistance"])
+	}
+	if result["u_area"]["userDistanceTrack"] != false {
+		t.Errorf("u_area userDistanceTrack = %v, want false", result["u_area"]["userDistanceTrack"])
+	}
+	if result["u_area"]["userTrackDistance"] != 0 {
+		t.Errorf("u_area userTrackDistance = %v, want 0", result["u_area"]["userTrackDistance"])
+	}
+}
+
 func TestCreatePvpDisplay(t *testing.T) {
 	enricher := &Enricher{
 		PVPDisplay: &PVPDisplayConfig{

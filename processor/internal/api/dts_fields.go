@@ -47,6 +47,8 @@ var commonFields = []FieldDef{
 	{Name: "distance", Type: "number", Description: "Distance from user location", Category: "location"},
 	{Name: "bearing", Type: "int", Description: "Bearing degrees from user", Category: "location"},
 	{Name: "bearingEmoji", Type: "string", Description: "Directional arrow emoji", Category: "location"},
+	{Name: "userDistanceTrack", Type: "bool", Description: "True when the matched rule was distance-based (e.g. d:500) vs area-based", Category: "location"},
+	{Name: "userTrackDistance", Type: "int", Description: "The matched rule's distance threshold in metres (0 = area-based rule)", Category: "location"},
 	// Maps
 	{Name: "staticMap", Type: "string", Description: "Static map image URL", Category: "maps", Preferred: true},
 	{Name: "staticmap", Type: "string", Description: "Deprecated alias for staticMap", Category: "maps", Deprecated: true, PreferredAlternative: "staticMap"},
@@ -140,6 +142,12 @@ var monsterFields = []FieldDef{
 	{Name: "pvpGreat", Type: "array", Description: "Great League PVP display list", Category: "pvp", Preferred: true},
 	{Name: "pvpUltra", Type: "array", Description: "Ultra League PVP display list", Category: "pvp", Preferred: true},
 	{Name: "pvpLittle", Type: "array", Description: "Little League PVP display list", Category: "pvp"},
+	{Name: "pvpGreatBest", Type: "object", Description: "Best entry from pvpGreat (rank, list, name)", Category: "pvp"},
+	{Name: "pvpUltraBest", Type: "object", Description: "Best entry from pvpUltra", Category: "pvp"},
+	{Name: "pvpLittleBest", Type: "object", Description: "Best entry from pvpLittle", Category: "pvp"},
+	{Name: "pvpAvailable", Type: "bool", Description: "True when any PVP data is available for this pokemon", Category: "pvp"},
+	{Name: "pvpUserRanking", Type: "int", Description: "The matched rule's worst-rank threshold (0 when the rule was not PVP-based)", Category: "pvp"},
+	{Name: "userHasPvpTracks", Type: "bool", Description: "True when at least one matched rule was a real PVP tracking rule", Category: "pvp"},
 	// Other
 	{Name: "generation", Type: "int", Description: "Generation number", Category: "other"},
 	{Name: "generationName", Type: "string", Description: "Generation name", Category: "other"},
@@ -547,6 +555,7 @@ var commonSnippets = []Snippet{
 	{Label: "gt / lt / gte / lte", Insert: "{{#gt fieldName value}}...{{/gt}}", Description: "Numeric comparison block", Category: "control"},
 	{Label: "and (subexpr)", Insert: "{{#if (and (gt a 1) (lt b 5))}}...{{/if}}", Description: "Combine conditions with and", Category: "control"},
 	{Label: "or (subexpr)", Insert: "{{#if (or condA condB)}}...{{/if}}", Description: "Either condition true", Category: "control"},
+	{Label: "oneOf", Insert: "{{#oneOf fieldName 1 5}}...{{/oneOf}}", Description: "Block fires when fieldName equals any of the following args. Use this instead of {{#or value 1 5}} which is \"any arg truthy\".", Category: "control"},
 	// Formatting
 	{Label: "round", Insert: "{{round fieldName}}", Description: "Round number to nearest integer", Category: "format"},
 	{Label: "toFixed", Insert: "{{toFixed fieldName 2}}", Description: "Format to N decimal places", Category: "format"},

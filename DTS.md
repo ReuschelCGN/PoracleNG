@@ -17,6 +17,25 @@ Each entry may use:
 - `"templateFile": "dts/filename.txt"` — external file read as raw Handlebars text (allows non-JSON constructs like unquoted Handlebars expressions in value positions)
 - `"@include filename"` — include directive for shared partials
 
+### The `default: true` flag and help templates
+
+`default: true` on an entry means "match any query of this (type, platform, language) whose id doesn't have an exact match". It's evaluated at priority level 3 of the selection chain and **does not check the id**.
+
+For most template types that's harmless — a default monster template legitimately catches any tracking rule that didn't specify its own template id. For `type: "help"` it has a subtle side-effect:
+
+- `!help` (no args) queries id `"index"`.
+- `!help track` queries id `"track"`.
+- `!help raid` queries id `"raid"`. ...etc.
+
+If your custom help entry is `{type: "help", default: true, ...}` with any id (e.g. `"1"`), it matches **every one of those queries** at level 3, shadowing the shipped `help/track`, `help/raid`, etc. entries entirely. That's the correct behavior if you want your entry to be the complete help surface — but it surprises operators migrating from PoracleJS where no per-topic help shipped.
+
+| Intent | Config |
+|---|---|
+| My entry is the complete help (replaces all topics too) | `{id: "<anything>", default: true}` |
+| My entry is the landing page; shipped `!help track` / `!help raid` / ... still work | `{id: "index", default: false}` |
+
+The processor emits a startup advisory when it sees a user `type: "help"` entry with `default: true`, pointing to this doc.
+
 ## Template Saving (DTS Editor API)
 
 The `POST /api/dts/templates` endpoint saves templates safely without destroying user file organization:
@@ -83,6 +102,11 @@ These fields are available in every template:
 | `tthm` | int | Minutes component of time remaining |
 | `tths` | int | Seconds component of time remaining |
 | `distime` | string | *Deprecated* — alias for `disappearTime` |
+| `distance` | number | Distance from the user's registered location to the alert, in metres |
+| `bearing` | int | Bearing from user to alert, in degrees |
+| `bearingEmoji` | string | Directional arrow emoji for `bearing` |
+| `userDistanceTrack` | bool | True when the matched tracking rule was distance-based (e.g. `!track pikachu d:500` or `!raid T5 d:1000`) rather than area-based. Useful for conditioning the template on *why* the user received the alert. |
+| `userTrackDistance` | int | The matched rule's distance threshold in metres. `0` when the rule was area-based. For pokemon alerts where multiple rules can match one user, this is the largest threshold across matching rules. |
 
 ### Weather Fields (types with S2 cell data: pokemon, raid, egg, invasion, maxbattle)
 
@@ -207,7 +231,8 @@ Per-user enrichment (varies based on user's tracking filters):
 | `pvpLittle` | array | Little League PVP display list |
 | `pvpLittleBest` | object | Best entry from `pvpLittle` |
 | `pvpAvailable` | bool | Any PVP data available for this pokemon |
-| `userHasPvpTracks` | bool | User has PVP tracking rules that matched |
+| `userHasPvpTracks` | bool | True when at least one matched rule was a real PVP tracking rule (league > 0 with a meaningful worst threshold). Pokemon alerts only. |
+| `pvpUserRanking` | int | The matched rule's worst-rank threshold (0 when the rule was not PVP-based) |
 | `pvpDisplayGreatMinCP` | int | Minimum CP threshold for Great League display |
 | `pvpDisplayUltraMinCP` | int | Minimum CP threshold for Ultra League display |
 
@@ -261,9 +286,8 @@ Time-remaining fields (`tthd`, `tthh`, `tthm`, `tths`) are in the Common Fields 
 | `megaEvolutions` | array | Mega evolution entries |
 | `hasMegaEvolutions` | bool | Has mega evolutions |
 | `pokestopName` | string | Nearby pokestop name (if applicable) |
-| `distance` | number | Distance from user (per-user enrichment) |
-| `bearing` | int | Bearing degrees from user |
-| `bearingEmoji` | string | Directional arrow emoji |
+
+`distance`, `bearing`, `bearingEmoji`, `userDistanceTrack`, `userTrackDistance` are documented in Common Fields.
 
 ---
 
@@ -716,7 +740,7 @@ Templates can use built-in Handlebars block helpers plus custom helpers register
 - `{{#each array}}` — iteration (`{{this}}` for current item, `{{@index}}` for index, `{{isFirst}}`/`{{isLast}}` as context properties)
 - `{{#forEach array}}` — like each, with `{{@total}}` data variable
 
-**Comparison:** `{{#eq a b}}`, `{{#ne a b}}`, `{{#isnt a b}}`, `{{#gt a b}}`, `{{#lt a b}}`, `{{#gte a b}}`, `{{#lte a b}}`, `{{#and a b ...}}` (variadic), `{{#or a b ...}}` (variadic), `{{#neither a b ...}}` (variadic, inverse of or), `{{#not a}}`, `{{#contains collection value}}`, `{{#compare a "op" b}}`
+**Comparison:** `{{#eq a b}}`, `{{#ne a b}}`, `{{#isnt a b}}`, `{{#gt a b}}`, `{{#lt a b}}`, `{{#gte a b}}`, `{{#lte a b}}`, `{{#and a b ...}}` (variadic), `{{#or a b ...}}` (variadic), `{{#neither a b ...}}` (variadic, inverse of or), `{{#oneOf value a b c ...}}` (value equals any of a/b/c — use this instead of `{{#or value a b}}` which is "any arg truthy"), `{{#not a}}`, `{{#contains collection value}}`, `{{#compare a "op" b}}`
 
 All comparison helpers work both as block helpers (`{{#eq a b}}X{{else}}Y{{/eq}}`) and as subexpressions (`{{#if (eq a b)}}`).
 
