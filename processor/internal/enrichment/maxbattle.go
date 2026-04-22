@@ -53,7 +53,7 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 	}
 
 	// Map URLs
-	e.addMapURLs(m, lat, lon, "pokestops", mb.ID)
+	e.addMapURLs(m, lat, lon, "stations", mb.ID)
 
 	// Reverse geocoding
 	e.addGeoResult(m, lat, lon)
