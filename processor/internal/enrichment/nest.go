@@ -12,7 +12,7 @@ import (
 )
 
 // Nest builds enrichment fields for a nest webhook.
-func (e *Enricher) Nest(lat, lon float64, nestID string, nest *webhook.NestWebhook, tileMode int) (map[string]any, *staticmap.TilePending) {
+func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any, *staticmap.TilePending) {
 	m := make(map[string]any)
 
 	expiration := nest.ResetTime + 7*24*60*60
@@ -75,7 +75,7 @@ func (e *Enricher) Nest(lat, lon float64, nestID string, nest *webhook.NestWebho
 	}
 
 	// Map URLs
-	e.addMapURLs(m, lat, lon, "nests", nestID)
+	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", nest.NestID)
 
 	// Reverse geocoding
 	e.addGeoResult(m, nest.Lat, nest.Lon)
