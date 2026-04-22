@@ -3,7 +3,6 @@ package enrichment
 import (
 	"encoding/json"
 	"math"
-	"strconv"
 
 	log "github.com/sirupsen/logrus"
 
