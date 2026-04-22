@@ -275,7 +275,7 @@ type GymWebhook struct {
 
 // NestWebhook mirrors a nest webhook message from the nest processor.
 type NestWebhook struct {
-	NestID       int64   `json:"nest_id"`
+	NestID       string  `json:"nest_id"`
 	Name         string  `json:"name"`
 	Lat          float64 `json:"lat"`
 	Lon          float64 `json:"lon"`

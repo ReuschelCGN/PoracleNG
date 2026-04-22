@@ -77,7 +77,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	}
 
 	// Map URLs — ReactMap deep-links by nest id (`/id/nests/{nest_id}`)
-	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", strconv.FormatInt(nest.NestID, 10))
+	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", nest.NestID)
 
 	// Reverse geocoding
 	e.addGeoResult(m, nest.Lat, nest.Lon)

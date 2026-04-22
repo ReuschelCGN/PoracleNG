@@ -7,7 +7,7 @@ import (
 
 // NestData holds processed nest data for matching.
 type NestData struct {
-	NestID     int64
+	NestID     string
 	PokemonID  int
 	Form       int
 	PokemonAvg float64
