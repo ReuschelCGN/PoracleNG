@@ -59,7 +59,7 @@ func (e *Enricher) Lure(lure *webhook.LureWebhook, tileMode int) (map[string]any
 		}
 	}
 	if e.Translations != nil && lure.LureID != 0 {
-		m["lureTypeNameEng"] = e.Translations.For("en").T(fmt.Sprintf("item_%d", lure.LureID))
+		m["lureTypeNameEng"] = e.Translations.For("en").T(fmt.Sprintf("lure_%d", lure.LureID))
 	}
 
 	// Invasion fields — a pokestop can have both a lure and an invasion
@@ -95,7 +95,7 @@ func (e *Enricher) LureTranslate(base map[string]any, lureID int, lang string) m
 	// Lure display name comes from pogo-translations key lure_{id}
 	// (resources/gamelocale/), not util.json's English "Normal Lure" string.
 	if _, ok := gd.Util.Lures[lureID]; ok {
-		m["lureTypeName"] = tr.T(fmt.Sprintf("item_%d", lureID))
+		m["lureTypeName"] = tr.T(fmt.Sprintf("lure_%d", lureID))
 	}
 
 	// Translate invasion fields if present on this pokestop
