@@ -1,6 +1,8 @@
 package enrichment
 
 import (
+	"fmt"
+
 	"github.com/pokemon/poracleng/processor/internal/geo"
 	"github.com/pokemon/poracleng/processor/internal/staticmap"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
@@ -47,14 +49,17 @@ func (e *Enricher) Lure(lure *webhook.LureWebhook, tileMode int) (map[string]any
 	}
 	pending := e.addStaticMap(m, "pokestop", lure.Latitude, lure.Longitude, tileFields, tileMode)
 
-	// Lure data from util.json
+	// Lure data from util.json (colour + emoji key); English display name
+	// comes from pogo-translations key lure_{id} via the English translator.
 	m["lureTypeId"] = lure.LureID
 	if e.GameData != nil {
 		if info, ok := e.GameData.Util.Lures[lure.LureID]; ok {
 			m["lureColor"] = info.Color
 			m["lureEmojiKey"] = info.Emoji
-			m["lureTypeNameEng"] = info.Name // util.json names are English
 		}
+	}
+	if e.Translations != nil && lure.LureID != 0 {
+		m["lureTypeNameEng"] = e.Translations.For("en").T(fmt.Sprintf("lure_%d", lure.LureID))
 	}
 
 	// Invasion fields — a pokestop can have both a lure and an invasion
@@ -87,8 +92,10 @@ func (e *Enricher) LureTranslate(base map[string]any, lureID int, lang string) m
 
 	gd := e.GameData
 	tr := e.Translations.For(lang)
-	if info, ok := gd.Util.Lures[lureID]; ok {
-		m["lureTypeName"] = tr.T(info.Name)
+	// Lure display name comes from pogo-translations key lure_{id}
+	// (resources/gamelocale/), not util.json's English "Normal Lure" string.
+	if _, ok := gd.Util.Lures[lureID]; ok {
+		m["lureTypeName"] = tr.T(fmt.Sprintf("lure_%d", lureID))
 	}
 
 	// Translate invasion fields if present on this pokestop

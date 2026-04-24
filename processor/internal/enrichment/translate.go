@@ -40,15 +40,12 @@ func translateMonsterNamesWithEng(m map[string]any, gd *gamedata.GameData, tr *i
 	m["formName"] = formName
 	m["formNormalised"] = formNormalised
 
-	// Full name
-	fullName := name
-	if formNormalised != "" {
-		fullName = name + " " + formNormalised
-	}
-	if evolution > 0 {
-		fullName = i18n.Format(nameKeys.MegaNamePattern, fullName)
-	}
-	m["fullName"] = fullName
+	// Full name — for mega/primal pokemon, prefer the combined
+	// poke_{id}_e{evolution} key from pogo-translations (e.g. poke_6_e2 =
+	// "Mega Charizard X") since that gives a fully localised mega name.
+	// Fall back to the util.json format pattern for species without a
+	// dedicated translation.
+	m["fullName"] = buildFullName(tr, nameKeys, name, formNormalised, pokemonID, evolution)
 
 	// English names for templates that show both translated + English
 	if bundle != nil {
@@ -61,13 +58,6 @@ func translateMonsterNamesWithEng(m map[string]any, gd *gamedata.GameData, tr *i
 				enFormNormalised = enForm
 			}
 		}
-		enFullName := enName
-		if enFormNormalised != "" {
-			enFullName = enName + " " + enFormNormalised
-		}
-		if evolution > 0 {
-			enFullName = i18n.Format(nameKeys.MegaNamePattern, enFullName)
-		}
 		enFormName := ""
 		if nameKeys.FormKey != "" {
 			enFormName = enTr.T(nameKeys.FormKey)
@@ -75,8 +65,28 @@ func translateMonsterNamesWithEng(m map[string]any, gd *gamedata.GameData, tr *i
 		m["nameEng"] = enName
 		m["formNameEng"] = enFormName
 		m["formNormalisedEng"] = enFormNormalised
-		m["fullNameEng"] = enFullName
+		m["fullNameEng"] = buildFullName(enTr, nameKeys, enName, enFormNormalised, pokemonID, evolution)
 	}
+}
+
+// buildFullName constructs a pokemon's localized display name. For mega/primal
+// evolutions it first tries the combo key poke_{id}_e{evolution} and falls
+// back to applying the util.json MegaName format pattern to the base+form name.
+func buildFullName(tr *i18n.Translator, nameKeys gamedata.MonsterNameInfo, name, formNormalised string, pokemonID, evolution int) string {
+	if evolution > 0 && tr != nil {
+		comboKey := fmt.Sprintf("poke_%d_e%d", pokemonID, evolution)
+		if translated := tr.T(comboKey); translated != comboKey && translated != "" {
+			return translated
+		}
+	}
+	fullName := name
+	if formNormalised != "" {
+		fullName = name + " " + formNormalised
+	}
+	if evolution > 0 {
+		fullName = i18n.Format(nameKeys.MegaNamePattern, fullName)
+	}
+	return fullName
 }
 
 // IsNormalForm returns true if a form name is "Normal" in any common language.
@@ -159,13 +169,15 @@ func TranslateWeaknessCategories(categories []gamedata.WeaknessCategory, tr *i18
 	return result
 }
 
-// addGenderFields adds translated gender name and emoji key to the enrichment map.
-func addGenderFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, enTr *i18n.Translator, gender int) {
+// addGenderFields adds translated gender name and emoji key to the enrichment
+// map. Gender display names use pogo-translations identifier keys gender_0..3
+// (gender_3 is supplied by processor/internal/i18n/locale/*.json since
+// pogo-translations only ships 0..2). util.json is consulted only for the
+// emoji key.
+func addGenderFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, gender int) {
 	if info, ok := gd.Util.Genders[gender]; ok {
-		m["genderName"] = tr.T(info.Name)
-		if enTr != nil {
-			m["genderNameEng"] = enTr.T(info.Name)
-		}
+		m["genderName"] = translateGenderName(tr, gender)
+		m["genderNameEng"] = translateGenderName(enTr, gender)
 		m["genderEmojiKey"] = info.Emoji
 	} else {
 		m["genderName"] = ""
@@ -174,33 +186,61 @@ func addGenderFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translato
 	}
 }
 
+// translateGenderName returns the pogo-translations value for a gender id.
+func translateGenderName(tr *i18n.Translator, gender int) string {
+	if tr == nil {
+		return ""
+	}
+	return tr.T(fmt.Sprintf("gender_%d", gender))
+}
+
 // addRarityFields adds translated rarity name to the enrichment map.
-func addRarityFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, rarityGroup int) {
-	if name, ok := gd.Util.Rarity[rarityGroup]; ok {
-		m["rarityName"] = tr.T(name)
-		m["rarityNameEng"] = name // util.json names are already English
+// Rarity names use identifier keys rarity_1..rarity_6 from the embedded
+// i18n files; util.json is only used to detect valid ids.
+func addRarityFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, rarityGroup int) {
+	if _, ok := gd.Util.Rarity[rarityGroup]; ok {
+		m["rarityName"] = translateRarityName(tr, rarityGroup)
+		m["rarityNameEng"] = translateRarityName(enTr, rarityGroup)
 	} else {
 		m["rarityName"] = ""
 		m["rarityNameEng"] = ""
 	}
 }
 
+func translateRarityName(tr *i18n.Translator, rarityGroup int) string {
+	if tr == nil {
+		return ""
+	}
+	return tr.T(fmt.Sprintf("rarity_%d", rarityGroup))
+}
+
 // addSizeFields adds translated size name to the enrichment map.
-func addSizeFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, size int) {
-	if name, ok := gd.Util.Size[size]; ok {
-		m["sizeName"] = tr.T(name)
-		m["sizeNameEng"] = name // util.json names are already English
+// Size names use identifier keys size_1..size_5 from the embedded i18n
+// files; util.json is only used to detect valid ids.
+func addSizeFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, size int) {
+	if _, ok := gd.Util.Size[size]; ok {
+		m["sizeName"] = translateSizeName(tr, size)
+		m["sizeNameEng"] = translateSizeName(enTr, size)
 	} else {
 		m["sizeName"] = ""
 		m["sizeNameEng"] = ""
 	}
 }
 
+func translateSizeName(tr *i18n.Translator, size int) string {
+	if tr == nil {
+		return ""
+	}
+	return tr.T(fmt.Sprintf("size_%d", size))
+}
+
 // addTeamFields adds translated team name and emoji key to the enrichment map.
-func addTeamFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, teamID int) {
+// Team display names come from pogo-translations identifier keys team_0..team_3;
+// util.json is only consulted for the emoji key and colour.
+func addTeamFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, teamID int) {
 	if info, ok := gd.Util.Teams[teamID]; ok {
-		m["teamName"] = tr.T(info.Name)
-		m["teamNameEng"] = info.Name
+		m["teamName"] = translateTeamName(tr, teamID)
+		m["teamNameEng"] = translateTeamName(enTr, teamID)
 		m["teamEmojiKey"] = info.Emoji
 		m["teamColor"] = info.Color
 	} else {
@@ -211,20 +251,41 @@ func addTeamFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator,
 	}
 }
 
+// translateTeamName returns the pogo-translations value for a team by id
+// (team_0 = No Team, team_1 = Mystic, etc.). Returns "" when tr is nil.
+func translateTeamName(tr *i18n.Translator, teamID int) string {
+	if tr == nil {
+		return ""
+	}
+	return tr.T(fmt.Sprintf("team_%d", teamID))
+}
+
 // addGenerationFields adds translated generation info to the enrichment map.
-func addGenerationFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, pokemonID, form int) {
+// Generation display names come from pogo-translations identifier keys
+// generation_1..generation_N (Kanto / Johto / ...); util.json is only used
+// for the roman numeral.
+func addGenerationFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, pokemonID, form int) {
 	gen := gd.GetGeneration(pokemonID, form)
 	m["generation"] = gen
 	info := gd.GetGenerationInfo(gen)
 	if info != nil {
-		m["generationName"] = tr.T(info.Name)
-		m["generationNameEng"] = info.Name // util.json names are already English
+		m["generationName"] = translateGenerationName(tr, gen)
+		m["generationNameEng"] = translateGenerationName(enTr, gen)
 		m["generationRoman"] = info.Roman
 	} else {
 		m["generationName"] = fmt.Sprintf("Gen %d", gen)
 		m["generationNameEng"] = fmt.Sprintf("Gen %d", gen)
 		m["generationRoman"] = ""
 	}
+}
+
+// translateGenerationName returns the pogo-translations value for a
+// generation (generation_1 = Kanto, etc.). Returns "" when tr is nil.
+func translateGenerationName(tr *i18n.Translator, gen int) string {
+	if tr == nil {
+		return ""
+	}
+	return tr.T(fmt.Sprintf("generation_%d", gen))
 }
 
 // addWeatherFields adds weather-related enrichment fields.

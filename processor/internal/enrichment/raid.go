@@ -1,6 +1,7 @@
 package enrichment
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
@@ -133,9 +134,12 @@ func (e *Enricher) Raid(raid *webhook.RaidWebhook, firstNotification bool, tileM
 			m["color"] = info.Color // deprecated alias
 		}
 
-		// Raid level name
-		if levelName, ok := gd.Util.RaidLevels[raid.Level]; ok {
-			m["levelNameEng"] = levelName
+		// Raid level name — pogo-translations uses identifier keys raid_1..raid_N,
+		// NOT the English strings from util.json. util.json is only used to
+		// enumerate valid levels (see bot/argmatch.go).
+		if e.Translations != nil && raid.Level > 0 {
+			key := fmt.Sprintf("raid_%d", raid.Level)
+			m["levelNameEng"] = e.Translations.For("en").T(key)
 		}
 
 		if raid.PokemonID > 0 {
@@ -202,7 +206,7 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 	tr := e.Translations.For(lang)
 
 	// Team
-	addTeamFields(m, gd, tr, raid.TeamID)
+	addTeamFields(m, gd, tr, e.Translations.For("en"), raid.TeamID)
 
 	// Weather
 	gameWeatherID := toInt(base["gameWeatherId"])
@@ -236,8 +240,10 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 	}
 
 	// Level name
-	if levelName, ok := base["levelNameEng"].(string); ok {
-		m["levelName"] = tr.T(levelName)
+	// Raid level name — look up pogo-translations identifier key for the
+	// user's language (raid_1..raid_N).
+	if raid.Level > 0 {
+		m["levelName"] = tr.T(fmt.Sprintf("raid_%d", raid.Level))
 	}
 
 	if raid.PokemonID > 0 {
@@ -262,15 +268,18 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 		addWeatherFields(m, gd, tr, monster.Types, weather)
 
 		// Generation
-		addGenerationFields(m, gd, tr, raid.PokemonID, raid.Form)
+		addGenerationFields(m, gd, tr, e.Translations.For("en"), raid.PokemonID, raid.Form)
 
 		// Gender
 		addGenderFields(m, gd, tr, enTr, raid.Gender)
 
 		// Evolution name + megaName
 		if raid.Evolution > 0 {
-			if info, ok := gd.Util.Evolution[raid.Evolution]; ok {
-				m["evolutionName"] = tr.T(info.Name)
+			// Evolution prefix comes from pogo-translations evo_N
+			// ("Mega", "Mega X", "Primal", ...), not util.json's English
+			// Evolution.Name.
+			if _, ok := gd.Util.Evolution[raid.Evolution]; ok {
+				m["evolutionName"] = tr.T(fmt.Sprintf("evo_%d", raid.Evolution))
 			}
 			// megaName = fullName when evolved (mega/primal)
 			if fn, ok := m["fullName"].(string); ok {
