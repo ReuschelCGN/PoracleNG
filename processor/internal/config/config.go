@@ -31,6 +31,7 @@ type Config struct {
 	Fallbacks      FallbacksConfig      `toml:"fallbacks"`
 	Tracking       TrackingConfig       `toml:"tracking"`
 	AI             AIConfig             `toml:"ai"`
+	Validation     ValidationConfig     `toml:"validation"`
 
 	// BaseDir is the directory containing the config file, used to resolve relative paths.
 	BaseDir string `toml:"-"`
@@ -134,8 +135,9 @@ type LocaleConfig struct {
 	TimeFormat    string `toml:"timeformat"`
 	Time          string `toml:"time"`
 	Date          string `toml:"date"`
-	AddressFormat string `toml:"address_format"`
-	Language      string `toml:"language"` // alt language for DTS helpers (pokemonNameAlt, moveNameAlt, etc.) — default "en"
+	AddressFormat         string `toml:"address_format"`
+	AddressIncludeCountry bool   `toml:"address_include_country"` // see config.example.toml for defaults/rationale
+	Language              string `toml:"language"`                // alt language for DTS helpers — default "en"
 }
 
 type LoggingConfig struct {
@@ -428,6 +430,23 @@ type TuningConfig struct {
 	ConcurrentTelegramDestinations int `toml:"concurrent_telegram_destinations"`
 	ConcurrentDiscordWebhooks      int `toml:"concurrent_discord_webhooks"`
 	DeliveryQueueSize              int `toml:"delivery_queue_size"`
+
+	// Validation hook tuning (see [validation])
+	ValidationTimeoutMs     int `toml:"validation_timeout_ms"`     // per-call HTTP timeout (default 1500)
+	ValidationMaxConcurrent int `toml:"validation_max_concurrent"` // cap on parallel validator calls per event (default 16)
+}
+
+// ValidationConfig describes an external HTTP hook called once per matched
+// user, after rate-limit pre-filtering and before enrichment. The hook can
+// approve or deny each user; denied users are dropped from the alert and may
+// receive a notification message specified by the hook.
+type ValidationConfig struct {
+	// URL is the validator endpoint. Empty disables validation entirely.
+	URL string `toml:"url"`
+	// FailMode controls behaviour when the validator times out or errors.
+	// "open" (default) treats failures as success; "closed" treats failures
+	// as deny.
+	FailMode string `toml:"fail_mode"`
 }
 
 type AreaConfig struct {
@@ -480,8 +499,8 @@ type WebhookLoggingConfig struct {
 // and address geocoding.
 type GeocodingConfig struct {
 	// Address geocoding provider
-	Provider     string   `toml:"provider"`      // "none", "nominatim", "google"
-	ProviderURL  string   `toml:"provider_url"`  // nominatim URL
+	Provider     string   `toml:"provider"`      // "none", "nominatim", "photon", "google"
+	ProviderURL  string   `toml:"provider_url"`  // nominatim/photon URL
 	GeocodingKey []string `toml:"geocoding_key"` // google API keys
 	CacheDetail  int      `toml:"cache_detail"`  // decimal places for cache key rounding (default 3)
 	ForwardOnly  bool     `toml:"forward_only"`  // if true, skip reverse geocoding
@@ -602,6 +621,11 @@ func Load(baseDir string) (*Config, error) {
 			ConcurrentTelegramDestinations: 10,
 			ConcurrentDiscordWebhooks:      10,
 			DeliveryQueueSize:              200,
+			ValidationTimeoutMs:            1500,
+			ValidationMaxConcurrent:        16,
+		},
+		Validation: ValidationConfig{
+			FailMode: "open",
 		},
 		Stats: StatsConfig{
 			MinSampleSize:       10000,
@@ -613,11 +637,14 @@ func Load(baseDir string) (*Config, error) {
 			UltraRare:           0.01,
 		},
 		Locale: LocaleConfig{
-			TimeFormat:    "en-gb",
-			Time:          "LTS",
-			Date:          "L",
-			Language:      "en",
-			AddressFormat: "{{{streetName}}} {{streetNumber}}",
+			TimeFormat: "en-gb",
+			Time:       "LTS",
+			Date:       "L",
+			Language:   "en",
+			// AddressFormat left empty so {{addr}} gets the OpenCage-formatted
+			// FormattedAddress straight from the provider — the country-
+			// idiomatic default is what most operators want. Operators who
+			// need a specific shape override in config.toml.
 		},
 		Weather: WeatherConfig{
 			ShowAlteredPokemonMaxCount: 10,
