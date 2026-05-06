@@ -414,12 +414,17 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		}
 
 		// Try Discord-specific commands first (require discordgo session directly)
-		if b.handleDiscordCommand(s, m, cmd.CommandKey, cmd.Args, isDM) {
+		if b.handleDiscordCommand(s, m, cmd.CommandKey, cmd.Args, cmd.RawArgs, isDM) {
 			continue
 		}
 
-		// Registration check — skip for poracle (registration), poracle_test, and version commands
-		if !isRegistered && cmd.CommandKey != "cmd.poracle" && cmd.CommandKey != "cmd.version" {
+		// Registration check — DM only. In a group/channel context, BuildTarget
+		// runs the channel-level registration check and routes through that
+		// path's "channel admins only" / "not registered, add with !channel add"
+		// replies; firing this user-registration short-circuit in groups
+		// would falsely tell every non-admin member "you are not registered."
+		// Skipped for poracle (registration), poracle_test, and version commands.
+		if isDM && !isRegistered && cmd.CommandKey != "cmd.poracle" && cmd.CommandKey != "cmd.version" {
 			if msg := b.Cfg.Discord.UnregisteredUserMessage; msg != "" {
 				reply(msg)
 			} else {
@@ -460,44 +465,45 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		}
 
 		ctx := &bot.CommandContext{
-			UserID:       m.Author.ID,
-			UserName:     m.Author.Username,
-			Platform:     "discord",
-			ChannelID:    channelID,
-			GuildID:      guildID,
-			IsDM:         isDM,
-			IsAdmin:      isAdmin,
-			Language:     userLang,
-			ProfileNo:    profileNo,
-			HasLocation:  hasLocation,
-			HasArea:      hasArea,
-			TargetID:     m.Author.ID,
-			TargetName:   m.Author.Username,
-			TargetType:   targetType,
-			AreaLogic:    bot.NewAreaLogic(fences, b.Cfg),
-			DB:           b.DB,
-			Humans:       b.Humans,
-			Tracking:     b.Tracking,
-			Config:       b.Cfg,
-			StateMgr:     b.StateMgr,
-			GameData:     b.GameData,
-			Translations: b.Translations,
-			Geofence:     spatialIndex,
-			Fences:       fences,
-			Dispatcher:   b.Dispatcher,
-			RowText:      b.RowText,
-			Resolver:     b.Resolver,
-			ArgMatcher:   b.ArgMatcher,
-			Geocoder:     b.Geocoder,
-			StaticMap:    b.StaticMap,
-			Weather:      b.Weather,
-			Stats:        b.Stats,
-			DTS:          b.DTS,
-			Emoji:        b.Emoji,
+			UserID:        m.Author.ID,
+			UserName:      m.Author.Username,
+			Platform:      "discord",
+			ChannelID:     channelID,
+			GuildID:       guildID,
+			IsDM:          isDM,
+			IsAdmin:       isAdmin,
+			Language:      userLang,
+			ProfileNo:     profileNo,
+			HasLocation:   hasLocation,
+			HasArea:       hasArea,
+			TargetID:      m.Author.ID,
+			TargetName:    m.Author.Username,
+			TargetType:    targetType,
+			AreaLogic:     bot.NewAreaLogic(fences, b.Cfg),
+			DB:            b.DB,
+			Humans:        b.Humans,
+			Tracking:      b.Tracking,
+			Config:        b.Cfg,
+			StateMgr:      b.StateMgr,
+			GameData:      b.GameData,
+			Translations:  b.Translations,
+			Geofence:      spatialIndex,
+			Fences:        fences,
+			Dispatcher:    b.Dispatcher,
+			RowText:       b.RowText,
+			Resolver:      b.Resolver,
+			ArgMatcher:    b.ArgMatcher,
+			Geocoder:      b.Geocoder,
+			StaticMap:     b.StaticMap,
+			Weather:       b.Weather,
+			Stats:         b.Stats,
+			DTS:           b.DTS,
+			Emoji:         b.Emoji,
 			NLP:           b.nlpParser,
 			TestProcessor: b.TestProcessor,
 			Registry:      b.Registry,
 			ReloadFunc:    b.ReloadFunc,
+			PostRegister:  b.postRegisterHook(),
 		}
 
 		// Populate delegated admin permissions
@@ -546,7 +552,7 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 
 // handleDiscordCommand dispatches Discord-specific commands that require the
 // discordgo session directly. Returns true if the command was handled.
-func (b *Bot) handleDiscordCommand(s *discordgo.Session, m *discordgo.MessageCreate, cmdKey string, args []string, isDM bool) bool {
+func (b *Bot) handleDiscordCommand(s *discordgo.Session, m *discordgo.MessageCreate, cmdKey string, args, rawArgs []string, isDM bool) bool {
 	switch cmdKey {
 	case "cmd.channel":
 		b.handleChannel(s, m, args)
@@ -567,7 +573,7 @@ func (b *Bot) handleDiscordCommand(s *discordgo.Session, m *discordgo.MessageCre
 		b.handleEmoji(s, m, args)
 		return true
 	case "cmd.autocreate":
-		b.handleAutocreate(s, m, args)
+		b.handleAutocreate(s, m, args, rawArgs)
 		return true
 	default:
 		return false
@@ -780,4 +786,20 @@ func (b *Bot) runReconciliation() {
 	rcfg := b.Cfg.Reconciliation.Discord
 	b.reconciliation.SyncDiscordRole(rcfg.RegisterNewUsers, rcfg.UpdateUserNames, rcfg.RemoveInvalidUsers)
 	b.reconciliation.SyncDiscordChannels(rcfg.UpdateChannelNames, rcfg.UpdateChannelNotes, rcfg.UnregisterMissingChannels)
+}
+
+// postRegisterHook returns the bot.CommandContext.PostRegister callback,
+// or nil if reconciliation isn't configured. Invoked by !poracle after a
+// successful registration so the new user's community_membership /
+// area_restriction get populated from current Discord roles immediately.
+// removeInvalidUsers is forced to false: the user we just created can't
+// be missing a role we haven't checked yet.
+func (b *Bot) postRegisterHook() func(string) {
+	if b.reconciliation == nil {
+		return nil
+	}
+	r := b.reconciliation
+	return func(userID string) {
+		go r.ReconcileSingleUser(userID, false)
+	}
 }

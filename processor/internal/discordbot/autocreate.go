@@ -16,18 +16,18 @@ import (
 
 // channelTemplate represents one entry in config/channelTemplate.json.
 type channelTemplate struct {
-	Name       string             `json:"name"`
-	Definition channelDefinition  `json:"definition"`
+	Name       string            `json:"name"`
+	Definition channelDefinition `json:"definition"`
 }
 
 type channelDefinition struct {
-	Category *categoryDefinition  `json:"category"`
-	Channels []channelEntry       `json:"channels"`
+	Category *categoryDefinition `json:"category"`
+	Channels []channelEntry      `json:"channels"`
 }
 
 type categoryDefinition struct {
-	CategoryName string         `json:"categoryName"`
-	Roles        []roleEntry    `json:"roles"`
+	CategoryName string      `json:"categoryName"`
+	Roles        []roleEntry `json:"roles"`
 }
 
 type channelEntry struct {
@@ -112,7 +112,7 @@ var rolePermissionFlags = map[string]int64{
 
 // handleAutocreate handles the !autocreate command.
 // Loads a channel template, creates Discord categories and channels, and registers them.
-func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate, args, rawArgs []string) {
 	if !bot.IsAdmin(b.Cfg, "discord", m.Author.ID) {
 		s.MessageReactionAdd(m.ChannelID, m.ID, "🙅")
 		return
@@ -121,14 +121,29 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 	guildID := m.GuildID
 	if gid := parseGuildArg(args); gid != "" {
 		guildID = gid
-		// Remove guild arg from args
-		var filtered []string
-		for _, arg := range args {
+		// Remove guild arg from args (and rawArgs in lockstep so indices align)
+		var filtered, filteredRaw []string
+		for i, arg := range args {
 			if parseGuildArg([]string{arg}) == "" {
 				filtered = append(filtered, arg)
+				if i < len(rawArgs) {
+					filteredRaw = append(filteredRaw, rawArgs[i])
+				}
 			}
 		}
 		args = filtered
+		rawArgs = filteredRaw
+	}
+	// Defensive: keep rawArgs aligned with args even if a caller passed a
+	// shorter slice (we want substitutions to fall back to the lowercased
+	// value rather than panic on an out-of-range access).
+	if len(rawArgs) < len(args) {
+		padded := make([]string, len(args))
+		copy(padded, rawArgs)
+		for i := len(rawArgs); i < len(args); i++ {
+			padded[i] = args[i]
+		}
+		rawArgs = padded
 	}
 
 	if guildID == "" {
@@ -156,7 +171,12 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 	}
 
 	templateName := args[0]
-	subArgs := args[1:]
+	// rawSubArgs preserves the original case the user typed (parser
+	// otherwise lowercases). Channel/category/topic substitutions read
+	// from this so "GentCentrum" stays "GentCentrum" instead of collapsing
+	// to "gentcentrum". Discord forces channel names to lowercase server-
+	// side anyway, but categories keep their case.
+	rawSubArgs := rawArgs[1:]
 
 	var tmpl *channelTemplate
 	for i := range templates {
@@ -171,16 +191,17 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 		return
 	}
 
-	// Build substitution args (restore underscores for names).
-	subArgsUnder := make([]string, len(subArgs))
-	for i, arg := range subArgs {
+	// Build substitution args (restore underscores for names) — using
+	// rawSubArgs as the source so case is preserved through the round trip.
+	subArgsUnder := make([]string, len(rawSubArgs))
+	for i, arg := range rawSubArgs {
 		subArgsUnder[i] = strings.ReplaceAll(arg, " ", "_")
 	}
 
 	// Create category if defined.
 	var categoryID string
 	if tmpl.Definition.Category != nil {
-		categoryName := formatTemplate(tmpl.Definition.Category.CategoryName, subArgs)
+		categoryName := formatTemplate(tmpl.Definition.Category.CategoryName, rawSubArgs)
 
 		createData := discordgo.GuildChannelCreateData{
 			Name: categoryName,
@@ -188,7 +209,7 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 		}
 
 		if len(tmpl.Definition.Category.Roles) > 0 {
-			overwrites := b.buildPermissionOverwrites(s, guildID, tmpl.Definition.Category.Roles, subArgs)
+			overwrites := b.buildPermissionOverwrites(s, guildID, tmpl.Definition.Category.Roles, rawSubArgs)
 			createData.PermissionOverwrites = overwrites
 		}
 
@@ -203,7 +224,7 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 
 	// Create channels.
 	for _, chDef := range tmpl.Definition.Channels {
-		channelName := formatTemplate(chDef.ChannelName, subArgs)
+		channelName := formatTemplate(chDef.ChannelName, rawSubArgs)
 
 		createData := discordgo.GuildChannelCreateData{
 			Name: channelName,
@@ -221,11 +242,11 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 		}
 
 		if chDef.Topic != "" {
-			createData.Topic = formatTemplate(chDef.Topic, subArgs)
+			createData.Topic = formatTemplate(chDef.Topic, rawSubArgs)
 		}
 
 		if len(chDef.Roles) > 0 {
-			createData.PermissionOverwrites = b.buildPermissionOverwrites(s, guildID, chDef.Roles, subArgs)
+			createData.PermissionOverwrites = b.buildPermissionOverwrites(s, guildID, chDef.Roles, rawSubArgs)
 		}
 
 		channel, err := s.GuildChannelCreateComplex(guildID, createData)
@@ -293,8 +314,12 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 			}()))
 
 		// Execute configured commands for the channel.
+		// Substitute with quoted values so the bot parser doesn't strip
+		// underscores out of names like "gent_centrum" (its normal token
+		// underscore→space conversion only applies to unquoted tokens).
+		quotedSubArgs := quoteForCommand(subArgsUnder)
 		for _, cmdText := range chDef.Commands {
-			expanded := formatTemplate(cmdText, subArgsUnder)
+			expanded := formatTemplate(cmdText, quotedSubArgs)
 			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf(">>> Executing %s", expanded))
 
 			// Parse and execute the command through the shared registry.
@@ -307,35 +332,35 @@ func (b *Bot) handleAutocreate(s *discordgo.Session, m *discordgo.MessageCreate,
 				}
 
 				ctx := &bot.CommandContext{
-					UserID:       m.Author.ID,
-					UserName:     m.Author.Username,
-					Platform:     "discord",
-					ChannelID:    m.ChannelID,
-					GuildID:      guildID,
-					IsDM:         false,
-					IsAdmin:      true,
-					Language:     b.Cfg.General.Locale,
-					ProfileNo:    1,
-					TargetID:     targetID,
-					TargetName:   targetName,
-					TargetType:   targetType,
-					DB:           b.DB,
-					Humans:       b.Humans,
-					Tracking:     b.Tracking,
-					Config:       b.Cfg,
-					StateMgr:     b.StateMgr,
-					GameData:     b.GameData,
-					Translations: b.Translations,
-					Dispatcher:   b.Dispatcher,
-					RowText:      b.RowText,
-					Resolver:     b.Resolver,
-					ArgMatcher:   b.ArgMatcher,
-					Geocoder:     b.Geocoder,
-					StaticMap:    b.StaticMap,
-					Weather:      b.Weather,
-					Stats:        b.Stats,
-					DTS:          b.DTS,
-					Emoji:        b.Emoji,
+					UserID:        m.Author.ID,
+					UserName:      m.Author.Username,
+					Platform:      "discord",
+					ChannelID:     m.ChannelID,
+					GuildID:       guildID,
+					IsDM:          false,
+					IsAdmin:       true,
+					Language:      b.Cfg.General.Locale,
+					ProfileNo:     1,
+					TargetID:      targetID,
+					TargetName:    targetName,
+					TargetType:    targetType,
+					DB:            b.DB,
+					Humans:        b.Humans,
+					Tracking:      b.Tracking,
+					Config:        b.Cfg,
+					StateMgr:      b.StateMgr,
+					GameData:      b.GameData,
+					Translations:  b.Translations,
+					Dispatcher:    b.Dispatcher,
+					RowText:       b.RowText,
+					Resolver:      b.Resolver,
+					ArgMatcher:    b.ArgMatcher,
+					Geocoder:      b.Geocoder,
+					StaticMap:     b.StaticMap,
+					Weather:       b.Weather,
+					Stats:         b.Stats,
+					DTS:           b.DTS,
+					Emoji:         b.Emoji,
 					NLP:           b.nlpParser,
 					TestProcessor: b.TestProcessor,
 					Registry:      b.Registry,
@@ -467,4 +492,17 @@ func formatTemplate(s string, args []string) string {
 		result = strings.ReplaceAll(result, fmt.Sprintf("{%d}", i), args[i])
 	}
 	return result
+}
+
+// quoteForCommand wraps each value in double quotes so it survives the bot
+// parser's token-level underscore→space conversion. Embedded quotes in the
+// value are stripped (the parser's tokenRe doesn't handle escaped quotes,
+// and it's safer to drop them than emit malformed input). Used by autocreate
+// when expanding {N} placeholders into commands like `area add {1}`.
+func quoteForCommand(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = `"` + strings.ReplaceAll(a, `"`, "") + `"`
+	}
+	return out
 }

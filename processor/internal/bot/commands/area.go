@@ -34,8 +34,7 @@ func (c *AreaCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		} else {
 			text = tr.T("status.no_areas")
 		}
-		text += fmt.Sprintf("\n\nValid commands are `%sarea list`, `%sarea add <areaname>`, `%sarea remove <areaname>`",
-			prefix, prefix, prefix)
+		text += "\n\n" + tr.Tf("msg.area.usage", prefix)
 		return []bot.Reply{{Text: text}}
 	}
 
@@ -70,7 +69,7 @@ func (c *AreaCommand) listAreas(ctx *bot.CommandContext) []bot.Reply {
 	h := getUserHuman(ctx)
 	currentAreas := humanAreas(h)
 	communities := humanCommunities(ctx, h)
-	available := ctx.AreaLogic.GetAvailableAreasMarked(communities, currentAreas)
+	available := ctx.AreaLogic.GetAvailableAreasMarked(communities, currentAreas, ctx.IsAdmin)
 	if len(available) == 0 {
 		return []bot.Reply{{Text: tr.T("msg.area.none_available")}}
 	}
@@ -101,7 +100,7 @@ func (c *AreaCommand) addAreas(ctx *bot.CommandContext, args []string) []bot.Rep
 	h := getUserHuman(ctx)
 	currentAreas := humanAreas(h)
 	communities := humanCommunities(ctx, h)
-	added, notFound, newList := ctx.AreaLogic.AddAreas(currentAreas, communities, args)
+	added, notFound, newList := ctx.AreaLogic.AddAreas(currentAreas, communities, args, ctx.IsAdmin)
 
 	if len(added) > 0 {
 		setUserAreas(ctx, newList)

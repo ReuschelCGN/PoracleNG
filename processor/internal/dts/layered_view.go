@@ -88,8 +88,10 @@ func NewLayeredView(
 		lv.computed["emoji"] = resolved
 	}
 
-	// Resolve emoji keys inside weaknessList entries (per-platform)
-	resolveWeaknessEmojis(vb.emoji, perLang, platform)
+	// Resolve emoji keys inside weaknessList entries (per-platform) and
+	// build the flat {{weaknessEmoji}} string for templates that don't
+	// iterate weaknessList.
+	resolveWeaknessEmojis(vb.emoji, perLang, platform, lv.computed)
 
 	// Compose weatherChange text from forecast fields (needs resolved emoji + translated names)
 	composeWeatherChange(lv.computed, base, perLang, vb.emoji, platform)
@@ -258,10 +260,18 @@ func (vb *ViewBuilder) resolveEmojiMap(base, perLang, perUser map[string]any, pl
 	return result
 }
 
-// resolveWeaknessEmojis resolves emoji keys inside weaknessList entries.
-// Each type entry gets "emoji" resolved, and each category gets "typeEmoji" as a joined string.
-// This must happen during view construction because it requires the platform for the emoji lookup.
-func resolveWeaknessEmojis(emojiLookup *EmojiLookup, perLang map[string]any, platform string) {
+// resolveWeaknessEmojis resolves emoji keys inside weaknessList entries
+// and writes a flat {{weaknessEmoji}} string into the computed layer.
+//
+// Per category: each type entry gets "emoji" resolved (per-platform),
+// and the category gets "typeEmoji" as a joined string. The flat
+// weaknessEmoji is the space-separated concatenation of
+// "{value}x{typeEmoji}" per category — the field many shipped templates
+// reference directly without iterating weaknessList.
+//
+// Resolution must happen during view construction because it requires
+// the platform for the emoji lookup.
+func resolveWeaknessEmojis(emojiLookup *EmojiLookup, perLang map[string]any, platform string, computed map[string]any) {
 	if perLang == nil || emojiLookup == nil {
 		return
 	}
@@ -274,6 +284,7 @@ func resolveWeaknessEmojis(emojiLookup *EmojiLookup, perLang map[string]any, pla
 		return
 	}
 
+	var flat strings.Builder
 	for _, cat := range weaknessList {
 		types, _ := cat["types"].([]map[string]any)
 		var typeEmojis []string
@@ -284,7 +295,14 @@ func resolveWeaknessEmojis(emojiLookup *EmojiLookup, perLang map[string]any, pla
 				typeEmojis = append(typeEmojis, resolved)
 			}
 		}
-		cat["typeEmoji"] = strings.Join(typeEmojis, "")
+		joined := strings.Join(typeEmojis, "")
+		cat["typeEmoji"] = joined
+		if joined != "" {
+			fmt.Fprintf(&flat, "%vx%s ", cat["value"], joined)
+		}
+	}
+	if flat.Len() > 0 && computed != nil {
+		computed["weaknessEmoji"] = flat.String()
 	}
 }
 

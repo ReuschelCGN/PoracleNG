@@ -91,6 +91,7 @@ These fields are available in every template:
 | `wazeMapUrl` | string | Waze link |
 | `rdmUrl` | string | RDM map link |
 | `reactMapUrl` | string | ReactMap link |
+| `diademUrl` | string | Diadem map link |
 | `rocketMadUrl` | string | RocketMAD link |
 | `mapurl` | string | *Deprecated* — alias for `googleMapUrl` |
 | `applemap` | string | *Deprecated* — alias for `appleMapUrl` |
@@ -126,6 +127,7 @@ These fields are available in every template:
 | `boostWeatherId` | int/string | Boosting weather ID (empty string if not boosted) |
 | `boostWeatherName` | string | Translated boost weather name |
 | `boostWeatherEmoji` | string | Boost weather emoji |
+| `boostingWeathersEmoji` | string | Concatenated emoji string for every weather that boosts this pokemon's types (e.g. `"☀️💨"`) |
 | `boost` | string | *Deprecated* — alias for `boostWeatherName` |
 | `boostemoji` | string | *Deprecated* — alias for `boostWeatherEmoji` |
 
@@ -178,6 +180,7 @@ Template type `monster` is used for encountered pokemon (with IV data). Template
 | `emojiString` | string | Type emojis concatenated |
 | `typeEmoji` | string | Type emojis concatenated (resolved from emoji keys) |
 | `weaknessList` | array | Weakness categories: `{value, types: [{typeId, name, typeEmoji}]}` |
+| `weaknessEmoji` | string | Flat space-separated `"<value>x<typeEmoji>"` per category, e.g. `"2x💧⚡ 4x🪨 "` — for templates that don't iterate `weaknessList`. |
 
 ### Moves
 
@@ -259,7 +262,7 @@ Time-remaining fields (`tthd`, `tthh`, `tthm`, `tths`) are in the Common Fields 
 | Field | Type | Description |
 |-------|------|-------------|
 | `encountered` | bool | Whether pokemon was encountered (has IV data) |
-| `seenType` | string | Encounter type from scanner (e.g. "wild", "pokestop", "encounter") |
+| `seenType` | string | Normalised encounter source. See [seenType values](#seentype-values). |
 | `cell_coords` | array | S2 cell vertices for cell spawns |
 | `generation` | int | Generation number |
 | `generationRoman` | string | Generation as Roman numeral (I, II, etc.) |
@@ -288,6 +291,26 @@ Time-remaining fields (`tthd`, `tthh`, `tthm`, `tths`) are in the Common Fields 
 | `pokestopName` | string | Nearby pokestop name (if applicable) |
 
 `distance`, `bearing`, `bearingEmoji`, `userDistanceTrack`, `userTrackDistance` are documented in Common Fields.
+
+### seenType values
+
+`{{seenType}}` is normalised from Golbat's raw `seen_type` (see Golbat's
+webhooks reference). Use it in templates to switch on how the pokemon was
+discovered — wild encounters carry IVs / weight / height, nearby spawns
+do not.
+
+| `seenType` | Source `seen_type` | Meaning |
+|---|---|---|
+| `cell` | `nearby_cell` | Seen on a cell's nearby list — location is the S2 cell centre, imprecise. Also returned for RDM-style scanners that report no spawn id and no fort id. |
+| `pokestop` | `nearby_stop` | Seen on a fort's nearby list — location is the fort's coordinates, imprecise. |
+| `wild` | `wild` | Seen in the wild feed — real spawn-point location, no IVs yet. |
+| `encounter` | `encounter` | Full encounter decoded — IVs, moves, weight, height, size, PVP all known. |
+| `lure` | `lure_wild` | Seen on a lure's map list (pre-encounter). No IVs yet. |
+| `lure_encounter` | `lure_encounter` | Full disk encounter decoded for a lure-spawned pokemon. |
+| `tappable` | `tappable_encounter`, `tappable_lure_encounter` | Full encounter decoded via `PROCESS_TAPPABLE` — overworld tappable objects (and their lured variant). Both Golbat sub-types collapse to a single value here so templates only need one switch arm. |
+
+Empty string is returned when no `seen_type` is supplied and the legacy
+RDM-style fallback can't infer one.
 
 ---
 
@@ -350,6 +373,7 @@ Hatched raid with a boss pokemon.
 | `typeEmoji` | string | Type emojis concatenated |
 | `baseStats` | object | `{baseAttack, baseDefense, baseStamina}` |
 | `weaknessList` | array | Weakness categories |
+| `weaknessEmoji` | string | Flat `"<value>x<typeEmoji>"` per category |
 | `generation` | int | Generation number |
 | `generationRoman` | string | Roman numeral |
 | `generationName` | string | Translated generation name |
@@ -444,6 +468,10 @@ Time-remaining fields (`tthd`, `tthh`, `tthm`, `tths`) are computed from hatch t
 | `questStringEng` | string | English quest objective |
 | `rewardString` | string | All rewards as text (translated) |
 | `rewardStringEng` | string | English rewards text |
+| `conditionString` | string | Comma-joined completion conditions, translated, e.g. "Excellent Throw, Curve Ball" |
+| `conditionStringEng` | string | English copy of `conditionString` |
+| `conditionList` | array | Per-condition objects: `{type, name, formatted}` where `name` is the bare label ("Throw Type") and `formatted` includes the payload ("Excellent Throw"). Falls back to bare name when the webhook payload doesn't carry the data needed for the formatted variant. |
+| `conditionListEng` | array | English copy of `conditionList` |
 | `dustAmount` | int | Stardust reward amount |
 | `itemAmount` | int | Item reward amount |
 | `energyAmount` | int | Mega energy amount (first reward) |
@@ -496,7 +524,7 @@ These are flat top-level strings, not nested under a `rewardData` object:
 | `pokestopUrl` | string | Pokestop image URL (alias for `pokestop_url`) |
 | `gruntTypeId` | int | Grunt type ID |
 | `gruntName` | string | Translated grunt name |
-| `gruntType` | string | Translated grunt type, e.g. "Water" (alias for `gruntTypeName`) |
+| `gruntType` | string | English title-case grunt type for regular grunts (e.g. "Water"). Lowercase event name for events (e.g. "kecleon", "showcase", "gold-stop"). Use this for `{{#if (eq gruntType 'kecleon')}}` template dispatch — for displaying the localised name use `gruntTypeName`. |
 | `gruntTypeName` | string | Translated grunt type name |
 | `gruntTypeColor` | string | Type color hex |
 | `gruntTypeEmoji` | string | Type emoji |
@@ -645,6 +673,7 @@ Map URLs (`googleMapUrl`, `appleMapUrl`, `wazeMapUrl`, etc.) are available for n
 | `genderData` | object | `{name, emoji}` |
 | `baseStats` | object | `{baseAttack, baseDefense, baseStamina}` |
 | `weaknessList` | array | Weakness categories |
+| `weaknessEmoji` | string | Flat `"<value>x<typeEmoji>"` per category |
 | `evolutions` | array | Evolution chain |
 | `megaEvolutions` | array | Mega evolutions |
 | `time` | string | Battle end time |

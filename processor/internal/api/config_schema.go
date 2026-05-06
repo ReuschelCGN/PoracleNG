@@ -8,27 +8,27 @@ import (
 
 // ConfigFieldDef describes a single config field for the editor.
 type ConfigFieldDef struct {
-	Name        string               `json:"name"`
-	Type        string               `json:"type"` // string, int, float, bool, string[], color[], select, map
-	Default     any                  `json:"default,omitempty"`
-	Description string               `json:"description"`
-	HotReload   bool                 `json:"hotReload,omitempty"`
-	Sensitive   bool                 `json:"sensitive,omitempty"`
-	Deprecated  bool                 `json:"deprecated,omitempty"`  // editor should warn / hide unless already set
-	Advanced    bool                 `json:"advanced,omitempty"`    // editor hides behind "show advanced" toggle
-	HideDefault bool                 `json:"hideDefault,omitempty"` // editor should not pre-fill the default
+	Name        string `json:"name"`
+	Type        string `json:"type"` // string, int, float, bool, string[], color[], select, map
+	Default     any    `json:"default,omitempty"`
+	Description string `json:"description"`
+	HotReload   bool   `json:"hotReload,omitempty"`
+	Sensitive   bool   `json:"sensitive,omitempty"`
+	Deprecated  bool   `json:"deprecated,omitempty"`  // editor should warn / hide unless already set
+	Advanced    bool   `json:"advanced,omitempty"`    // editor hides behind "show advanced" toggle
+	HideDefault bool   `json:"hideDefault,omitempty"` // editor should not pre-fill the default
 	// Nullable marks a scalar field (typically bool) as tri-state: null is a
 	// meaningful third value distinct from the zero value, and the backend
 	// relies on the distinction — usually to layer per-row overrides on top
 	// of a base/default entry. The editor MUST render null as a distinct
 	// "inherit / unset" state and preserve null on save (not coerce to false
 	// or the type's zero value).
-	Nullable    bool                 `json:"nullable,omitempty"`
-	MinLength   int                  `json:"minLength,omitempty"`   // for arrays: minimum number of entries
-	MaxLength   int                  `json:"maxLength,omitempty"`   // for arrays: maximum number of entries
-	Resolve     string               `json:"resolve,omitempty"`
-	Options     []ConfigSelectOption `json:"options,omitempty"`
-	DependsOn   *ConfigDependency    `json:"dependsOn,omitempty"`
+	Nullable  bool                 `json:"nullable,omitempty"`
+	MinLength int                  `json:"minLength,omitempty"` // for arrays: minimum number of entries
+	MaxLength int                  `json:"maxLength,omitempty"` // for arrays: maximum number of entries
+	Resolve   string               `json:"resolve,omitempty"`
+	Options   []ConfigSelectOption `json:"options,omitempty"`
+	DependsOn *ConfigDependency    `json:"dependsOn,omitempty"`
 }
 
 // ConfigSelectOption is a constrained option for select-type fields.
@@ -80,6 +80,7 @@ var configSchema = []ConfigSection{
 			{Name: "disabled_commands", Type: "string[]", Default: []string{}, Description: "Commands to disable globally (e.g., [\"lure\", \"nest\"])", HotReload: true},
 			{Name: "rdm_url", Type: "string", Default: "", Description: "RDM map instance URL for {{rdmUrl}} in DTS templates", HotReload: true, Deprecated: true},
 			{Name: "react_map_url", Type: "string", Default: "", Description: "ReactMap instance URL for {{reactMapUrl}} in DTS templates", HotReload: true},
+			{Name: "diadem_url", Type: "string", Default: "", Description: "Diadem instance URL for {{diademUrl}} in DTS templates", HotReload: true},
 			{Name: "rocket_mad_url", Type: "string", Default: "", Description: "RocketMAD instance URL for {{rocketMadUrl}} in DTS templates", HotReload: true, Deprecated: true},
 			{Name: "img_url", Type: "string", Default: "https://raw.githubusercontent.com/nileplumb/PkmnShuffleMap/master/UICONS", Description: "Base URL for pokemon icon images (uicons repository)", HotReload: false},
 			{Name: "img_url_alt", Type: "string", Default: "", Description: "Alternative icon URL for {{imgUrlAlt}} in DTS templates", HotReload: false},

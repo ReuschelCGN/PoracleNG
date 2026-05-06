@@ -42,8 +42,10 @@ func (ps *ProcessorService) ProcessQuest(raw json.RawMessage) error {
 
 		l := log.WithField("ref", quest.PokestopID)
 
-		// Build rewards key for dedup
-		rewardsKey := buildQuestRewardsKey(quest.Rewards)
+		// Build rewards key for dedup. AR / non-AR are separate quests on
+		// the same stop with independent objectives — keying on rewards
+		// alone collapsed colliding-reward pairs into one alert.
+		rewardsKey := buildQuestRewardsKey(quest.WithAR, quest.Rewards)
 		if ps.duplicates.CheckQuest(quest.PokestopID, rewardsKey) {
 			l.Debug("Quest duplicate, ignoring")
 			metrics.DuplicatesSkipped.WithLabelValues("quest").Inc()
@@ -73,11 +75,12 @@ func (ps *ProcessorService) ProcessQuest(raw json.RawMessage) error {
 		if len(matched) > 0 {
 			metrics.MatchedEvents.WithLabelValues("quest").Inc()
 			metrics.MatchedUsers.WithLabelValues("quest").Add(float64(len(matched)))
+			metrics.IntervalMatched.Add(1)
 
 			l.Infof("Quest at %s areas(%s) and %d humans cared", quest.Name, areaNames(matchedAreas), len(matched))
 
 			mode := ps.tileMode("quest", matched)
-			enrichmentData, tilePending := ps.enricher.Quest(quest.Latitude, quest.Longitude, quest.PokestopID, rewards, mode)
+			enrichmentData, tilePending := ps.enricher.Quest(quest.Latitude, quest.Longitude, quest.PokestopID, quest.URL, rewards, mode)
 
 			// Compute per-language translated enrichment
 			var perLang map[string]map[string]any
@@ -110,9 +113,17 @@ func (ps *ProcessorService) ProcessQuest(raw json.RawMessage) error {
 	return nil
 }
 
-// buildQuestRewardsKey creates a dedup key from quest rewards.
-func buildQuestRewardsKey(rewards []webhook.QuestReward) string {
+// buildQuestRewardsKey creates a dedup key from quest rewards plus the
+// AR flag. The AR prefix segregates the two quests Niantic can attach to
+// a single pokestop (regular vs AR-required) so they don't collapse on
+// each other when their rewards happen to match.
+func buildQuestRewardsKey(withAR bool, rewards []webhook.QuestReward) string {
 	var key strings.Builder
+	if withAR {
+		key.WriteString("ar:")
+	} else {
+		key.WriteString("std:")
+	}
 	for _, r := range rewards {
 		key.WriteString(fmt.Sprintf("%d:", r.Type))
 		if info, ok := r.Info["pokemon_id"]; ok {
