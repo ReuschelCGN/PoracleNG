@@ -5,6 +5,7 @@
   "rate_limit.banned_soft": "You have breached the rate limit too many times in the last 24 hours. Your messages are now stopped, use {0}start to resume",
   "rate_limit.banned_hard": "You have breached the rate limit too many times in the last 24 hours. Your messages are now stopped, contact an administrator to resume",
   "rate_limit.shame": "<@{0}> has had their Poracle tracking disabled for exceeding the rate limit too many times!",
+  "delivery.fail.shame": "<@{0}> has been disabled because Poracle messages keep failing to deliver to them.",
   "profile.switched": "I have set your profile to: {0}",
 
   "team_4": "Any team",
@@ -449,6 +450,7 @@
   "msg.community.none": "No communities configured",
   "msg.community.valid": "These are the valid communities:",
   "msg.community.no_targets": "No targets listed",
+  "msg.community.no_targets_hint": "No targets listed. To act on yourself, run: `{0}`",
 
   "cmd.ask": "ask",
   "msg.ask.usage": "Ask me in natural language what you want to track, e.g. `{0}ask perfect dragonite`",
