@@ -26,6 +26,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor"
 	"github.com/pokemon/poracleng/processor/internal/api"
+	"github.com/pokemon/poracleng/processor/internal/backup"
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/bot/commands"
 	"github.com/pokemon/poracleng/processor/internal/config"
@@ -617,6 +618,11 @@ func main() {
 			if err := state.Load(stateMgr, database); err != nil {
 				log.Errorf("Periodic reload failed: %s", err)
 				metrics.StateReloads.WithLabelValues("error").Inc()
+				proc.adminNoticeThrottled(
+					"state.reload.fail",
+					fmt.Sprintf(":warning: Periodic state reload failed: %s — tracking rule updates from the DB will pause until this clears.", err),
+					5*time.Minute,
+				)
 			} else {
 				metrics.StateReloads.WithLabelValues("success").Inc()
 			}
@@ -693,6 +699,7 @@ func main() {
 		NLPParser:     nlpParser,
 		TestProcessor: proc,
 		ReloadFunc:    proc.triggerReload,
+		Scanner:       proc.scanner,
 	}
 
 	discordTokens := cfg.Discord.DiscordTokens()
@@ -708,6 +715,23 @@ func main() {
 		} else {
 			discordBot = dbot
 			discordBotRef = dbot
+			proc.discordBot = dbot
+			// Replay any startup-time issues that happened before the bot
+			// was up so the operator sees them in the admin channel.
+			if proc.dtsInitErr != nil {
+				proc.adminNotice(fmt.Sprintf(
+					":rotating_light: DTS renderer initialization failed at startup — alerts will not be sent! Error: %s",
+					proc.dtsInitErr,
+				))
+			}
+			// Route DTS render errors to the admin channel, throttled per
+			// type|platform|language|template so a broken template doesn't
+			// flood the channel on every webhook event.
+			if proc.dtsRenderer != nil {
+				proc.dtsRenderer.SetErrorNoticer(func(key, msg string) {
+					proc.adminNoticeThrottled(key, msg, time.Hour)
+				})
+			}
 		}
 	}
 
@@ -740,6 +764,20 @@ func main() {
 		resolveDeps.TelegramAPI = telegramBot.API()
 	}
 	apiGroup.POST("/resolve", api.HandleResolve(resolveDeps))
+	apiGroup.POST("/autocreate/run", handleAutocreateRun(cfg, discordBot))
+	apiGroup.GET("/autocreate/templates", handleGetChannelTemplates(cfg))
+	apiGroup.POST("/autocreate/templates", handlePostChannelTemplates(cfg))
+	apiGroup.POST("/autocreate/templates/validate", handleValidateChannelTemplates())
+	apiGroup.DELETE("/autocreate/templates/:name", handleDeleteChannelTemplate(cfg))
+	apiGroup.GET("/autocreate/templates/schema", handleGetChannelTemplatesSchema())
+
+	// Backup-cleanup sweeper: walks config/backups/ on startup and every
+	// 24h, removes files older than the retention window.
+	stopBackupSweeper := backup.StartCleanupSweeper(
+		context.Background(),
+		filepath.Join(cfg.BaseDir, "config"),
+		backup.Retention,
+	)
 
 	// Start server
 	go func() {
@@ -764,6 +802,7 @@ func main() {
 
 	// 2. Stop bots (no more command processing)
 	close(periodicDone)
+	stopBackupSweeper()
 	if discordBot != nil {
 		discordBot.Close()
 		log.Infof("Discord bot disconnected")
@@ -844,6 +883,31 @@ type ProcessorService struct {
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
+
+	// discordBot is set by main after the bot starts so helpers can post
+	// to the admin channel. May be nil if Discord is disabled.
+	discordBot *discordbot.Bot
+
+	// dtsInitErr remembers a startup-time DTS-renderer init failure so
+	// main can post an admin notice once the Discord bot is up. nil
+	// when DTS init succeeded.
+	dtsInitErr error
+}
+
+// adminNotice posts to the admin channel if the bot is up. No-op when
+// Discord is disabled or the admin_channel_id config is empty.
+func (ps *ProcessorService) adminNotice(msg string) {
+	if ps.discordBot != nil {
+		ps.discordBot.PostAdminNotice(msg)
+	}
+}
+
+// adminNoticeThrottled posts to the admin channel with throttling. See
+// (*discordbot.Bot).PostAdminNoticeThrottled for semantics.
+func (ps *ProcessorService) adminNoticeThrottled(key, msg string, ttl time.Duration) {
+	if ps.discordBot != nil {
+		ps.discordBot.PostAdminNoticeThrottled(key, msg, ttl)
+	}
 }
 
 func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *sqlx.DB) *ProcessorService {
@@ -1105,9 +1169,11 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 		ShlinkDomain:        shlinkDomain,
 		DTSDictionary:       cfg.General.DTSDictionary,
 	})
+	var dtsInitErr error
 	if err != nil {
 		log.Errorf("DTS renderer initialization failed (alerts will not be sent!): %s", err)
 		dtsRenderer = nil
+		dtsInitErr = err
 	} else {
 		dtsRenderer.Templates().LogSummary()
 	}
@@ -1131,6 +1197,7 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 		renderCh:     renderCh,
 		enricher:     enricher,
 		dtsRenderer:  dtsRenderer,
+		dtsInitErr:   dtsInitErr,
 		scanner:      scannerInstance,
 		weather:      weatherTracker,
 		weatherCares: tracker.NewWeatherCareTracker(),

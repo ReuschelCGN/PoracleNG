@@ -39,17 +39,20 @@ func (b *Bot) sendTopicMessage(chatID int64, threadID int, text string) (*models
 	})
 }
 
-// sendMarkdownToTopic sends a MarkdownV1-parsed text message, threaded
-// into a topic when threadID > 0. Used by the reply path which renders
-// existing PoracleJS Markdown.
+// sendMarkdownToTopic accepts text in our canonical Markdown format
+// (the same syntax callers use for Discord), converts it to
+// Telegram-flavored HTML, and sends with parse_mode=HTML. HTML's
+// reserved-char surface is just <>&, so most messages parse on the
+// first try; the polling bot's plain-text fallback covers any edge
+// case that slips through.
 func (b *Bot) sendMarkdownToTopic(chatID int64, threadID int, text string) error {
 	ctx, cancel := requestCtx()
 	defer cancel()
 	_, err := b.api.SendMessage(ctx, &gotgbot.SendMessageParams{
 		ChatID:          chatID,
 		MessageThreadID: threadID,
-		Text:            text,
-		ParseMode:       models.ParseModeMarkdownV1,
+		Text:            markdownToHTML(text),
+		ParseMode:       models.ParseModeHTML,
 	})
 	return err
 }

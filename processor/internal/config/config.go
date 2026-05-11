@@ -32,6 +32,7 @@ type Config struct {
 	Tracking       TrackingConfig       `toml:"tracking"`
 	AI             AIConfig             `toml:"ai"`
 	Validation     ValidationConfig     `toml:"validation"`
+	Autocreate     AutocreateConfig     `toml:"autocreate"`
 
 	// BaseDir is the directory containing the config file, used to resolve relative paths.
 	BaseDir string `toml:"-"`
@@ -168,27 +169,29 @@ type AlerterConfig struct {
 
 // DiscordConfig reads the [discord] section for fields the processor needs.
 type DiscordConfig struct {
-	Enabled                    bool                    `toml:"enabled"` // false = disable bot even if token is set
-	Token                      any                     `toml:"token"`   // string or []string
-	Prefix                     string                  `toml:"prefix"`
-	Activity                   string                  `toml:"activity"` // bot activity/status text
-	Channels                   []string                `toml:"channels"` // registration channel IDs
-	Guilds                     []string                `toml:"guilds"`
-	UserRole                   []string                `toml:"user_role"`
-	CheckRole                  bool                    `toml:"check_role"`
-	CheckRoleInterval          int                     `toml:"check_role_interval"` // hours between periodic reconciliation
-	LostRoleMessage            string                  `toml:"lost_role_message"`
-	DisableAutoGreetings       bool                    `toml:"disable_auto_greetings"`
-	DmLogChannelID             string                  `toml:"dm_log_channel_id"`
-	DmLogChannelDeletionTime   int                     `toml:"dm_log_channel_deletion_time"` // minutes, 0 = don't delete
-	UnrecognisedCommandMessage string                  `toml:"unrecognised_command_message"` // custom reply, overrides i18n
-	UnregisteredUserMessage    string                  `toml:"unregistered_user_message"`    // custom reply, overrides i18n
-	IvColors                   []string                `toml:"iv_colors"`
-	Admins                     []string                `toml:"admins"`
-	UploadEmbedImages          bool                    `toml:"upload_embed_images"`
-	MessageDeleteDelay         int                     `toml:"message_delete_delay"` // extra ms for clean TTH on channels
-	RoleSubscriptions          []RoleSubscriptionEntry `toml:"role_subscriptions"`
-	CommandSecurity            map[string][]string     `toml:"command_security"`
+	Enabled                      bool                    `toml:"enabled"` // false = disable bot even if token is set
+	Token                        any                     `toml:"token"`   // string or []string
+	Prefix                       string                  `toml:"prefix"`
+	Activity                     string                  `toml:"activity"` // bot activity/status text
+	Channels                     []string                `toml:"channels"` // registration channel IDs
+	Guilds                       []string                `toml:"guilds"`
+	UserRole                     []string                `toml:"user_role"`
+	CheckRole                    bool                    `toml:"check_role"`
+	CheckRoleInterval            int                     `toml:"check_role_interval"` // hours between periodic reconciliation
+	LostRoleMessage              string                  `toml:"lost_role_message"`
+	DisableAutoGreetings         bool                    `toml:"disable_auto_greetings"`
+	DmLogChannelID               string                  `toml:"dm_log_channel_id"`
+	DmLogChannelDeletionTime     int                     `toml:"dm_log_channel_deletion_time"` // minutes, 0 = don't delete
+	UnrecognisedCommandMessage   string                  `toml:"unrecognised_command_message"` // custom reply, overrides i18n
+	UnregisteredUserMessage      string                  `toml:"unregistered_user_message"`    // custom reply, overrides i18n
+	IvColors                     []string                `toml:"iv_colors"`
+	Admins                       []string                `toml:"admins"`
+	UploadEmbedImages            bool                    `toml:"upload_embed_images"`
+	MessageDeleteDelay           int                     `toml:"message_delete_delay"`             // extra ms for clean TTH on channels
+	ThreadKeepAliveIntervalHours int                     `toml:"thread_keep_alive_interval_hours"` // hours between unarchive sweeps; 0 = disabled; >168 clamped to 168
+	AdminChannelID               string                  `toml:"admin_channel_id"`                 // channel for operator-facing notices (auto-disable events, keep-alive 404s, etc.); empty = disabled
+	RoleSubscriptions            []RoleSubscriptionEntry `toml:"role_subscriptions"`
+	CommandSecurity              map[string][]string     `toml:"command_security"`
 
 	// Delegated administration — TOML array-of-tables format
 	DelegatedAdmins    []DelegatedAdminEntry `toml:"delegated_admins"` // [[discord.delegated_admins]]
@@ -554,6 +557,28 @@ type FallbacksConfig struct {
 	PokestopURL    string `toml:"pokestop_url"`     // fallback pokestop URL (for pokestop_url field)
 }
 
+// AutocreateConfig holds the bulk-autocreate runner configuration.
+type AutocreateConfig struct {
+	// RemovalSafetyMaxPercent: abort the removal phase if removing more
+	// than this percent of cached fences (cache must be ≥10 entries for
+	// the check to engage). 0 disables the safety check.
+	RemovalSafetyMaxPercent int `toml:"removal_safety_max_percent"`
+
+	// Rules is the per-rule list. Each rule produces channels under one
+	// guild from one channelTemplate.json entry.
+	Rules []AutocreateRule `toml:"rules"`
+}
+
+// AutocreateRule is one [[autocreate.rules]] entry.
+type AutocreateRule struct {
+	Name          string   `toml:"name"`           // unique rule identifier
+	Guild         string   `toml:"guild"`          // Discord guild ID
+	Template      string   `toml:"template"`       // channelTemplate.json entry name
+	Filter        string   `toml:"filter"`         // optional Handlebars expression; empty = match all
+	Params        []string `toml:"params"`         // each element rendered per fence; positional template args
+	RemoveMissing bool     `toml:"remove_missing"` // permits orphan removal when the trigger requests it
+}
+
 // ResolvePath resolves a path relative to the config file's directory.
 // Absolute paths are returned as-is.
 func (c *Config) ResolvePath(p string) string {
@@ -561,6 +586,31 @@ func (c *Config) ResolvePath(p string) string {
 		return p
 	}
 	return filepath.Join(c.BaseDir, p)
+}
+
+// validateAutocreateRules surfaces obvious config mistakes early. Errors
+// here abort startup.
+func validateAutocreateRules(cfg *Config) error {
+	seen := map[string]bool{}
+	for i, r := range cfg.Autocreate.Rules {
+		if r.Name == "" {
+			return fmt.Errorf("[[autocreate.rules]] entry %d: name is required", i)
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("[[autocreate.rules]] entry %d: duplicate name %q", i, r.Name)
+		}
+		seen[r.Name] = true
+		if r.Guild == "" {
+			return fmt.Errorf("[[autocreate.rules]] %s: guild is required", r.Name)
+		}
+		if r.Template == "" {
+			return fmt.Errorf("[[autocreate.rules]] %s: template is required", r.Name)
+		}
+		if len(r.Params) == 0 {
+			return fmt.Errorf("[[autocreate.rules]] %s: params must contain at least one element", r.Name)
+		}
+	}
+	return nil
 }
 
 func Load(baseDir string) (*Config, error) {
@@ -802,6 +852,26 @@ func Load(baseDir string) (*Config, error) {
 	}
 	if cfg.WebhookLogging.Filename != "" && !filepath.IsAbs(cfg.WebhookLogging.Filename) {
 		cfg.WebhookLogging.Filename = filepath.Join(cfg.BaseDir, cfg.WebhookLogging.Filename)
+	}
+
+	// Autocreate defaults.
+	if cfg.Autocreate.RemovalSafetyMaxPercent < 0 {
+		cfg.Autocreate.RemovalSafetyMaxPercent = 0
+	}
+	// 0 = disabled (no upper-bound check); otherwise leave whatever the
+	// user set, including the implicit default of 0.
+
+	// Thread keep-alive defaults: clamp to 0..168.
+	if cfg.Discord.ThreadKeepAliveIntervalHours < 0 {
+		cfg.Discord.ThreadKeepAliveIntervalHours = 0
+	}
+	if cfg.Discord.ThreadKeepAliveIntervalHours > 168 {
+		cfg.Discord.ThreadKeepAliveIntervalHours = 168
+	}
+
+	// Validate autocreate config.
+	if err := validateAutocreateRules(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
