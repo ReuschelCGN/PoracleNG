@@ -94,9 +94,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 		}
 
 		st := ps.stateMgr.Get()
-		matchStart := time.Now()
 		matched, matchedAreas := ps.gymMatcher.Match(data, st)
-		metrics.MatchingDuration.WithLabelValues("gym").Observe(time.Since(matchStart).Seconds())
 		matched = ps.filterBlocked(matched)
 		matched = ps.filterValidation("gym", raw, matchedAreas, matched)
 
@@ -132,7 +130,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 				WebhookFields:     webhookFields,
 				MatchedUsers:      matched,
 				MatchedAreas:      matchedAreas,
-				TilePending:       tilePending,
+				TileGate:          ps.newTileGate(tilePending),
 				LogReference:      gymID,
 			}
 		} else {

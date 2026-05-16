@@ -11,6 +11,7 @@ All API endpoints are available through the processor (default port 3030). The p
 - [Type-Specific POST Fields](#type-specific-post-fields)
 - [Human Management](#human-management)
 - [Profile Management](#profile-management)
+- [Summary Schedules](#summary-schedules)
 - [Geofence Data & Tiles](#geofence-data--tiles)
 - [State Management](#state-management)
 - [Statistics](#statistics)
@@ -216,6 +217,25 @@ Force a state reload (same as POST /api/reload).
 | `distance` | int | 0 | Distance in metres (0 = use area) |
 | `template` | string | config default | DTS template name |
 | `clean` | bool | false | Auto-delete message after TTH |
+
+#### Pokemon change template (`monsterChanged`)
+
+When a tracked pokemon's data changes after the initial sighting (form, species, gender, or weather-boost shift), users with a prior message for that encounter receive a `monsterChanged` template render threaded as a reply to the original. Templates have access to the prior sighting via `{{original.X}}`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `original.pokemonId` | int | |
+| `original.formId` | int | |
+| `original.gender` | int | |
+| `original.cp`, `atk`, `def`, `sta` | int | 0 when not encountered |
+| `original.iv` | float | 0 when not encountered |
+| `original.weatherId` | int | Pre-shift in-game weather |
+| `original.encountered` | bool | true once CP > 0 |
+| `original.name`, `formName`, `weatherName`, `fullName` | string | translated to the recipient's language |
+
+The encounter event itself (non-IV → IV) deliberately re-fires the regular `monster` template threaded as a reply — it's the natural fulfilment of the non-IV alert, not a "change". Reply threading is implicit (every pokemon render carries a reply key keyed on the encounter ID) and applies to both Discord (`message_reference`) and Telegram (`reply_to_message_id`). Edit mode (clean bit 2) takes priority when set: the prior message is updated in place rather than replied to. Users matched at the change event with no prior message receive a fresh `monster` render (no reply target, no `monsterChanged` — they never saw the original).
+
+Ships a default `monsterChanged` template per platform in `fallbacks/dts.json`; admins can override via `config/dts.json` or `config/dts/` like any other type.
 
 ### Raid Tracking
 
@@ -516,6 +536,56 @@ Copy all tracking rules from one profile to another.
 ### DELETE /api/profiles/{id}/byProfileNo/{profile_no}
 
 Delete a profile and all its tracking rules.
+
+---
+
+## Summary Schedules
+
+Summary schedules buffer matched events (currently `quest`) until a per-user, per-alert-type schedule fires. Each row in `summary_schedules` holds an `active_hours` JSON array shaped exactly like a profile's `active_hours` (`[{day, hours, mins}, …]`). Tracking rules opt into buffered delivery by setting bit 4 of the rule's `clean` bitmask (the `summary` keyword in `!quest`).
+
+When `[tracking] quest_summary_enabled = false` all five endpoints return `503 Service Unavailable` with a status payload — clients can distinguish "feature off" from "endpoint missing" without parsing strings.
+
+### GET /api/summaries/{id}
+
+List every summary schedule for the user across all alert types.
+
+```json
+{
+  "status": "ok",
+  "schedules": [
+    {"id": "123", "alert_type": "quest", "active_hours": [{"day": 1, "hours": 7, "mins": 30}]}
+  ]
+}
+```
+
+### GET /api/summaries/{id}/{alertType}
+
+Return one schedule. `alertType` is `quest` today (the only renderer wired). Missing schedules return `404` with `{"status":"error","message":"schedule not found"}`.
+
+```json
+{
+  "status": "ok",
+  "schedule": {"id": "123", "alert_type": "quest", "active_hours": [{"day": 1, "hours": 7, "mins": 30}]}
+}
+```
+
+### POST /api/summaries/{id}/{alertType}
+
+Create or replace a schedule. Body must contain `active_hours` either as a JSON array or a stringified JSON value:
+
+```json
+{"active_hours": [{"day": 1, "hours": 7, "mins": 30}]}
+```
+
+Either form is canonicalised before storage. The processor triggers a debounced state reload after a successful set, so an in-flight scheduler tick picks up the change without waiting for the periodic reload.
+
+### DELETE /api/summaries/{id}/{alertType}
+
+Remove a schedule. Deleting a missing schedule is a no-op (`200 ok`) so idempotent clean-up scripts don't have to special-case 404.
+
+### POST /api/summaries/{id}/{alertType}/trigger
+
+Force-flush the buffered events for `(id, alertType)` immediately. Equivalent to `!summary <alertType> now`. Returns `200 ok` regardless of whether the buffer was empty. The handler invokes the dispatch callback synchronously, so the response only returns after the dispatcher has enqueued (not delivered) the rendered messages.
 
 ---
 

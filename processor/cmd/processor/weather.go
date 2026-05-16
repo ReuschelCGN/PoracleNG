@@ -78,32 +78,43 @@ func (ps *ProcessorService) consumeWeatherChanges() {
 				CaresUntil: u.CaresUntil,
 			}
 
-			// Attach active pokemon affected by this weather change.
-			// show_altered_pokemon is a display-content flag (see
-			// config.example.toml: "track weather changed pokemon to show
-			// in DTS"), NOT a filter. An empty affected list must not
-			// suppress the alert — the weather change itself is the news.
+			// Attach active pokemon affected by this weather change. When
+			// show_altered_pokemon is enabled (and the tracker is therefore
+			// non-nil), the alert is also gated on at least one of the
+			// user's tracked pokemon actually flipping boost status —
+			// matches the original PoracleJS behaviour. Weather transitions
+			// where every tracked pokemon either keeps or stays-without
+			// boost (e.g. a Normal/Flying pokemon under Windy → Partly
+			// Cloudy: boosted under both) produce no useful information.
+			//
+			// When show_altered_pokemon is off, we have no active-pokemon
+			// data to filter on, so the cell-cares set is the only signal
+			// and the alert fires for everyone who registered weather care
+			// for this cell.
 			if ps.activePokemon != nil {
 				affected := ps.activePokemon.GetAffectedPokemon(
 					change.S2CellID, u.ID,
 					change.OldGameplayCondition, change.GameplayCondition,
 					ps.cfg.Weather.ShowAlteredPokemonMaxCount,
 				)
-				if len(affected) > 0 {
-					entries := make([]webhook.ActivePokemonEntry, len(affected))
-					for j, ap := range affected {
-						entries[j] = webhook.ActivePokemonEntry{
-							PokemonID:     ap.PokemonID,
-							Form:          ap.Form,
-							IV:            ap.IV,
-							CP:            ap.CP,
-							Latitude:      ap.Latitude,
-							Longitude:     ap.Longitude,
-							DisappearTime: ap.DisappearTime,
-						}
-					}
-					mu.ActivePokemons = entries
+				if len(affected) == 0 {
+					l.Debugf("Weather alert skipped for %s (%s) — no tracked pokemon affected by %d→%d transition",
+						u.Name, u.ID, change.OldGameplayCondition, change.GameplayCondition)
+					continue
 				}
+				entries := make([]webhook.ActivePokemonEntry, len(affected))
+				for j, ap := range affected {
+					entries[j] = webhook.ActivePokemonEntry{
+						PokemonID:     ap.PokemonID,
+						Form:          ap.Form,
+						IV:            ap.IV,
+						CP:            ap.CP,
+						Latitude:      ap.Latitude,
+						Longitude:     ap.Longitude,
+						DisappearTime: ap.DisappearTime,
+					}
+				}
+				mu.ActivePokemons = entries
 			}
 
 			matched = append(matched, mu)
@@ -171,18 +182,33 @@ func (ps *ProcessorService) consumeWeatherChanges() {
 				perLang = map[string]map[string]any{lang: langEnrichment}
 			}
 
-			// For clean weather alerts, TTH aligns with the longest TTH of any
-			// matched pokemon (CaresUntil). This is maintained by the weather
-			// care tracker independently of show_altered_pokemon, so clean
-			// weather alerts get a correct TTH even when the active-pokemon
-			// tracker is disabled. Users below the min-alert threshold were
-			// already dropped when matched was built.
+			// For clean weather alerts, align TTH with the longest-lived
+			// pokemon actually shown in the alert. CaresUntil is the max
+			// across every pokemon ever registered for this cell (extended,
+			// never reduced — see WeatherCareTracker.Register) and so can
+			// outlive the pokemon the alert mentions. Using it directly
+			// produced a real-world bug: pokemon A despawned and was
+			// clean-deleted, but the weather alert that mentioned A stayed
+			// behind until pokemon B's later despawn time. When the
+			// activePokemon tracker is off we have no per-pokemon data,
+			// so we fall back to CaresUntil as the best estimate.
 			userEnrichment := baseEnrichment
-			if user.Clean > 0 && user.CaresUntil > 0 {
-				// Copy base enrichment to avoid mutating shared map
-				userEnrichment = make(map[string]any, len(baseEnrichment)+1)
-				maps.Copy(userEnrichment, baseEnrichment)
-				userEnrichment["tth"] = geo.ComputeTTH(user.CaresUntil)
+			if user.Clean > 0 {
+				cleanUntil := weatherAlertCleanUntil(user)
+				if cleanUntil > 0 {
+					// Re-check the min-alert threshold with the
+					// alert-accurate TTH (the pre-filter at the top of
+					// the loop used CaresUntil, which can over-estimate
+					// when only short-lived active pokemon remain).
+					if remaining := cleanUntil - now; remaining < minAlert {
+						l.Debugf("Weather alert suppressed for %s (%s) — alert TTH %ds below alert_minimum_time %ds",
+							user.Name, user.ID, remaining, minAlert)
+						continue
+					}
+					userEnrichment = make(map[string]any, len(baseEnrichment)+1)
+					maps.Copy(userEnrichment, baseEnrichment)
+					userEnrichment["tth"] = geo.ComputeTTH(cleanUntil)
+				}
 			}
 
 			// Use per-user tile if available, otherwise base tile
@@ -198,9 +224,28 @@ func (ps *ProcessorService) consumeWeatherChanges() {
 				WebhookFields:     webhookFields,
 				MatchedUsers:      []webhook.MatchedUser{user},
 				MatchedAreas:      matchedAreas,
-				TilePending:       tp,
+				TileGate:          ps.newTileGate(tp),
 				LogReference:      change.S2CellID,
 			}
 		}
 	}
+}
+
+// weatherAlertCleanUntil returns the unix timestamp at which a clean
+// weather alert should auto-delete. Prefers max(ActivePokemons.DisappearTime)
+// — those are the pokemon the alert actually mentions, and aligning TTH
+// with them avoids orphan weather messages outliving the alerted pokemon.
+// Falls back to CaresUntil (the user's cell-wide care window) when the
+// active-pokemon tracker is off, since per-pokemon data isn't available.
+func weatherAlertCleanUntil(user webhook.MatchedUser) int64 {
+	if len(user.ActivePokemons) == 0 {
+		return user.CaresUntil
+	}
+	var maxDisappear int64
+	for _, ap := range user.ActivePokemons {
+		if ap.DisappearTime > maxDisappear {
+			maxDisappear = ap.DisappearTime
+		}
+	}
+	return maxDisappear
 }

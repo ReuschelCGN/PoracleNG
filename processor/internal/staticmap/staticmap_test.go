@@ -206,6 +206,63 @@ func TestGetConfigForTileTypeStaticMapType(t *testing.T) {
 	}
 }
 
+// Trailing slashes on the configured tileserver URL must be trimmed
+// at New() so downstream `host + "/" + path` concats don't yield
+// `host//path` (which tileservers reject with 404). Operator-paste
+// mistake; regression guard.
+func TestTileserverURLTrailingSlashTrimmed(t *testing.T) {
+	cases := []struct {
+		name        string
+		providerURL string
+	}{
+		{"trailing slash", "http://vpsip:9000/"},
+		{"no trailing slash", "http://vpsip:9000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := New(Config{
+				Provider:    "tileservercache",
+				ProviderURL: c.providerURL,
+			})
+			url := r.GetTileURL("monster", map[string]any{"latitude": 51.28, "longitude": 1.08}, "staticMap")
+			if strings.Contains(url, "//staticmap") {
+				t.Errorf("tile URL contains double slash before staticmap: %q", url)
+			}
+			if !strings.Contains(url, "/staticmap/poracle-monster") {
+				t.Errorf("tile URL missing expected path: %q", url)
+			}
+		})
+	}
+}
+
+// Provider="rampardos" must route through the same tileservercache
+// pipeline (identical wire format). GetStaticMapURLAsync's gate is
+// the load-bearing one — non-tileservercache providers bypass async
+// pregeneration, so a typo there would silently strip rampardos of
+// pregen support. This test pins both providers to the same async
+// path so any future divergence requires a deliberate test update.
+func TestRampardosProviderAliasesTileserverCache(t *testing.T) {
+	for _, provider := range []string{"tileservercache", "rampardos"} {
+		t.Run(provider, func(t *testing.T) {
+			r := New(Config{
+				Provider:    provider,
+				ProviderURL: "https://tiles.example.com",
+				TileserverSettings: map[string]TileTypeConfig{
+					"default": {Type: "staticMap", Pregenerate: boolPtr(true)},
+				},
+			})
+			target := map[string]any{}
+			url, pending := r.GetStaticMapURLAsync("monster", map[string]any{"latitude": 51.28, "longitude": 1.08}, nil, nil, target)
+			if pending == nil {
+				t.Fatalf("provider %q: expected pregen pending, got nil (provider was treated as instant)", provider)
+			}
+			if url != "" {
+				t.Errorf("provider %q: pregen path returns URL after async resolution, sync return should be empty: got %q", provider, url)
+			}
+		})
+	}
+}
+
 func TestGetTileURL(t *testing.T) {
 	r := New(Config{
 		Provider:    "tileservercache",

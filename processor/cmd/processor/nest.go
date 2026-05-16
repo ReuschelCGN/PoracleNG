@@ -58,9 +58,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 		}
 
 		st := ps.stateMgr.Get()
-		matchStart := time.Now()
 		matched, matchedAreas := ps.nestMatcher.Match(data, st)
-		metrics.MatchingDuration.WithLabelValues("nest").Observe(time.Since(matchStart).Seconds())
 		matched = ps.filterBlocked(matched)
 		matched = ps.filterValidation("nest", raw, matchedAreas, matched)
 
@@ -96,7 +94,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 				WebhookFields:     webhookFields,
 				MatchedUsers:      matched,
 				MatchedAreas:      matchedAreas,
-				TilePending:       tilePending,
+				TileGate:          ps.newTileGate(tilePending),
 				LogReference:      fmt.Sprintf("%d", nest.NestID),
 			}
 		} else {

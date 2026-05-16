@@ -314,6 +314,76 @@ RDM-style fallback can't infer one.
 
 ---
 
+## Pokemon Changed (`monsterChanged`)
+
+`monsterChanged` fires for **post-encounter** changes to an already-tracked
+pokemon — form, species, gender, or weather-boost shift. The non-IV → IV
+encounter event itself stays on the regular `monster` template (it's the
+fulfilment of the existing alert, not a "change"); both kinds of update are
+dispatched as a reply to the prior message via the implicit reply key on
+every pokemon render. See [API.md](API.md#pokemon-change-template-monsterchanged)
+for the operator-facing summary.
+
+The template receives every field listed under [Pokemon (`monster` /
+`monsterNoIv`)](#pokemon-monster--monsternoiv) — those describe the **new**
+state. Additionally, `{{original.X}}` exposes the same field set for the
+**prior** sighting (minus PVP, which is stripped at storage time): identity
+(`original.fullName`, `original.formName`, `original.pokemonId`, …), battle
+stats (`original.cp`, `original.iv`, `original.atk/def/sta`,
+`original.level`), weather (`original.weatherName`, `original.gameWeatherId`),
+images and map URLs (`original.imgUrl`, `original.staticMap`,
+`original.mapurl`), and so on.
+
+`{{original.X}}` is rendered per recipient: each user's language picks the
+appropriate translated names (`original.fullName` for a German user is
+"Glumanda", for an English user "Charmander"). PVP rankings are not
+available under `original.*`.
+
+**Guard stat fields with `{{#if encountered}}`.** A species/form change
+fires `monsterChanged` as soon as the new species is *known*, which can
+be before it has been encountered (Golbat's wild webhook lands before
+the encounter webhook). In that window, `cp`, `level`, `atk/def/sta`,
+`iv`, `quickMoveName`, etc. are all zero/empty, and `iv` is `-1`. Wrap
+the stats portion of your template in `{{#if encountered}}…{{else}}…{{/if}}`
+so you don't render "−1% Foo cp:0 L:0 0/0/0" while waiting for the
+encounter. The shipped fallbacks do this.
+
+Only set when fired by a true change event — the dispatcher also leaves
+`{{original.X}}` empty when:
+- The encounter event reuses the regular `monster` template (CP 0 → >0).
+- The matched user had no prior message for the encounter (a fresh
+  `monster` render is sent instead, no reply, no `original`).
+- Pokemon change tracking is disabled via `[tracking]
+  pokemon_change_tracking = false`.
+
+### Change dimension fields
+
+`monsterChanged` also exposes two fields describing the kind of change that
+fired the alert. Use these in templates to switch wording or styling:
+
+| Field | Type | Description |
+|---|---|---|
+| `changeType` | string | One of `species` or `stats`. See table below. |
+| `changeTypeText` | string | Localised label (e.g. "species change", "stats change"). |
+
+| `changeType` | Fires for | Meaning |
+|---|---|---|
+| `species` | `ChangeSpecies`, `ChangeForm`, `ChangeGender` | Identity change. Community-day re-classifications, or the "A/B pokemon" anomaly where Golbat reports a different species ID for the same encounter. |
+| `stats` | `ChangeWeatherBoost`, `ChangeStats` | Same pokemon, different effective stats. Weather-boost shifts the CP/level post-encounter; `ChangeStats` fires when Golbat re-reports the same encounter with different raw IVs (atk/def/sta) — the scanner anomaly where successive webhooks for the same encounter ID carry different IV values. |
+
+The `ChangeEncountered` dimension (CP 0 → >0, "IVs just arrived") does **not**
+fire `monsterChanged`. Users tracking IV-insensitively (`!track pikachu`, no
+filter) get a regular `monster` reply via the matched path. Users with strict
+IV filters never matched the wild webhook in the first place (the matcher
+rejects rules with `min_iv > -1` when CP=0), so there is no prior message
+to follow up.
+
+PoracleNG ships a default `monsterChanged` template per platform in
+`fallbacks/dts.json`; admins override via `config/dts.json` or
+`config/dts/` like any other type.
+
+---
+
 ## Raid (`raid`)
 
 Hatched raid with a boss pokemon.
@@ -513,6 +583,37 @@ These are flat top-level strings, not nested under a `rewardData` object:
 | `items` | array | Item rewards: `{id, amount, name, nameEng}` |
 | `energyMonsters` | array | Mega energy rewards: `{pokemonId, amount, name, nameEng}` |
 | `candy` | array | Candy rewards: `{pokemonId, amount, name, nameEng}` |
+
+---
+
+## Quest Summary (`questSummary`)
+
+`questSummary` templates render a *grouped* quest message rather than a per-quest one. Quest tracking rules with bit 4 set on `clean` (use the `summary` keyword) skip immediate delivery; their matches are buffered until the user's `[summary_schedules]` active hours fire (or `!summary quest now` is invoked). At dispatch the buffered quests are grouped by `(rewardType, reward)` and rendered once per group.
+
+The view passed to `questSummary` is shaped differently from a regular `quest` template: the reward fields (icon, translated name, count) live at the top level, and the per-pokestop entries live under the `quests` array. Per-entry fields mirror the regular `quest` view (see above), so `{{#each quests}}` rows can use `{{pokestopName}}`, `{{googleMapUrl}}`, `{{addr}}`, etc. just like a single-pokestop quest template. The only `questSummary`-specific per-entry field is `withAR`, which lets a row label AR-required quests separately.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rewardType` | int | Reward type ID (2=item, 3=stardust, 4=candy, 7=pokemon, 12=mega energy) |
+| `reward` | int | Reward ID (item ID for type 2, dust amount for type 3, pokemon ID for types 4/7/12) |
+| `rewardForm` | int | Pokemon form ID for `rewardType == 7` (so e.g. two different Spinda forms group separately). `0` for all other reward types. |
+| `rewardName` | string | Translated reward name for the group header. Formatted to match the per-row reward strings from regular `quest` enrichment, **with amounts stripped** for types 2/4/12 because amounts vary across stops within a group. Examples: `"Spinda 01"` (type 7 + form, matches per-row `fullName`), `"Lapras Candy"` (type 4), `"Charizard Mega Energy"` (type 12), `"Razz Berry"` (type 2), `"1500 Stardust"` (type 3 — amount is included because it's part of the group key). |
+| `imgUrl` | string | Reward icon URL — best used as a Discord thumbnail/image. Telegram's `/sendSticker` is stricter; use `stickerUrl` there. |
+| `stickerUrl` | string | Reward sticker URL — sized and formatted for Telegram's sticker constraints. Use this for the Telegram `sticker` field. |
+| `staticMap` | string | Multi-pin static map URL — autopositioned over the pokestops in **this chunk** only |
+| `count` | int | Total number of pokestops in the reward group (across every chunk, not just this message) |
+| `chunk` | int | 1-based index of this message when an oversized group is split across multiple messages. Always `1` when `chunks == 1`. |
+| `chunks` | int | Total number of chunks the group was split into. Wrap chunk-suffix output in `{{#if (gt chunks 1)}}…{{/if}}` so single-message groups stay clean. |
+| `quests` | array | Per-pokestop entries for **this chunk** — each carries the same fields as a regular `quest` template view (see [Quest](#quest-quest)) plus `withAR` |
+| `quests[i].withAR` | bool | True if this pokestop's quest requires the AR scanner |
+
+The static map is built via the `questSummary` tile type. Like every other tile type, the URL pattern is `/staticmap/poracle-questsummary`; map mode is configurable via `[geocoding.static_map_type] questSummary = "..."` if you want anything other than the default `staticMap`. Each chunk's map shows only the pokestops in that chunk so the bullet list and pins always match.
+
+### Chunking
+
+When a single reward group would render to a Discord embed bigger than the platform allows (description length, field count, or total embed size), the dispatcher splits the group into multiple messages. Each message gets its own `chunk`/`chunks`/`quests`/`staticMap`; `count` stays at the full group total so the header can read e.g. "60× Rare Candy (1/3)". A single-chunk group has `chunks == 1` — guard chunk-suffix output with `{{#if (gt chunks 1)}}…{{/if}}`.
+
+`questSummary` messages are always fresh sends — edit-mode and reply-threading don't apply. The source rule's `clean` bit is OR'd across the constituent rules contributing to a single reward group, so the summary message for that group inherits clean-deletion if any rule had it enabled. The TTH used for clean-deletion is the latest `ExpiresAt` within the same reward group (the "summarised block" — the one logical message, or the chunks it splits into when oversized), so the message lives at least as long as the longest constituent quest. Different reward groups in the same dispatch compute their own clean + TTH independently.
 
 ---
 

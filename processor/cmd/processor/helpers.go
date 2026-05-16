@@ -80,25 +80,43 @@ func areaNames(areas []webhook.MatchedArea) string {
 	return strings.Join(names, ",")
 }
 
-// distinctLanguages returns the unique language codes from matched users.
-// Users with no language set fall back to defaultLocale.
-func distinctLanguages(matched []webhook.MatchedUser, defaultLocale string) []string {
-	if defaultLocale == "" {
-		defaultLocale = "en"
+// effectiveLanguage returns the language code to use for a matched user,
+// falling back to defaultLocale (or "en" if that's blank). Single source
+// of truth for the blank-language fallback rule.
+func effectiveLanguage(m webhook.MatchedUser, defaultLocale string) string {
+	if m.Language != "" {
+		return m.Language
 	}
+	if defaultLocale != "" {
+		return defaultLocale
+	}
+	return "en"
+}
+
+// distinctLanguages returns the unique language codes from matched users.
+func distinctLanguages(matched []webhook.MatchedUser, defaultLocale string) []string {
 	seen := make(map[string]bool, 4)
 	var langs []string
 	for _, m := range matched {
-		lang := m.Language
-		if lang == "" {
-			lang = defaultLocale
-		}
+		lang := effectiveLanguage(m, defaultLocale)
 		if !seen[lang] {
 			seen[lang] = true
 			langs = append(langs, lang)
 		}
 	}
 	return langs
+}
+
+// groupByLanguage buckets matched users by language code. Used by the
+// change-event dispatcher to fan out one RenderJob per language so each
+// recipient gets a language-specific {{original.X}} view.
+func groupByLanguage(matched []webhook.MatchedUser, defaultLocale string) map[string][]webhook.MatchedUser {
+	out := make(map[string][]webhook.MatchedUser)
+	for _, m := range matched {
+		lang := effectiveLanguage(m, defaultLocale)
+		out[lang] = append(out[lang], m)
+	}
+	return out
 }
 
 // parseWebhookFields deserialises the raw webhook JSON into a map for use as
@@ -257,6 +275,18 @@ func (ps *ProcessorService) OnBreach(target, typ, name, language string, limit, 
 	ps.dispatchBypass(target, typ, name, msg, "RateLimit")
 }
 
+// notifySummaryRateBreach sends the one-time "you hit the summary
+// limit" notification on the same bypass channel the alert-bucket
+// breach hook uses. Distinct from OnBreach because (a) the message
+// wording differs (digests vs individual alerts) and (b) the summary
+// bucket has no ban path — opting into summaries should never lead
+// to auto-disable.
+func (ps *ProcessorService) notifySummaryRateBreach(target, typ, name, language string, limit int) {
+	tr := ps.translations.For(language)
+	msg := tr.Tf("rate_limit.summary_reached", limit, ps.cfg.AlertLimits.TimingPeriod, bot.CommandPrefixForType(ps.cfg, typ))
+	ps.dispatchBypass(target, typ, name, msg, "SummaryRateLimit")
+}
+
 // OnBan implements delivery.RateLimitHooks. Invoked when a destination has
 // accumulated enough breaches in 24h to be banned. Disables the human in the
 // DB, sends a farewell message, posts to the shame channel if configured, and
@@ -350,7 +380,7 @@ func (ps *ProcessorService) triggerReload() {
 		ps.reloadTimer.Stop()
 	}
 	ps.reloadTimer = time.AfterFunc(500*time.Millisecond, func() {
-		if err := state.Load(ps.stateMgr, ps.database); err != nil {
+		if err := state.Load(ps.stateMgr, ps.database, ps.summarySchedules); err != nil {
 			log.Errorf("Debounced state reload failed: %s", err)
 			ps.adminNoticeThrottled(
 				"state.reload.fail",
