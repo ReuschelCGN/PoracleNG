@@ -16,9 +16,9 @@ import (
 const (
 	rawMasterURL   = "https://raw.githubusercontent.com/WatWowMap/Masterfile-Generator/master/master-latest-raw.json"
 	gruntsURL      = "https://raw.githubusercontent.com/WatWowMap/event-info/main/grunts/classic.json"
-	localeIndex    = "https://raw.githubusercontent.com/WatWowMap/pogo-translations/master/index.json"
-	localesBaseURL = "https://raw.githubusercontent.com/WatWowMap/pogo-translations/master/static/locales/"
-	manualBaseURL  = "https://raw.githubusercontent.com/WatWowMap/pogo-translations/master/static/manual/"
+	localeIndex    = "https://raw.githubusercontent.com/ReuschelCGN/pogo-translations/refs/heads/mastermod/index.json"
+	localesBaseURL = "https://raw.githubusercontent.com/ReuschelCGN/pogo-translations/refs/heads/mastermod/static/locales/"
+	manualBaseURL  = "https://raw.githubusercontent.com/ReuschelCGN/pogo-translations/refs/heads/mastermod/static/manual/"
 )
 
 // Download fetches game data and locale files into the resources directory.
