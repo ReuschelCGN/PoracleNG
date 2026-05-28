@@ -626,7 +626,7 @@
 
   "msg.area.display": "gewähltes Gebiet: {0}",
   "msg.area.overview_display": "Übersichtsanzeige",
-  "msg.area.invalid": "Kein gültiges Gebiet. Nutze `{0}{1} list`",
+  "msg.area.invalid": "Kein gültiges Gebiet. Nutze `{0}{1} auflisten`",
   "msg.area.current": "Aktuell sind folgende Gebiete festgelegt:",
 
   "msg.userlist.registered": "Folgende Nutzer sind bei Poracle registriert:",
@@ -698,7 +698,7 @@
   "slash.opt.info.pokemon.name.desc": "Pokemon-Name (beliebige unterstützte Sprache) oder Pokedex-ID",
   "slash.opt.info.rarity": "seltenheit",
   "slash.opt.info.rarity.desc": "Pokemon nach Spawn-Seltenheit gruppiert (häufig → ultra-selten)",
-  "slash.opt.info.shiny": "shiny",
+  "slash.opt.info.shiny": "schillernd",
   "slash.opt.info.shiny.desc": "Beobachtete Shinyraten pro Art anzeigen",
   "slash.opt.info.weather": "wetter",
   "slash.opt.info.weather.desc": "Aktuelles Wetter und geboostete Typen für einen Standort",
@@ -712,8 +712,8 @@
   "slash.desc.invasion": "Beobachte eine Team Go Rocket Invasion",
   "slash.desc.incident": "Beobachte einen Pokestop Ereignis (Kecleon, Goldstop, Showcase…)",
   "slash.desc.lure": "Beobachte ein Pokestop Lockmodul",
-  "slash.desc.nest": "Beobachte ein nestendes Pokemon",
-  "slash.desc.maxbattle": "Beobachte ein Giga- Dynamax Kampf",
+  "slash.desc.nest": "Beobachte ein nistendes Pokemon",
+  "slash.desc.maxbattle": "Beobachte ein Giga- Dynamaxkampf",
   "slash.desc.gym": "Beobachte Arena Team / Slot / Kampf Änderungen",
   "slash.desc.fort": "Beobachte Pokestop oder Arena Updates",
   "slash.desc.untrack": "Entferne eine Tracking Regel",
