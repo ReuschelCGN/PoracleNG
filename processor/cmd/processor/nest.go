@@ -98,7 +98,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 				MatchedUsers:      matched,
 				MatchedAreas:      matchedAreas,
 				TileGate:          ps.newTileGate(tilePending),
-				LogReference:      fmt.Sprintf("%d", nest.NestID),
+				LogReference:      nest.NestID,
 			}
 		} else {
 			l.Debugf("Nest %s (avg %.1f/hr) and 0 humans cared",
