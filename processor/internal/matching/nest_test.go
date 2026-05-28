@@ -66,7 +66,7 @@ func TestNestMatchAnyPokemon(t *testing.T) {
 	matcher := &NestMatcher{}
 
 	data := &NestData{
-		NestID: 1234, PokemonID: 999, Form: 0, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 999, Form: 0, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 
@@ -87,7 +87,7 @@ func TestNestMatchWrongPokemon(t *testing.T) {
 	matcher := &NestMatcher{}
 
 	data := &NestData{
-		NestID: 1234, PokemonID: 26, Form: 0, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 26, Form: 0, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 
@@ -109,7 +109,7 @@ func TestNestMatchFormFilter(t *testing.T) {
 
 	// Wrong form
 	data := &NestData{
-		NestID: 1234, PokemonID: 25, Form: 0, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 25, Form: 0, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 	matched, _ := matcher.Match(data, st)
@@ -136,7 +136,7 @@ func TestNestMatchFormAny(t *testing.T) {
 	matcher := &NestMatcher{}
 
 	data := &NestData{
-		NestID: 1234, PokemonID: 25, Form: 5, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 25, Form: 5, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 
@@ -159,7 +159,7 @@ func TestNestMatchMinSpawnAvg(t *testing.T) {
 
 	// Below minimum
 	data := &NestData{
-		NestID: 1234, PokemonID: 25, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 25, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 	matched, _ := matcher.Match(data, st)
@@ -187,7 +187,7 @@ func TestNestBlockedAlerts(t *testing.T) {
 	matcher := &NestMatcher{}
 
 	data := &NestData{
-		NestID: 1234, PokemonID: 25, PokemonAvg: 5.0,
+		NestID: "1234", PokemonID: 25, PokemonAvg: 5.0,
 		Latitude: 51.0, Longitude: 0.0,
 	}
 
