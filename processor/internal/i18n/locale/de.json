@@ -606,7 +606,7 @@
   "msg.enable.specify": "Bitte Benutzer-IDs angeben",
   "msg.enable.success": "Aktiviert: {0}",
   "msg.disable.success": "Deaktiviert: {0}",
-  "msg.no_permission": "keine Berechtigung dieses Komando zu benutzen",
+  "msg.no_permission": "keine Berechtigung diesen Befehl zu benutzen",
   "msg.no_permission.pokemon": "keine Berechtigung Pokémon zu tracken",
   "msg.no_permission.gym": "keine Berechtigung Arenen zu tracken",
   "msg.no_permission.invasion": "keine Berechtigung Team-GO-Rocket-Invasionen zu tracken",
@@ -614,9 +614,9 @@
   "msg.no_permission.maxbattle": "keine Berechtigung dynamax Kämpfe zu tracken",
   "msg.no_permission.fort": "keine Berechtigung Gym und Stop Änderungen zu tracken",
 
-  "msg.stop.warn_args": "Der Befehl {0}{1} stoppt alle Warnmeldungen. Ist das gewünscht?",
-  "msg.stop.success": "Alle Warnmeldungen wurden gestoppt, sie können mit {0}{1} fortgesetzt werden.",
-  "msg.start.success": "Warnmeldungen wurden wieder aktiviert",
+  "msg.stop.warn_args": "Der Befehl {0}{1} stoppt alle Alarm Nachrichten. Ist das gewünscht?",
+  "msg.stop.success": "Alle Alarm Nachrichten wurden gestoppt, sie können mit {0}{1} fortgesetzt werden.",
+  "msg.start.success": "Alarm Nachrichten wurden wieder aktiviert",
 
   "msg.language.changed": "Folgende Sprache wurde eingestellt: {0}",
   "msg.language.current": "Aktuell eingestellte Sprache: {0}",
@@ -636,7 +636,7 @@
   "msg.dm_only": "Befehle müssen als Direktnachrichten an den Poracle-Bot gesendet werden!",
   "msg.admin_no_distance": "Warnung: Befehl ohne Distanz erkannt - standard Distanz wird stattdessen verwendet",
   "msg.not_registered": "Du bist nicht registriert. Bitte registriere dich zuerst.",
-  "msg.channel_admin_only": "Nur Channel-Administratoren können Befehle in diesem Kanal ausführen. DM dem Bot mit {0}komando, um deine persönlichen Trackings zu verwalten.",
+  "msg.channel_admin_only": "Nur Channel-Administratoren können Befehle in diesem Kanal ausführen. DM dem Bot mit {0}deinbefehl, um deine persönlichen Trackings zu verwalten.",
 
   "msg.backup.invalid_name": "Fügen einen gültigen Backup Namen hinzu (nur: Buchstaben, Zahlen, Bindestriche und Unterstriche)",
   "msg.backup.need_name": "Dein Backup benötigt einen gültigen Namen (nur: Buchstaben, Zahlen, Bindestriche, Unterstriche)",
