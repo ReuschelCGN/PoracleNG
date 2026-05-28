@@ -42,7 +42,7 @@ func TestNestMatchBasic(t *testing.T) {
 	matcher := &NestMatcher{}
 
 	data := &NestData{
-		NestID:     1234,
+		NestID:     "1234",
 		PokemonID:  25,
 		Form:       0,
 		PokemonAvg: 5.0,
