@@ -75,7 +75,7 @@
   "tracking.all_level_maxbattles": "alle Dynakampflevel",
   "tracking.level_n_maxbattles": "Level {0} Dynakampf",
   "tracking.all_teams_gyms": "alle Teamarenen",
-  "tracking.team_gyms_fmt": "{0}-Arenen",
+  "tracking.team_gyms_fmt": "{0} Arenen",
   "tracking.with_move_fmt": "mit Attacke {0}",
   "tracking.controlled_by_fmt": "kontrolliert von {0}",
   "tracking.must_be_ex": "muss eine Ex-Raid-Arena sein",
