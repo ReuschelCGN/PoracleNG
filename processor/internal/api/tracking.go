@@ -275,16 +275,16 @@ func (l *lenient[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &l
 func (l lenient[T]) MarshalJSON() ([]byte, error)   { return json.Marshal(l.Value) }
 
 func (lenient[T]) Schema(r huma.Registry) *huma.Schema {
-	// allowRef=false gives us the actual schema object (not a $ref wrapper) so
-	// we can mutate AdditionalProperties on it directly. This also means the
-	// schema is inlined in the request body rather than going through $ref, which
-	// is fine — both produce identical validation behaviour.
-	s := r.Schema(reflect.TypeOf(*new(T)), false, "")
+	// allowRef=false returns the registry's STORED *Schema for T. We must not
+	// mutate it in place — that would contaminate every other use of T, including
+	// strict handlers that expect additionalProperties:false. Shallow-copy, then
+	// flip AdditionalProperties on the copy only.
+	orig := r.Schema(reflect.TypeOf(*new(T)), false, "")
+	s := *orig
 	// true (bool) permits any additional properties; nil would also work but
 	// explicit true communicates intent clearly in the generated OpenAPI spec.
 	s.AdditionalProperties = true
-	s.PrecomputeMessages()
-	return s
+	return &s
 }
 
 // overrideContext holds per-target data pre-fetched once above the per-row
