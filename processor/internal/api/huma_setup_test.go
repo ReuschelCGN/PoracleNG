@@ -3,7 +3,10 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestLegacyErrorModelSerialises(t *testing.T) {
@@ -26,5 +29,22 @@ func TestLegacyErrorModelSerialises(t *testing.T) {
 	}
 	if _, hasTitle := got["title"]; hasTitle {
 		t.Errorf("legacy body must not contain RFC9457 \"title\" field: %s", b)
+	}
+}
+
+func TestPublicDocsUnauthenticated(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	apiGroup := r.Group("/api")
+	apiGroup.Use(RequireSecretGin("topsecret")) // gate /api
+	_ = NewHumaAPI(r, apiGroup, "test-version") // mounts docs on r (public)
+
+	for _, path := range []string{"/openapi.json", "/docs"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s unauthenticated = %d, want 200", path, w.Code)
+		}
 	}
 }
