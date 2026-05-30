@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
@@ -22,9 +23,25 @@ func (e *legacyError) GetStatus() int { return e.StatusCode }
 
 // humaNewError is the value we assign into huma.NewError; kept as a named
 // package func so tests can call it directly.
-func humaNewError(status int, msg string, _ ...error) huma.StatusError {
+//
+// When errs are present their per-field detail strings are appended to msg so
+// that 422 responses are informative rather than the opaque "validation
+// failed". The envelope shape ({status, message}) is never altered — we only
+// enrich the message text.
+func humaNewError(status int, msg string, errs ...error) huma.StatusError {
 	if msg == "" {
 		msg = http.StatusText(status)
+	}
+	if len(errs) > 0 {
+		parts := make([]string, 0, len(errs))
+		for _, e := range errs {
+			if e != nil {
+				parts = append(parts, e.Error())
+			}
+		}
+		if len(parts) > 0 {
+			msg = msg + ": " + strings.Join(parts, "; ")
+		}
 	}
 	return &legacyError{StatusCode: status, Status: "error", Message: msg}
 }
@@ -42,6 +59,16 @@ func NewHumaAPI(r *gin.Engine, apiGroup *gin.RouterGroup, version string) huma.A
 	InstallLegacyErrorModel()
 
 	cfg := huma.DefaultConfig("PoracleNG API", version)
+
+	// DefaultConfig registers a SchemaLinkTransformer via CreateHooks that
+	// injects a "$schema" field into every response body at runtime. This
+	// breaks byte-compatibility with existing clients (PoracleWeb, ReactMap)
+	// that expect exactly {"status":"ok",...} or {"status":"error","message":"..."}.
+	// Clear the hooks before NewWithGroup runs them so the transformer is
+	// never installed. The OpenAPI document itself is unaffected — the
+	// transformer only mutates live response bodies, not the spec.
+	cfg.CreateHooks = nil
+
 	// Disable huma's built-in mounts; we serve our own public copies on r.
 	cfg.OpenAPIPath = ""
 	cfg.DocsPath = ""
