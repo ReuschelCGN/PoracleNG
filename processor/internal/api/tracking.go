@@ -402,3 +402,20 @@ func normalizeOverrideAreas(in []string) []string {
 func DiffTracking(existing, toInsert any) (noMatch, isDuplicate bool, existingUID int64, isUpdate bool) {
 	return db.DiffTracking(existing, toInsert)
 }
+
+// collapseClean packs the caller-facing booleans (and any legacy integer clean)
+// into the storage bitmask: bit1 auto-delete, bit2 edit, bit4 summary.
+//
+// Legacy callers that send a raw integer clean (e.g. clean=3) are preserved
+// as-is via flexBool.intValue — the integer value is returned directly.
+// New callers that send clean:true + edit:true + summary:true get 7.
+func collapseClean(clean flexBool, edit, summary *bool) int {
+	packed := clean.intValue(0)
+	if edit != nil && *edit {
+		packed |= 2
+	}
+	if summary != nil && *summary {
+		packed |= 4
+	}
+	return packed
+}
