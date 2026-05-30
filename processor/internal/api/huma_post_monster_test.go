@@ -7,41 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
-	"github.com/pokemon/poracleng/processor/internal/config"
-	"github.com/pokemon/poracleng/processor/internal/i18n"
-	"github.com/pokemon/poracleng/processor/internal/rowtext"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
-
-// buildHumaPostMonsterTestEngine creates a minimal gin+huma engine for POST tests.
-// It wires a seeded MockHumanStore so the lookup path succeeds (user found →
-// proceeds to the DB layer). The Tracking store is nil, so the handler will
-// fail when it tries to query existing monsters — but that is fine: tests in
-// this file either target 404 paths or assert on validation/parse behaviour
-// before the DB is reached.
-func buildHumaPostMonsterTestEngine(t *testing.T, humans store.HumanStore) *gin.Engine {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
-	apiGroup := r.Group("/api")
-	apiGroup.Use(RequireSecretGin(""))
-
-	humaAPI := NewHumaAPI(r, apiGroup, "test")
-
-	deps := &TrackingDeps{
-		DB:           nil, // nil — only valid for 404/parse paths
-		Humans:       humans,
-		Config:       &config.Config{},
-		RowText:      &rowtext.Generator{DefaultTemplateName: "1"},
-		Translations: i18n.NewBundle(),
-		Tracking:     nil, // nil — only valid for 404/parse paths
-	}
-	RegisterTrackingMonster(humaAPI, deps)
-	return r
-}
 
 // ── collapseClean unit tests ─────────────────────────────────────────────────
 
@@ -130,7 +97,7 @@ func mustFlexBool(t *testing.T, s string) flexBool {
 // the legacy error envelope — proves routing, method binding, and error shape.
 func TestPostMonster_404_UnknownUser(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25,"min_iv":90}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
@@ -160,7 +127,7 @@ func TestPostMonster_404_UnknownUser(t *testing.T) {
 // 500 (nil DB reached), but never 422.
 func TestPostMonster_SingleObject_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25,"min_iv":"90","clean":true,"edit":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
@@ -178,7 +145,7 @@ func TestPostMonster_SingleObject_NotRejectedBy422(t *testing.T) {
 // TestPostMonster_ArrayBody_NotRejectedBy422: An array body must NOT produce a 422.
 func TestPostMonster_ArrayBody_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `[{"pokemon_id":25,"min_iv":90},{"pokemon_id":1,"min_iv":0}]`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
@@ -197,7 +164,7 @@ func TestPostMonster_ArrayBody_NotRejectedBy422(t *testing.T) {
 // rule item (additionalProperties) must NOT produce a 422.
 func TestPostMonster_UnknownFieldInItem_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25,"min_iv":"90","unknown_field":"surprise","another":42}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
@@ -216,7 +183,7 @@ func TestPostMonster_UnknownFieldInItem_NotRejectedBy422(t *testing.T) {
 // an array item must NOT produce a 422.
 func TestPostMonster_ArrayWithUnknownFields_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `[{"pokemon_id":25,"min_iv":90,"weird_client_field":"yes"}]`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
@@ -234,7 +201,7 @@ func TestPostMonster_ArrayWithUnknownFields_NotRejectedBy422(t *testing.T) {
 // must NOT produce a 422.
 func TestPostMonster_FlexFields_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	// min_iv as string, clean as bool, distance as string — all flex coercion.
 	body := `{"pokemon_id":25,"min_iv":"90","clean":false,"distance":"500"}`
@@ -253,7 +220,7 @@ func TestPostMonster_FlexFields_NotRejectedBy422(t *testing.T) {
 // cause a 422 — proves query param binding.
 func TestPostMonster_SilentQuery_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody?silent=1",
@@ -264,6 +231,90 @@ func TestPostMonster_SilentQuery_NotRejectedBy422(t *testing.T) {
 
 	if w.Code == http.StatusUnprocessableEntity {
 		t.Fatalf("silent query param caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_SuppressMessageQuery_NotRejectedBy422: suppressMessage query
+// param must not cause a 422 — proves the alias param binding.
+func TestPostMonster_SuppressMessageQuery_NotRejectedBy422(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	body := `{"pokemon_id":25}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody?suppressMessage=true",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("suppressMessage query param caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_MissingPokemonID_Rejected: A body without pokemon_id must be
+// rejected. pokemon_id is the only required field in the schema. With our
+// schema-level required=["pokemon_id"], huma rejects this with 422 before the
+// handler runs. If the schema-level check is somehow bypassed, the handler's
+// own errPokemonIDRequired guard returns 400. Either way, 2xx must NOT be returned.
+func TestPostMonster_MissingPokemonID_Rejected(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{
+		ID:               "u1",
+		Type:             "discord:user",
+		Name:             "TestUser",
+		Enabled:          true,
+		CurrentProfileNo: 0,
+	})
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	// Body has other valid fields but no pokemon_id.
+	body := `{"min_iv":90,"max_iv":100}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/u1",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Must be 400 (handler rejects) or 422 (schema-level required check).
+	// Must NOT be 2xx or 404.
+	if w.Code == http.StatusNotFound {
+		t.Fatalf("known user returned 404: %s", w.Body.String())
+	}
+	if w.Code >= 200 && w.Code < 300 {
+		t.Fatalf("missing pokemon_id was accepted (code %d); must be 400 or 422: %s",
+			w.Code, w.Body.String())
+	}
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unexpected status %d for missing pokemon_id (want 400 or 422): %s",
+			w.Code, w.Body.String())
+	}
+}
+
+// TestPostMonster_MissingPokemonID_ArrayItem_Rejected: An array body where one
+// item is missing pokemon_id must be rejected.
+func TestPostMonster_MissingPokemonID_ArrayItem_Rejected(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{
+		ID:               "u1",
+		Type:             "discord:user",
+		Name:             "TestUser",
+		Enabled:          true,
+		CurrentProfileNo: 0,
+	})
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	// Second item has no pokemon_id.
+	body := `[{"pokemon_id":25,"min_iv":90},{"min_iv":50}]`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/u1",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code >= 200 && w.Code < 300 {
+		t.Fatalf("array with item missing pokemon_id was accepted (code %d): %s",
+			w.Code, w.Body.String())
 	}
 }
 
@@ -283,7 +334,7 @@ func TestPostMonster_KnownUser_PastValidation(t *testing.T) {
 		Language:         "en",
 		CurrentProfileNo: 1,
 	})
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25,"min_iv":90}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/u1",
@@ -362,7 +413,6 @@ func TestPostMonster_monsterRuleRows_UnmarshalUnknownFields(t *testing.T) {
 // clean/edit/summary fields are correctly deserialized from a rule object.
 func TestPostMonster_monsterRuleRows_CleanEditSummary(t *testing.T) {
 	var rows monsterRuleRows
-	boolTrue := true
 	err := json.Unmarshal(
 		[]byte(`{"pokemon_id":25,"clean":true,"edit":true,"summary":false}`),
 		&rows,
@@ -379,13 +429,12 @@ func TestPostMonster_monsterRuleRows_CleanEditSummary(t *testing.T) {
 	if packed != 3 {
 		t.Errorf("collapseClean(true, &true, &false) = %d, want 3", packed)
 	}
-	_ = boolTrue
 }
 
 // TestPostMonster_NoSchemaLeak: 404 error from POST must not contain $schema.
 func TestPostMonster_NoSchemaLeak(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaPostMonsterTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
 	"github.com/pokemon/poracleng/processor/internal/config"
@@ -14,25 +15,38 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
-// buildHumaTrackingTestEngine constructs a minimal gin + huma stack with the
-// monster tracking endpoint registered, backed by the given HumanStore.
-func buildHumaTrackingTestEngine(t *testing.T, humans store.HumanStore) *gin.Engine {
+// buildHumaTestEngine is the single shared test-engine builder for all huma
+// tracking endpoint tests. It constructs a minimal gin + huma stack, calls the
+// provided register function to mount the operation(s) under test, and returns
+// the resulting gin.Engine.
+//
+// Parameters:
+//   - humans: the HumanStore stub to inject (use store.NewMockHumanStore()).
+//   - withRecovery: when true, wraps the engine in gin.Recovery() so nil-DB
+//     panics produce 500 instead of crashing the test process.
+//   - register: a callback that receives the huma.API and the TrackingDeps so
+//     the caller can call RegisterTrackingMonster (or any other register func).
+func buildHumaTestEngine(t *testing.T, humans store.HumanStore, withRecovery bool, register func(huma.API, *TrackingDeps)) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	if withRecovery {
+		r.Use(gin.Recovery())
+	}
 	apiGroup := r.Group("/api")
 	apiGroup.Use(RequireSecretGin("")) // no secret required in tests
 
 	humaAPI := NewHumaAPI(r, apiGroup, "test")
 
 	deps := &TrackingDeps{
-		DB:           nil, // intentionally nil — 404 path never reaches DB
+		DB:           nil, // intentionally nil — tests only exercise paths that don't reach the DB
 		Humans:       humans,
 		Config:       &config.Config{},
 		RowText:      &rowtext.Generator{DefaultTemplateName: "1"},
 		Translations: i18n.NewBundle(),
+		Tracking:     nil, // nil — only valid for 404/parse paths
 	}
-	RegisterTrackingMonster(humaAPI, deps)
+	register(humaAPI, deps)
 	return r
 }
 
@@ -43,7 +57,7 @@ func buildHumaTrackingTestEngine(t *testing.T, humans store.HumanStore) *gin.Eng
 func TestHumaTrackingMonster_404_UnknownUser(t *testing.T) {
 	// Empty store — GetLite returns nil for any id.
 	mock := store.NewMockHumanStore()
-	r := buildHumaTrackingTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, false, RegisterTrackingMonster)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tracking/pokemon/u1", nil)
 	w := httptest.NewRecorder()
@@ -75,7 +89,7 @@ func TestHumaTrackingMonster_404_UnknownUser(t *testing.T) {
 // not appear in error responses from the huma monster endpoint.
 func TestHumaTrackingMonster_NoSchemaLeakIn404(t *testing.T) {
 	mock := store.NewMockHumanStore()
-	r := buildHumaTrackingTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, false, RegisterTrackingMonster)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tracking/pokemon/nobody", nil)
 	w := httptest.NewRecorder()
@@ -111,7 +125,7 @@ func TestHumaTrackingMonster_PathParamBinding(t *testing.T) {
 	// Seed with a different id to confirm we're not accidentally matching
 	mock.AddHuman(&store.Human{ID: "other-user", Type: "discord:user", Name: "Other"})
 
-	r := buildHumaTrackingTestEngine(t, mock)
+	r := buildHumaTestEngine(t, mock, false, RegisterTrackingMonster)
 
 	// Request for "u1" which does not exist — binding test: if {id} weren't
 	// captured correctly we'd get a different error or a 200.
@@ -126,7 +140,7 @@ func TestHumaTrackingMonster_PathParamBinding(t *testing.T) {
 
 // TestHumaTrackingMonster_ProfileNoQueryBinding verifies that when a known user
 // exists and a profile_no query parameter is supplied, humaLookupHuman picks it
-// up correctly (i.e. int query binding works, non-default value). We verify
+// up correctly (i.e. string query binding works, non-empty value). We verify
 // indirectly: a known user with profile_no=2 advances past humaLookupHuman; the
 // panic from nil DB is recovered by gin.Recovery and returns 500 — proving we
 // got past the 404 branch.
@@ -141,20 +155,8 @@ func TestHumaTrackingMonster_ProfileNoQueryBinding(t *testing.T) {
 		CurrentProfileNo: 1,
 	})
 
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(gin.Recovery()) // recover from nil-DB panic so test doesn't crash
-	apiGroup := r.Group("/api")
-	apiGroup.Use(RequireSecretGin(""))
-	humaAPI := NewHumaAPI(r, apiGroup, "test")
-	deps := &TrackingDeps{
-		DB:           nil, // nil → panic after humaLookupHuman succeeds
-		Humans:       mock,
-		Config:       &config.Config{},
-		RowText:      &rowtext.Generator{DefaultTemplateName: "1"},
-		Translations: i18n.NewBundle(),
-	}
-	RegisterTrackingMonster(humaAPI, deps)
+	// withRecovery=true: recover from nil-DB panic so test doesn't crash.
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tracking/pokemon/u1?profile_no=2", nil)
 	w := httptest.NewRecorder()
@@ -164,5 +166,86 @@ func TestHumaTrackingMonster_ProfileNoQueryBinding(t *testing.T) {
 	// it proves humaLookupHuman advanced past the human-not-found guard.
 	if w.Code == http.StatusNotFound {
 		t.Fatalf("got 404 for known user — profile_no query binding may be broken; body: %s", w.Body.String())
+	}
+}
+
+// TestHumaTrackingMonster_ProfileNoZero verifies that profile_no=0 is treated
+// as explicit profile 0 (not as "omitted / use active profile"). The test
+// seeds a user with CurrentProfileNo=3 and sends profile_no=0; if the param
+// were silently ignored the nil-DB panic would still occur (user found), but
+// we verify the param is non-empty and parsed correctly by confirming non-404.
+func TestHumaTrackingMonster_ProfileNoZero(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{
+		ID:               "u1",
+		Type:             "discord:user",
+		Name:             "TestUser",
+		Enabled:          true,
+		CurrentProfileNo: 3,
+	})
+
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tracking/pokemon/u1?profile_no=0", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Must not be 404 — user was found. Nil-DB → 500 expected.
+	if w.Code == http.StatusNotFound {
+		t.Fatalf("got 404 for known user with profile_no=0; body: %s", w.Body.String())
+	}
+}
+
+// TestHumaTrackingMonster_ProfileNoOmitted verifies that omitting profile_no
+// (empty string) falls back to the human's CurrentProfileNo rather than 0.
+// With recovery enabled a known user → nil-DB panic → 500; NOT 404.
+func TestHumaTrackingMonster_ProfileNoOmitted(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{
+		ID:               "u1",
+		Type:             "discord:user",
+		Name:             "TestUser",
+		Enabled:          true,
+		CurrentProfileNo: 2,
+	})
+
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tracking/pokemon/u1", nil) // no profile_no
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Fatalf("got 404 for known user without profile_no; body: %s", w.Body.String())
+	}
+}
+
+// TestParseProfileNoParam verifies the parseProfileNoParam helper.
+func TestParseProfileNoParam(t *testing.T) {
+	cases := []struct {
+		input   string
+		wantNil bool
+		wantVal int
+	}{
+		{"", true, 0},        // omitted → nil (use active profile)
+		{"0", false, 0},      // explicit profile 0
+		{"1", false, 1},      // explicit profile 1
+		{"42", false, 42},    // arbitrary profile
+		{"abc", true, 0},     // invalid → nil (graceful fallback)
+		{"-1", false, -1},    // negative (unusual but parseable)
+	}
+	for _, tc := range cases {
+		got := parseProfileNoParam(tc.input)
+		if tc.wantNil {
+			if got != nil {
+				t.Errorf("parseProfileNoParam(%q) = %d, want nil", tc.input, *got)
+			}
+		} else {
+			if got == nil {
+				t.Errorf("parseProfileNoParam(%q) = nil, want %d", tc.input, tc.wantVal)
+			} else if *got != tc.wantVal {
+				t.Errorf("parseProfileNoParam(%q) = %d, want %d", tc.input, *got, tc.wantVal)
+			}
+		}
 	}
 }

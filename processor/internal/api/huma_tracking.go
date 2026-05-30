@@ -18,10 +18,11 @@ import (
 )
 
 // humaLookupHuman mirrors lookupHuman but takes plain parameters instead of a
-// gin.Context. profileNo is the resolved profile number: -1 means "use the
-// human's current profile". Returns (nil, 0, nil) when the human is not found;
-// the caller should return a 404 in that case.
-func humaLookupHuman(deps *TrackingDeps, id string, profileNo int) (*store.HumanLite, int, error) {
+// gin.Context. profileNo is a *int so the caller can distinguish "not provided"
+// (nil → use the human's current profile) from an explicit 0 (profile 0 is
+// valid). Returns (nil, 0, nil) when the human is not found; the caller should
+// return a 404 in that case.
+func humaLookupHuman(deps *TrackingDeps, id string, profileNo *int) (*store.HumanLite, int, error) {
 	human, err := deps.Humans.GetLite(id)
 	if err != nil {
 		return nil, 0, err
@@ -31,21 +32,42 @@ func humaLookupHuman(deps *TrackingDeps, id string, profileNo int) (*store.Human
 	}
 
 	pNo := human.CurrentProfileNo
-	if profileNo >= 0 {
-		pNo = profileNo
+	if profileNo != nil {
+		pNo = *profileNo
 	}
 
 	return human, pNo, nil
 }
 
+// parseProfileNoParam parses the profile_no query parameter string into a *int.
+// An empty string means "not provided" → returns nil (caller uses active profile).
+// A numeric string (including "0") → returns pointer to the parsed value.
+// Invalid strings → returns nil (treated as not provided; bad clients get active profile).
+//
+// We accept profile_no as a string query parameter (rather than int) because
+// huma v2 does not support pointer query parameters ("pointers are not
+// supported for form/header/path/query parameters"). Accepting a string lets us
+// distinguish "omitted" (empty string) from "explicitly zero" ("0"), which
+// would otherwise be indistinguishable with an int field whose zero value is 0.
+func parseProfileNoParam(s string) *int {
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
 // listMonsterInput is the huma input type for GET /api/tracking/pokemon/{id}.
 //
-// huma does not support pointer types for query parameters. We use -1 as a
-// sentinel meaning "not provided"; the handler then falls back to the human's
-// current profile number. This mirrors the logic in lookupHuman.
+// profile_no is accepted as a string so we can distinguish "omitted" (empty →
+// use active profile) from "0" (explicitly request profile 0). huma v2 panics
+// on pointer query params, so a string with explicit parsing is the alternative.
 type listMonsterInput struct {
-	ID        string `path:"id"          doc:"Human/channel/webhook id"`
-	ProfileNo int    `query:"profile_no" doc:"Profile number; defaults to the user's active profile" default:"-1"`
+	ID        string `path:"id"           doc:"Human/channel/webhook id"`
+	ProfileNo string `query:"profile_no"  doc:"Profile number; omit to use your active profile (0 is a valid profile number)"`
 }
 
 // listMonsterOutput is the huma output type — preserves the legacy
@@ -66,43 +88,59 @@ type listMonsterOutput struct {
 // Clean still accepts a legacy integer bitmask (e.g. clean=3) via flexBool
 // for backward compatibility. collapseClean packs all three into the stored
 // column at insert/update time.
+//
+// Server-filled defaults when fields are omitted:
+//   - min_iv → -1, max_iv → 100
+//   - min_cp → 0, max_cp → 9000
+//   - min_level → 0, max_level → 55
+//   - atk/def/sta → 0, max_atk/max_def/max_sta → 15
+//   - gender → 0, form → 0
+//   - min_weight → 0, max_weight → 9000000
+//   - min_time → 0
+//   - rarity → -1, max_rarity → 6
+//   - size → -1, max_size → 5
+//   - pvp_ranking_league → 0, pvp_ranking_best → 1, pvp_ranking_worst → 4096
+//   - pvp_ranking_min_cp → 0, pvp_ranking_cap → 0
+//   - distance → 0 (capped at 40 000 000 if larger)
+//
+// pokemon_id is required and has no default; omitting it returns 400.
 type monsterRuleRequest struct {
-	UID                   flexInt  `json:"uid"`
-	PokemonID             flexInt  `json:"pokemon_id"`
-	ProfileNo             flexInt  `json:"profile_no"`
-	Distance              flexInt  `json:"distance"`
-	Template              any      `json:"template"`
-	Clean                 flexBool `json:"clean"`
-	Edit                  *bool    `json:"edit"`    // bit2 of stored clean column
-	Summary               *bool    `json:"summary"` // bit4 of stored clean column
-	Form                  flexInt  `json:"form"`
-	MinIV                 flexInt  `json:"min_iv"`
-	MaxIV                 flexInt  `json:"max_iv"`
-	MinCP                 flexInt  `json:"min_cp"`
-	MaxCP                 flexInt  `json:"max_cp"`
-	MinLevel              flexInt  `json:"min_level"`
-	MaxLevel              flexInt  `json:"max_level"`
-	ATK                   flexInt  `json:"atk"`
-	DEF                   flexInt  `json:"def"`
-	STA                   flexInt  `json:"sta"`
-	MaxATK                flexInt  `json:"max_atk"`
-	MaxDEF                flexInt  `json:"max_def"`
-	MaxSTA                flexInt  `json:"max_sta"`
-	Gender                flexInt  `json:"gender"`
-	MinWeight             flexInt  `json:"min_weight"`
-	MaxWeight             flexInt  `json:"max_weight"`
-	MinTime               flexInt  `json:"min_time"`
-	Rarity                flexInt  `json:"rarity"`
-	MaxRarity             flexInt  `json:"max_rarity"`
-	Size                  flexInt  `json:"size"`
-	MaxSize               flexInt  `json:"max_size"`
-	PVPRankingLeague      flexInt  `json:"pvp_ranking_league"`
-	PVPRankingBest        flexInt  `json:"pvp_ranking_best"`
-	PVPRankingWorst       flexInt  `json:"pvp_ranking_worst"`
-	PVPRankingMinCP       flexInt  `json:"pvp_ranking_min_cp"`
-	PVPRankingCap         flexInt  `json:"pvp_ranking_cap"`
-	OverrideLocationLabel string   `json:"override_location_label"`
-	OverrideAreas         []string `json:"override_areas"`
+	UID                   flexInt  `json:"uid"                    doc:"Existing rule UID for updates; omit for new inserts"`
+	PokemonID             flexInt  `json:"pokemon_id"             doc:"Pokédex ID of the pokemon to track (required)"`
+	ProfileNo             flexInt  `json:"profile_no"             doc:"Profile number for this rule; omit to inherit from the request profile"`
+	Distance              flexInt  `json:"distance"               doc:"Alert radius in metres from the user's location (0 = area-based; max 40000000)"`
+	Template              any      `json:"template"               doc:"DTS template name/number; omit to use the server default"`
+	Clean                 flexBool `json:"clean"                  doc:"Clean bitmask bit 1: auto-delete message on expiry. Also accepts legacy integer bitmask (e.g. 3 = clean+edit)"`
+	Edit                  *bool    `json:"edit"                   doc:"Clean bitmask bit 2: edit message in-place on update (RSVP etc.)"`
+	Summary               *bool    `json:"summary"                doc:"Clean bitmask bit 4: route into the summary buffer instead of immediate delivery"`
+	Form                  flexInt  `json:"form"                   doc:"Form ID filter (0 = any form)"`
+	MinIV                 flexInt  `json:"min_iv"                 doc:"Minimum combined IV 0–100 (-1 = server default: no lower bound)"`
+	MaxIV                 flexInt  `json:"max_iv"                 doc:"Maximum combined IV 0–100 (server default: 100)"`
+	MinCP                 flexInt  `json:"min_cp"                 doc:"Minimum CP (server default: 0)"`
+	MaxCP                 flexInt  `json:"max_cp"                 doc:"Maximum CP (server default: 9000)"`
+	MinLevel              flexInt  `json:"min_level"              doc:"Minimum level (server default: 0)"`
+	MaxLevel              flexInt  `json:"max_level"              doc:"Maximum level (server default: 55)"`
+	ATK                   flexInt  `json:"atk"                    doc:"Minimum attack IV (server default: 0)"`
+	DEF                   flexInt  `json:"def"                    doc:"Minimum defence IV (server default: 0)"`
+	STA                   flexInt  `json:"sta"                    doc:"Minimum stamina IV (server default: 0)"`
+	MaxATK                flexInt  `json:"max_atk"                doc:"Maximum attack IV (server default: 15)"`
+	MaxDEF                flexInt  `json:"max_def"                doc:"Maximum defence IV (server default: 15)"`
+	MaxSTA                flexInt  `json:"max_sta"                doc:"Maximum stamina IV (server default: 15)"`
+	Gender                flexInt  `json:"gender"                 doc:"Gender filter: 0 = any, 1 = male, 2 = female, 3 = genderless (server default: 0)"`
+	MinWeight             flexInt  `json:"min_weight"             doc:"Minimum weight in grams (server default: 0)"`
+	MaxWeight             flexInt  `json:"max_weight"             doc:"Maximum weight in grams (server default: 9000000)"`
+	MinTime               flexInt  `json:"min_time"               doc:"Minimum seconds remaining until despawn (server default: 0)"`
+	Rarity                flexInt  `json:"rarity"                 doc:"Minimum rarity tier (-1 = server default: any rarity)"`
+	MaxRarity             flexInt  `json:"max_rarity"             doc:"Maximum rarity tier (server default: 6)"`
+	Size                  flexInt  `json:"size"                   doc:"Minimum size tier (-1 = server default: any size)"`
+	MaxSize               flexInt  `json:"max_size"               doc:"Maximum size tier (server default: 5)"`
+	PVPRankingLeague      flexInt  `json:"pvp_ranking_league"     doc:"PVP league ID: 0 = none, 1 = great, 2 = ultra, 3 = little (server default: 0)"`
+	PVPRankingBest        flexInt  `json:"pvp_ranking_best"       doc:"Best (lowest) PVP rank to alert on (server default: 1 = rank 1)"`
+	PVPRankingWorst       flexInt  `json:"pvp_ranking_worst"      doc:"Worst (highest) PVP rank to alert on (server default: 4096)"`
+	PVPRankingMinCP       flexInt  `json:"pvp_ranking_min_cp"     doc:"Minimum CP floor for PVP ranking filter (server default: 0)"`
+	PVPRankingCap         flexInt  `json:"pvp_ranking_cap"        doc:"Level cap for PVP ranking (0 = use league default, server default: 0)"`
+	OverrideLocationLabel string   `json:"override_location_label" doc:"Named saved-location label to use as the alert anchor for this rule"`
+	OverrideAreas         []string `json:"override_areas"         doc:"Area names to restrict this rule to (overrides profile/human areas)"`
 }
 
 // monsterRuleRows is the POST body: accepts a single rule object or an array
@@ -148,6 +186,9 @@ func (m *monsterRuleRows) UnmarshalJSON(b []byte) error {
 // We use oneOf[singleItem, arrayOfItems] where both alternatives carry
 // additionalProperties:true so unknown client fields are permitted.
 //
+// pokemon_id is the only truly required field; all others have server-side
+// defaults (documented in monsterRuleRequest field doc tags above).
+//
 // The registry's stored schema for monsterRuleRequest is NOT mutated —
 // we shallow-copy it before setting AdditionalProperties, following the
 // same approach as lenient[T].Schema.
@@ -159,10 +200,11 @@ func (monsterRuleRows) Schema(r huma.Registry) *huma.Schema {
 	// Shallow-copy; flip additionalProperties only on the copy.
 	itemSchema := *orig
 	itemSchema.AdditionalProperties = true
-	// All fields in monsterRuleRequest are optional from the API perspective —
-	// only pokemon_id is truly required, and that's validated in the handler,
-	// not the schema. Clear the required list so partial rule objects don't 422.
-	itemSchema.Required = nil
+	// pokemon_id is the only required field; everything else has a server default.
+	// Huma's schema generator marks all non-pointer fields as required; we
+	// override that here, keeping only pokemon_id required so partial rule
+	// objects from clients don't 422.
+	itemSchema.Required = []string{"pokemon_id"}
 
 	// Array variant: array of items, each with additionalProperties.
 	arraySchema := &huma.Schema{
@@ -182,15 +224,18 @@ func (monsterRuleRows) Schema(r huma.Registry) *huma.Schema {
 
 // createMonsterInput is the huma input for POST /api/tracking/pokemon/{id}.
 //
-// huma does not support pointer types for query parameters. We use "" as a
-// sentinel for suppressMessage / silent (presence == suppress). ProfileNo
-// uses -1 as sentinel (not provided).
+// profile_no and silent/suppressMessage are modelled as optional strings so the
+// spec does not show sentinel values as defaults:
+//   - profile_no: empty string = "use active profile", numeric string "0"..."N" = explicit profile.
+//     (huma v2 panics on pointer query params, so string is used to distinguish omitted from zero.)
+//   - silent / suppressMessage: empty = not silent; "true"/"1"/any-non-empty = suppress.
+//     Boolean semantics: suppress the confirmation message only when explicitly requested.
 type createMonsterInput struct {
-	ID              string         `path:"id"               doc:"Human/channel/webhook id"`
-	ProfileNo       int            `query:"profile_no"      doc:"Profile number; defaults to the user's active profile" default:"-1"`
-	Silent          string         `query:"silent"          doc:"If non-empty, suppress confirmation message"`
-	SuppressMessage string         `query:"suppressMessage" doc:"If non-empty, suppress confirmation message"`
-	Body            monsterRuleRows `               doc:"One rule object or an array of rule objects"`
+	ID              string          `path:"id"               doc:"Human/channel/webhook id"`
+	ProfileNo       string          `query:"profile_no"      doc:"Profile number; omit to use your active profile (0 is a valid profile number)"`
+	Silent          string          `query:"silent"          doc:"Set to any non-empty value (e.g. 'true') to suppress the confirmation message"`
+	SuppressMessage string          `query:"suppressMessage" doc:"Alias for silent — set to any non-empty value to suppress the confirmation message"`
+	Body            monsterRuleRows `doc:"One rule object or an array of rule objects. pokemon_id is required; all other fields have server-filled defaults (see schema)."`
 }
 
 // createMonsterOutput is the huma output for POST /api/tracking/pokemon/{id}.
@@ -221,7 +266,7 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 		Tags:        []string{"tracking"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(ctx context.Context, in *listMonsterInput) (*listMonsterOutput, error) {
-		human, profileNo, err := humaLookupHuman(deps, in.ID, in.ProfileNo)
+		human, profileNo, err := humaLookupHuman(deps, in.ID, parseProfileNoParam(in.ProfileNo))
 		if err != nil {
 			return nil, humaNewError(http.StatusInternalServerError, err.Error())
 		}
@@ -258,15 +303,25 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 
 	// POST
 	huma.Register(humaAPI, huma.Operation{
-		OperationID:  "create-monster-tracking",
-		Method:       http.MethodPost,
-		Path:         "/tracking/pokemon/{id}",
-		Summary:      "Create or update pokemon tracking rules",
-		Tags:         []string{"tracking"},
-		Security:     []map[string][]string{{"poracleSecret": {}}},
+		OperationID:   "create-monster-tracking",
+		Method:        http.MethodPost,
+		Path:          "/tracking/pokemon/{id}",
+		Summary:       "Create or update pokemon tracking rules",
+		Tags:          []string{"tracking"},
+		Security:      []map[string][]string{{"poracleSecret": {}}},
 		DefaultStatus: http.StatusOK,
 	}, func(ctx context.Context, in *createMonsterInput) (*createMonsterOutput, error) {
-		human, profileNo, err := humaLookupHuman(deps, in.ID, in.ProfileNo)
+		// Debug logging: log the raw body so operators can diff what clients
+		// send against what the handler parses — mirrors the gin readBody debug
+		// log dropped when moving from gin to huma. Marshal in.Body back to JSON
+		// since huma has already decoded it from the raw bytes at this point.
+		if log.IsLevelEnabled(log.DebugLevel) {
+			if b, err := json.Marshal(in.Body); err == nil {
+				log.Debugf("tracking POST body (pokemon): %s", string(b))
+			}
+		}
+
+		human, profileNo, err := humaLookupHuman(deps, in.ID, parseProfileNoParam(in.ProfileNo))
 		if err != nil {
 			return nil, humaNewError(http.StatusInternalServerError, err.Error())
 		}
