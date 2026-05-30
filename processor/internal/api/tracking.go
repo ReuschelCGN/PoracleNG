@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -228,6 +230,61 @@ func (f flexInt) intValue(defaultVal int) int {
 
 func (f flexInt) isSet() bool {
 	return f.value != nil
+}
+
+// Schema implements huma.SchemaProvider so huma's JSON-schema validator allows
+// the legacy wire formats that flexInt.UnmarshalJSON handles: native integers,
+// quoted numeric strings ("90"), and boolean-as-int (true/false). Without this,
+// huma generates `{"type":"object"}` for the unexported struct and rejects
+// everything with a 422 before our handler runs.
+func (flexInt) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		OneOf: []*huma.Schema{
+			{Type: "integer"},
+			{Type: "string"},
+			{Type: "boolean"},
+		},
+		Description: "Canonical: integer. Numeric strings and booleans accepted for legacy clients.",
+	}
+}
+
+// Schema implements huma.SchemaProvider so huma's validator permits the legacy
+// boolean/integer/string forms that flexBool.UnmarshalJSON accepts.
+func (flexBool) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		OneOf: []*huma.Schema{
+			{Type: "boolean"},
+			{Type: "integer"},
+			{Type: "string"},
+		},
+		Description: "Canonical: boolean. Integers and strings accepted for legacy clients.",
+	}
+}
+
+// lenient[T] wraps a request body so huma allows unknown/extra JSON properties
+// (matching pre-huma json.Unmarshal behaviour) instead of huma's default
+// additionalProperties:false. Access the decoded value via .Value.
+//
+// Approach used: PRIMARY — SchemaProvider wrapper. lenient[T].Schema calls
+// r.Schema with allowRef=false to get the inline schema for T, then sets
+// AdditionalProperties = true before returning. This ensures huma's validator
+// does not reject extra fields before our UnmarshalJSON handler runs.
+type lenient[T any] struct{ Value T }
+
+func (l *lenient[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &l.Value) }
+func (l lenient[T]) MarshalJSON() ([]byte, error)   { return json.Marshal(l.Value) }
+
+func (lenient[T]) Schema(r huma.Registry) *huma.Schema {
+	// allowRef=false gives us the actual schema object (not a $ref wrapper) so
+	// we can mutate AdditionalProperties on it directly. This also means the
+	// schema is inlined in the request body rather than going through $ref, which
+	// is fine — both produce identical validation behaviour.
+	s := r.Schema(reflect.TypeOf(*new(T)), false, "")
+	// true (bool) permits any additional properties; nil would also work but
+	// explicit true communicates intent clearly in the generated OpenAPI spec.
+	s.AdditionalProperties = true
+	s.PrecomputeMessages()
+	return s
 }
 
 // overrideContext holds per-target data pre-fetched once above the per-row
