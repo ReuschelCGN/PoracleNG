@@ -403,9 +403,8 @@ func main() {
 	api.RegisterTrackingMonster(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
-	// Pokemon GET and POST are now served by huma (see RegisterTrackingMonster above).
-	tracking.DELETE("/pokemon/:id/byUid/:uid", api.HandleDeleteMonster(trackingDeps))
-	tracking.POST("/pokemon/:id/delete", api.HandleBulkDeleteMonster(trackingDeps))
+	// Pokemon GET, POST, DELETE byUid, and bulk-delete are now served by huma
+	// (see RegisterTrackingMonster above).
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
 	}))

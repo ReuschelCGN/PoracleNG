@@ -242,6 +242,84 @@ type createMonsterOutput struct {
 	}
 }
 
+// ── DELETE byUid input/output types ─────────────────────────────────────────
+
+// deleteMonsterInput is the huma input for
+// DELETE /api/tracking/pokemon/{id}/byUid/{uid}.
+type deleteMonsterInput struct {
+	ID              string `path:"id"               doc:"Human/channel/webhook id"`
+	UID             int64  `path:"uid"              doc:"Rule UID to delete"`
+	Silent          bool   `query:"silent"          doc:"Suppress the confirmation message"`
+	SuppressMessage bool   `query:"suppressMessage" doc:"Alias for silent: suppress the confirmation message"`
+}
+
+// deleteMonsterOutput mirrors the legacy {"status":"ok","message":"..."} envelope.
+type deleteMonsterOutput struct {
+	Body struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+}
+
+// ── Bulk-delete input/output types ───────────────────────────────────────────
+
+// uidList is a JSON body that accepts either a bare int64 or an array of int64.
+// The gin handler accepted both forms; we preserve that tolerance here.
+type uidList []int64
+
+// UnmarshalJSON implements json.Unmarshaler.
+// '[' → array of int64; any other first byte → single int64 wrapped in a slice.
+func (u *uidList) UnmarshalJSON(b []byte) error {
+	first := bytes.TrimLeft(b, " \t\r\n")
+	if len(first) == 0 {
+		return &json.SyntaxError{}
+	}
+	if first[0] == '[' {
+		var arr []int64
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return err
+		}
+		*u = arr
+		return nil
+	}
+	var single int64
+	if err := json.Unmarshal(b, &single); err != nil {
+		return err
+	}
+	*u = uidList{single}
+	return nil
+}
+
+// Schema implements huma.SchemaProvider for uidList.
+// The body can be either a single int64 or an array of int64. Huma validates
+// the raw JSON against this schema before calling UnmarshalJSON; using oneOf
+// lets both shapes pass validation without a 422.
+func (uidList) Schema(_ huma.Registry) *huma.Schema {
+	single := &huma.Schema{Type: "integer", Format: "int64"}
+	array := &huma.Schema{
+		Type:  "array",
+		Items: &huma.Schema{Type: "integer", Format: "int64"},
+	}
+	return &huma.Schema{OneOf: []*huma.Schema{single, array}}
+}
+
+// bulkDeleteMonsterInput is the huma input for
+// POST /api/tracking/pokemon/{id}/delete.
+type bulkDeleteMonsterInput struct {
+	ID              string  `path:"id"               doc:"Human/channel/webhook id"`
+	Silent          bool    `query:"silent"          doc:"Suppress the confirmation message"`
+	SuppressMessage bool    `query:"suppressMessage" doc:"Alias for silent: suppress the confirmation message"`
+	Body            uidList `doc:"Array of rule UIDs to delete, or a single UID integer."`
+}
+
+// bulkDeleteMonsterOutput mirrors the legacy {"status":"ok","message":"..."} envelope.
+type bulkDeleteMonsterOutput struct {
+	Body struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+}
+
 // ── handler ──────────────────────────────────────────────────────────────────
 
 // RegisterTrackingMonster registers the GET and POST /tracking/pokemon/{id}
@@ -514,6 +592,118 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 		out.Body.AlreadyPresent = len(diff.AlreadyPresent)
 		out.Body.Updates = len(updates)
 		out.Body.Insert = len(diff.Inserts)
+		return out, nil
+	})
+
+	// DELETE /tracking/pokemon/{id}/byUid/{uid}
+	huma.Register(humaAPI, huma.Operation{
+		OperationID:   "delete-monster-tracking",
+		Method:        http.MethodDelete,
+		Path:          "/tracking/pokemon/{id}/byUid/{uid}",
+		Summary:       "Delete a single pokemon tracking rule by UID",
+		Tags:          []string{"tracking"},
+		Security:      []map[string][]string{{"poracleSecret": {}}},
+		DefaultStatus: http.StatusOK,
+	}, func(ctx context.Context, in *deleteMonsterInput) (*deleteMonsterOutput, error) {
+		// Mirror the gin handler: attempt human lookup; if not found, still delete
+		// (the gin handler treats missing human the same as found for delete purposes
+		// — it falls through to DeleteByUID either way).
+		human, profileNo, lookupErr := humaLookupHuman(deps, in.ID, nil)
+		if lookupErr != nil || human == nil {
+			// No human context: delete and return a bare ok.
+			if err := db.DeleteByUID(deps.DB, "monsters", in.ID, in.UID); err != nil {
+				log.Errorf("Tracking API: delete monster: %s", err)
+				return nil, humaNewError(http.StatusInternalServerError, "database error")
+			}
+			reloadState(deps)
+			out := &deleteMonsterOutput{}
+			out.Body.Status = "ok"
+			return out, nil
+		}
+
+		// Human found: fetch existing rules so we can build a confirmation message.
+		existing, _ := db.SelectMonstersByIDProfile(deps.DB, human.ID, profileNo)
+
+		if err := db.DeleteByUID(deps.DB, "monsters", in.ID, in.UID); err != nil {
+			log.Errorf("Tracking API: delete monster: %s", err)
+			return nil, humaNewError(http.StatusInternalServerError, "database error")
+		}
+
+		reloadState(deps)
+
+		tr := translatorFor(deps, human)
+		language := resolveLanguage(deps, human)
+		silent := in.Silent || in.SuppressMessage
+		var message string
+		for _, e := range existing {
+			if e.UID == in.UID {
+				message = tr.T("tracking.removed_prefix") + deps.RowText.MonsterRowText(tr, toMonsterTracking(&e))
+				break
+			}
+		}
+		if !silent && message != "" {
+			sendConfirmation(deps, human, message, language)
+		}
+
+		out := &deleteMonsterOutput{}
+		out.Body.Status = "ok"
+		out.Body.Message = message
+		return out, nil
+	})
+
+	// POST /tracking/pokemon/{id}/delete  (bulk delete by UID array)
+	huma.Register(humaAPI, huma.Operation{
+		OperationID:   "bulk-delete-monster-tracking",
+		Method:        http.MethodPost,
+		Path:          "/tracking/pokemon/{id}/delete",
+		Summary:       "Bulk-delete pokemon tracking rules by UID array",
+		Tags:          []string{"tracking"},
+		Security:      []map[string][]string{{"poracleSecret": {}}},
+		DefaultStatus: http.StatusOK,
+	}, func(ctx context.Context, in *bulkDeleteMonsterInput) (*bulkDeleteMonsterOutput, error) {
+		uids := []int64(in.Body)
+
+		// Best-effort human lookup for confirmation message; delete proceeds even
+		// if the human is not found (matching the gin handler behaviour).
+		human, profileNo, _ := humaLookupHuman(deps, in.ID, nil)
+		var existing []db.MonsterTrackingAPI
+		if human != nil {
+			existing, _ = db.SelectMonstersByIDProfile(deps.DB, human.ID, profileNo)
+		}
+
+		if err := db.DeleteByUIDs(deps.DB, "monsters", in.ID, uids); err != nil {
+			log.Errorf("Tracking API: bulk delete monsters: %s", err)
+			return nil, humaNewError(http.StatusInternalServerError, "database error")
+		}
+
+		reloadState(deps)
+
+		silent := in.Silent || in.SuppressMessage
+		var message string
+		if human != nil && len(existing) > 0 {
+			tr := translatorFor(deps, human)
+			language := resolveLanguage(deps, human)
+			uidSet := make(map[int64]bool, len(uids))
+			for _, u := range uids {
+				uidSet[u] = true
+			}
+			var sb strings.Builder
+			for _, e := range existing {
+				if uidSet[e.UID] {
+					sb.WriteString(tr.T("tracking.removed_prefix"))
+					sb.WriteString(deps.RowText.MonsterRowText(tr, toMonsterTracking(&e)))
+					sb.WriteByte('\n')
+				}
+			}
+			message = sb.String()
+			if !silent && message != "" {
+				sendConfirmation(deps, human, message, language)
+			}
+		}
+
+		out := &bulkDeleteMonsterOutput{}
+		out.Body.Status = "ok"
+		out.Body.Message = message
 		return out, nil
 	})
 }
