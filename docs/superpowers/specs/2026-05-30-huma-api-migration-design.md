@@ -186,11 +186,19 @@ caller's mental model. So:
 - **Storage unchanged:** the single `clean` int column, the matcher, and
   `IsClean`/`IsEdit`/`IsSummary` are untouched.
 
-The audit applies this same pattern wherever it finds packed/bitmask or
-mistyped fields across the three groups (e.g. gym `slot_changes`/`battle_changes`,
-fort change flags, raid `rsvp_changes`) — boolean-on-the-wire matching the
-caller's model, named flags for additional bits where used, collapsing to the
-storage column, always accepting the legacy form.
+The audit applies the *principle* — model the caller's mental model, stay
+lenient about the legacy form — but the right representation is per-field and
+must be read from each field's actual handler validation + bot keywords, NOT
+assumed. It is NOT uniformly "boolean-on-the-wire":
+- **Bitmask → named booleans**: `clean` (bits 1/2/4 → `clean`/`edit`/`summary`),
+  always also accepting the legacy integer bitmask.
+- **Enum → string enum**: `raid`/`egg` `rsvp_changes` is a 3-value enum
+  (`tinyint 0|1|2` = `no_rsvp`/`rsvp`/`rsvp_only`, per the `!raid`/`!egg`
+  keywords) — model as a string enum `"none"|"rsvp"|"rsvp_only"`, ALSO accepting
+  the legacy integer `0|1|2`. NOT a boolean.
+- **Genuine bool / int / count**: `gym` `slot_changes`/`battle_changes`, `fort`
+  change flags, etc. — TBD by reading the handler; do not assume.
+Storage columns and matcher logic are untouched in every case.
 
 ## Wire format (legacy envelope)
 

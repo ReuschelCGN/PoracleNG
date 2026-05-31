@@ -399,8 +399,8 @@ For each of the 10 request structs (`monsterInsertRequest` in `trackingMonster.g
 
 Seed facts (confirm against the structs):
 - Bitmask field `clean` (all types): bit 1 auto-delete, bit 2 edit, bit 4 summary (`db/clean.go`). Decompose to `clean:bool` (bit1) + `edit:bool` (bit2) + `summary:bool` (bit4); still accept legacy integer `clean` as the full bitmask.
-- `gym`: `slot_changes`, `battle_changes` — confirm whether boolean-semantic (→ `flexBool`/`bool`) vs counts.
-- `raid`/`egg`: `rsvp_changes` — boolean-semantic toggle.
+- `gym`: `slot_changes`, `battle_changes` — DO NOT assume; read the handler validation + bot keywords to determine actual type (bool vs enum vs count) before modeling.
+- `raid`/`egg`: `rsvp_changes` is a **3-value enum**, NOT a boolean. Stored `tinyint` `0|1|2`: `0`=`no_rsvp` (none), `1`=`rsvp` (RSVP changes + normal), `2`=`rsvp_only` (only RSVP changes) — per bot keywords `arg.no_rsvp`/`arg.rsvp`/`arg.rsvp_only` and the egg clamp `<0||>2→0`. Model as a **string enum** `"none"|"rsvp"|"rsvp_only"` canonical, ALSO accepting the legacy integer `0|1|2` for old clients (lenient), mapping to the stored int. Do NOT decompose into booleans.
 - `quest`: confirm reward fields stay integer/string; `summary` opt-in maps to clean bit 4.
 - `fort`: change-type flags.
 - Everything else (`pokemon_id`, IVs, CP, level, gender, ranks, distance, weight, size, form): genuine integer → `flexInt` advertising integer.
@@ -710,7 +710,7 @@ The four operations (GET, POST, DELETE byUid, POST delete) for each remaining ty
 **Per-type checklist (repeat for each):** `raid`, `egg`, `quest`, `invasion`, `lure`, `nest`, `gym`, `fort`, `maxbattle`.
 
 - [ ] For type `T`: create `RegisterTracking<T>(api, deps)` in `huma_tracking.go` with the 4 ops, mirroring `RegisterTrackingMonster`. Input path is `/tracking/<route>/{id}` (routes: raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle).
-- [ ] Reuse the existing `HandleGet<T>`/`HandleCreate<T>`/`HandleDelete<T>`/`HandleBulkDelete<T>` bodies; swap gin context access for typed input; apply `collapseClean` and any type-specific decomposition from the audit (e.g. `gym` slot/battle change flags, `raid`/`egg` `rsvp_changes`→edit semantics, `quest` `summary`).
+- [ ] Reuse the existing `HandleGet<T>`/`HandleCreate<T>`/`HandleDelete<T>`/`HandleBulkDelete<T>` bodies; swap gin context access for typed input; apply `collapseClean` and the type-specific representation from the audit. NOTE: decomposition is NOT one-size-fits-all — `clean` is a bitmask→booleans; `raid`/`egg` `rsvp_changes` is a 3-value ENUM (string `none|rsvp|rsvp_only` + lenient legacy int); `quest` `summary` is the clean bit-4; `gym` slot/battle changes TBD by audit. Read each field's real validation before modeling.
 - [ ] Write a per-type test mirroring `TestHumaListMonster` + a lenient-create assertion.
 - [ ] Register `RegisterTracking<T>(humaAPI, trackingDeps)` in `main.go` and remove that type's 4 Gin routes.
 - [ ] Gate + commit `feat(api): migrate <T> tracking to huma`.
@@ -719,8 +719,8 @@ The four operations (GET, POST, DELETE byUid, POST delete) for each remaining ty
 
 | Type | Route | Bitmask/flag fields to decompose | Notes |
 |---|---|---|---|
-| raid | `raid` | `clean`→clean/edit/summary; `rsvp_changes` | level/pokemon/team/exclusive/move ints |
-| egg | `egg` | `clean`…; `rsvp_changes` | level/team/exclusive |
+| raid | `raid` | `clean`→clean/edit/summary; `rsvp_changes`=**enum** `none\|rsvp\|rsvp_only` (+legacy int 0/1/2) | level/pokemon/team/exclusive/move ints |
+| egg | `egg` | `clean`…; `rsvp_changes`=**enum** `none\|rsvp\|rsvp_only` (+legacy int) | level/team/exclusive |
 | quest | `quest` | `clean`… incl. `summary` opt-in | reward_type/reward ints, `shiny` bool |
 | invasion | `invasion` | `clean`… | grunt_type/gender |
 | lure | `lure` | `clean`… | lure_id |
