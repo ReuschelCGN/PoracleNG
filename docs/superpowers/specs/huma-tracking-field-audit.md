@@ -341,3 +341,28 @@ Both are stored as `tinyint(1)` (IntBool). They are independent flags, not a bit
 3. **`pvp_ranking_min_cp` server default**: DB `DEFAULT 1`; handler writes `intValue(0)` → 0 when omitted. Decision needed: should the huma canonical default document 0 or 1?
 
 4. **`lure_id` string names**: The integer→string mapping for lure IDs 501–506 should be confirmed against `resources/data/util.json` lure entries (the canonical UI display names). The table above uses common names but the exact English strings from util.json should be the canonical enum values.
+
+---
+
+## SIGNED-OFF DECISIONS (2026-05-31)
+
+Global modeling: **string enums + lenient legacy int** for all enum fields, **booleans** for all genuine-bool fields, each still accepting the legacy integer/0-1 form via flex coercion. Stored DB values/semantics unchanged. Apply across all 10 types in the fan-out.
+
+Per the NEEDS DECISION items above:
+
+1. **`fort_type` "station" → PRESERVE (do NOT add to the API).** The huma fort endpoint keeps `validFortTypes = {pokestop, gym, everything}` and rejects `station` (422/400), exactly as the gin handler does today. Document the bot-accepts / API-rejects split in the fort endpoint description. **Follow-up:** file a separate issue about reconciling the bot/API/`station` support — NOT part of this migration.
+
+2. **`include_empty` → HONOR DB INTENT (default true).** The huma fort handler must default `include_empty` to **true** when the field is omitted (the DB column is `DEFAULT 1`). This is a deliberate behavior change from the current gin handler (which defaults false). **Requires a changelog/CHANGELOG note** that API clients omitting `include_empty` now get `true`.
+
+3. **`pvp_ranking_min_cp` → PRESERVE (default 0).** Document canonical default 0; no behavior change. (DB `DEFAULT 1` is dead because the handler always writes the column.)
+
+4. **`lure_id` string names → derive from `resources/data/util.json`** during the lure migration; do not hardcode guessed names.
+
+Enum string-value names are derived from the bot keywords / util.json:
+- `team`: `harmony|mystic|valor|instinct|any` (0–4)
+- `rsvp_changes`: `none|rsvp|rsvp_only` (0–2)
+- `gender`: `any|male|female|genderless` (0–3; invasion omits genderless)
+- `pvp_ranking_league`: `none|little|great|ultra` (0/500/1500/2500)
+- `reward_type`: `item|stardust|candy|pokemon|mega_energy` (2/3/4/7/12)
+- `fort_type`: `pokestop|gym|everything`
+- `lure_id`: `any` + names-from-util.json (0/501–506)
