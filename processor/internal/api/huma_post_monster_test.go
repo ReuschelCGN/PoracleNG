@@ -216,21 +216,21 @@ func TestPostMonster_FlexFields_NotRejectedBy422(t *testing.T) {
 	}
 }
 
-// TestPostMonster_SilentQuery_NotRejectedBy422: silent query param must not
-// cause a 422 — proves query param binding.
+// TestPostMonster_SilentQuery_NotRejectedBy422: silent=true must not cause a
+// 422 — proves boolean query param binding.
 func TestPostMonster_SilentQuery_NotRejectedBy422(t *testing.T) {
 	mock := store.NewMockHumanStore()
 	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
 
 	body := `{"pokemon_id":25}`
-	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody?silent=1",
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody?silent=true",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code == http.StatusUnprocessableEntity {
-		t.Fatalf("silent query param caused 422: %s", w.Body.String())
+		t.Fatalf("silent=true query param caused 422: %s", w.Body.String())
 	}
 }
 

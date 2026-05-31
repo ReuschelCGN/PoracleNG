@@ -17,6 +17,16 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
+// profileNoFromQuery maps the optional profile_no query value to the lookup
+// argument: 0 or negative means "use the active profile" (nil); a positive
+// value selects that profile. Profiles are 1-indexed (DB default 1).
+func profileNoFromQuery(n int) *int {
+	if n <= 0 {
+		return nil
+	}
+	return &n
+}
+
 // humaLookupHuman mirrors lookupHuman but takes plain parameters instead of a
 // gin.Context. profileNo is a *int so the caller can distinguish "not provided"
 // (nil → use the human's current profile) from an explicit 0 (profile 0 is
@@ -39,35 +49,15 @@ func humaLookupHuman(deps *TrackingDeps, id string, profileNo *int) (*store.Huma
 	return human, pNo, nil
 }
 
-// parseProfileNoParam parses the profile_no query parameter string into a *int.
-// An empty string means "not provided" → returns nil (caller uses active profile).
-// A numeric string (including "0") → returns pointer to the parsed value.
-// Invalid strings → returns nil (treated as not provided; bad clients get active profile).
-//
-// We accept profile_no as a string query parameter (rather than int) because
-// huma v2 does not support pointer query parameters ("pointers are not
-// supported for form/header/path/query parameters"). Accepting a string lets us
-// distinguish "omitted" (empty string) from "explicitly zero" ("0"), which
-// would otherwise be indistinguishable with an int field whose zero value is 0.
-func parseProfileNoParam(s string) *int {
-	if s == "" {
-		return nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return nil
-	}
-	return &n
-}
-
 // listMonsterInput is the huma input type for GET /api/tracking/pokemon/{id}.
 //
-// profile_no is accepted as a string so we can distinguish "omitted" (empty →
-// use active profile) from "0" (explicitly request profile 0). huma v2 panics
-// on pointer query params, so a string with explicit parsing is the alternative.
+// profile_no is an optional integer (huma v2 does not support pointer query
+// params). 0 (or omitted) means "use the human's active profile"; a positive
+// value selects that explicit profile. Profiles are 1-indexed in the DB
+// (DEFAULT 1), so 0 is never a real profile number.
 type listMonsterInput struct {
 	ID        string `path:"id"           doc:"Human/channel/webhook id"`
-	ProfileNo string `query:"profile_no"  doc:"Profile number; omit to use your active profile (0 is a valid profile number)"`
+	ProfileNo int    `query:"profile_no"  doc:"Profile number; omit (or 0) to use your active profile"`
 }
 
 // listMonsterOutput is the huma output type — preserves the legacy
@@ -224,17 +214,18 @@ func (monsterRuleRows) Schema(r huma.Registry) *huma.Schema {
 
 // createMonsterInput is the huma input for POST /api/tracking/pokemon/{id}.
 //
-// profile_no and silent/suppressMessage are modelled as optional strings so the
-// spec does not show sentinel values as defaults:
-//   - profile_no: empty string = "use active profile", numeric string "0"..."N" = explicit profile.
-//     (huma v2 panics on pointer query params, so string is used to distinguish omitted from zero.)
-//   - silent / suppressMessage: empty = not silent; "true"/"1"/any-non-empty = suppress.
-//     Boolean semantics: suppress the confirmation message only when explicitly requested.
+// profile_no is an optional integer; 0 (or omitted) means "use the human's
+// active profile". Profiles are 1-indexed (DB default 1) so 0 is not a real
+// profile number. huma v2 does not support pointer query params so we use the
+// int zero value as the sentinel.
+//
+// silent and suppressMessage are optional booleans; omitted → false (confirm
+// message IS sent). Set either to true to suppress the confirmation message.
 type createMonsterInput struct {
 	ID              string          `path:"id"               doc:"Human/channel/webhook id"`
-	ProfileNo       string          `query:"profile_no"      doc:"Profile number; omit to use your active profile (0 is a valid profile number)"`
-	Silent          string          `query:"silent"          doc:"Set to any non-empty value (e.g. 'true') to suppress the confirmation message"`
-	SuppressMessage string          `query:"suppressMessage" doc:"Alias for silent — set to any non-empty value to suppress the confirmation message"`
+	ProfileNo       int             `query:"profile_no"      doc:"Profile number; omit (or 0) to use your active profile"`
+	Silent          bool            `query:"silent"          doc:"Suppress the confirmation message"`
+	SuppressMessage bool            `query:"suppressMessage" doc:"Alias for silent: suppress the confirmation message"`
 	Body            monsterRuleRows `doc:"One rule object or an array of rule objects. pokemon_id is required; all other fields have server-filled defaults (see schema)."`
 }
 
@@ -266,7 +257,7 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 		Tags:        []string{"tracking"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(ctx context.Context, in *listMonsterInput) (*listMonsterOutput, error) {
-		human, profileNo, err := humaLookupHuman(deps, in.ID, parseProfileNoParam(in.ProfileNo))
+		human, profileNo, err := humaLookupHuman(deps, in.ID, profileNoFromQuery(in.ProfileNo))
 		if err != nil {
 			return nil, humaNewError(http.StatusInternalServerError, err.Error())
 		}
@@ -321,7 +312,7 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 			}
 		}
 
-		human, profileNo, err := humaLookupHuman(deps, in.ID, parseProfileNoParam(in.ProfileNo))
+		human, profileNo, err := humaLookupHuman(deps, in.ID, profileNoFromQuery(in.ProfileNo))
 		if err != nil {
 			return nil, humaNewError(http.StatusInternalServerError, err.Error())
 		}
@@ -331,7 +322,7 @@ func RegisterTrackingMonster(humaAPI huma.API, deps *TrackingDeps) {
 
 		language := resolveLanguage(deps, human)
 		tr := translatorFor(deps, human)
-		silent := in.Silent != "" || in.SuppressMessage != ""
+		silent := in.Silent || in.SuppressMessage
 
 		insertReqs := []monsterRuleRequest(in.Body)
 

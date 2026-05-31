@@ -170,10 +170,10 @@ func TestHumaTrackingMonster_ProfileNoQueryBinding(t *testing.T) {
 }
 
 // TestHumaTrackingMonster_ProfileNoZero verifies that profile_no=0 is treated
-// as explicit profile 0 (not as "omitted / use active profile"). The test
-// seeds a user with CurrentProfileNo=3 and sends profile_no=0; if the param
-// were silently ignored the nil-DB panic would still occur (user found), but
-// we verify the param is non-empty and parsed correctly by confirming non-404.
+// as "use active profile" (the same as omitting the parameter), not as an
+// explicit profile selection. The test seeds a user with CurrentProfileNo=3
+// and sends profile_no=0; profileNoFromQuery(0) returns nil so
+// humaLookupHuman falls back to CurrentProfileNo=3. User is found → non-404.
 func TestHumaTrackingMonster_ProfileNoZero(t *testing.T) {
 	mock := store.NewMockHumanStore()
 	mock.AddHuman(&store.Human{
@@ -192,7 +192,7 @@ func TestHumaTrackingMonster_ProfileNoZero(t *testing.T) {
 
 	// Must not be 404 — user was found. Nil-DB → 500 expected.
 	if w.Code == http.StatusNotFound {
-		t.Fatalf("got 404 for known user with profile_no=0; body: %s", w.Body.String())
+		t.Fatalf("got 404 for known user with profile_no=0 (treated as active profile); body: %s", w.Body.String())
 	}
 }
 
@@ -220,31 +220,30 @@ func TestHumaTrackingMonster_ProfileNoOmitted(t *testing.T) {
 	}
 }
 
-// TestParseProfileNoParam verifies the parseProfileNoParam helper.
-func TestParseProfileNoParam(t *testing.T) {
+// TestProfileNoFromQuery verifies the profileNoFromQuery helper.
+// Profiles are 1-indexed; 0 and negative values mean "use active profile" (nil).
+func TestProfileNoFromQuery(t *testing.T) {
 	cases := []struct {
-		input   string
+		input   int
 		wantNil bool
 		wantVal int
 	}{
-		{"", true, 0},        // omitted → nil (use active profile)
-		{"0", false, 0},      // explicit profile 0
-		{"1", false, 1},      // explicit profile 1
-		{"42", false, 42},    // arbitrary profile
-		{"abc", true, 0},     // invalid → nil (graceful fallback)
-		{"-1", false, -1},    // negative (unusual but parseable)
+		{0, true, 0},    // zero (omitted) → nil (use active profile)
+		{-1, true, 0},   // negative → nil (use active profile)
+		{1, false, 1},   // explicit profile 1
+		{42, false, 42}, // arbitrary positive profile
 	}
 	for _, tc := range cases {
-		got := parseProfileNoParam(tc.input)
+		got := profileNoFromQuery(tc.input)
 		if tc.wantNil {
 			if got != nil {
-				t.Errorf("parseProfileNoParam(%q) = %d, want nil", tc.input, *got)
+				t.Errorf("profileNoFromQuery(%d) = %d, want nil", tc.input, *got)
 			}
 		} else {
 			if got == nil {
-				t.Errorf("parseProfileNoParam(%q) = nil, want %d", tc.input, tc.wantVal)
+				t.Errorf("profileNoFromQuery(%d) = nil, want %d", tc.input, tc.wantVal)
 			} else if *got != tc.wantVal {
-				t.Errorf("parseProfileNoParam(%q) = %d, want %d", tc.input, *got, tc.wantVal)
+				t.Errorf("profileNoFromQuery(%d) = %d, want %d", tc.input, *got, tc.wantVal)
 			}
 		}
 	}
