@@ -451,3 +451,161 @@ func TestPostMonster_NoSchemaLeak(t *testing.T) {
 		t.Errorf("error body must not contain $schema field; full body: %v", got)
 	}
 }
+
+// ── Pokemon enum field retrofit tests ────────────────────────────────────────
+//
+// These tests verify that gender and pvp_ranking_league accept BOTH the new
+// canonical string form AND the legacy integer form without a 422.
+
+// TestPostMonster_GenderStringForm_NotRejectedBy422: "gender":"female" must pass
+// huma's schema validation.
+func TestPostMonster_GenderStringForm_NotRejectedBy422(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	body := `{"pokemon_id":25,"gender":"female"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("gender:\"female\" caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_GenderIntForm_NotRejectedBy422: "gender":2 (legacy integer)
+// must pass huma's schema validation.
+func TestPostMonster_GenderIntForm_NotRejectedBy422(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	body := `{"pokemon_id":25,"gender":2}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("gender:2 caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_GenderStringAndIntSameStoredValue: "gender":"female" and
+// "gender":2 must both parse to the same stored integer (2).
+func TestPostMonster_GenderStringAndIntSameStoredValue(t *testing.T) {
+	var rowStr, rowInt monsterRuleRequest
+
+	if err := json.Unmarshal([]byte(`{"pokemon_id":25,"gender":"female"}`), &rowStr); err != nil {
+		t.Fatalf("unmarshal string form: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"pokemon_id":25,"gender":2}`), &rowInt); err != nil {
+		t.Fatalf("unmarshal int form: %v", err)
+	}
+
+	gStr := rowStr.Gender.intValue(0)
+	gInt := rowInt.Gender.intValue(0)
+	if gStr != 2 {
+		t.Errorf("gender:\"female\" parsed to %d, want 2", gStr)
+	}
+	if gInt != 2 {
+		t.Errorf("gender:2 parsed to %d, want 2", gInt)
+	}
+	if gStr != gInt {
+		t.Errorf("string form gender=%d, int form gender=%d — must be equal", gStr, gInt)
+	}
+}
+
+// TestPostMonster_LeagueStringForm_NotRejectedBy422: "pvp_ranking_league":"great"
+// must pass huma's schema validation.
+func TestPostMonster_LeagueStringForm_NotRejectedBy422(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	body := `{"pokemon_id":25,"pvp_ranking_league":"great"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("pvp_ranking_league:\"great\" caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_LeagueIntForm_NotRejectedBy422: "pvp_ranking_league":1500
+// (legacy CP cap integer) must pass huma's schema validation.
+func TestPostMonster_LeagueIntForm_NotRejectedBy422(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
+
+	body := `{"pokemon_id":25,"pvp_ranking_league":1500}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/nobody",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("pvp_ranking_league:1500 caused 422: %s", w.Body.String())
+	}
+}
+
+// TestPostMonster_LeagueStringAndIntSameStoredValue: "pvp_ranking_league":"great"
+// and "pvp_ranking_league":1500 must parse to the same stored integer (1500).
+func TestPostMonster_LeagueStringAndIntSameStoredValue(t *testing.T) {
+	var rowStr, rowInt monsterRuleRequest
+
+	if err := json.Unmarshal([]byte(`{"pokemon_id":25,"pvp_ranking_league":"great"}`), &rowStr); err != nil {
+		t.Fatalf("unmarshal string form: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"pokemon_id":25,"pvp_ranking_league":1500}`), &rowInt); err != nil {
+		t.Fatalf("unmarshal int form: %v", err)
+	}
+
+	lStr := rowStr.PVPRankingLeague.intValue(0)
+	lInt := rowInt.PVPRankingLeague.intValue(0)
+	if lStr != 1500 {
+		t.Errorf("pvp_ranking_league:\"great\" parsed to %d, want 1500", lStr)
+	}
+	if lInt != 1500 {
+		t.Errorf("pvp_ranking_league:1500 parsed to %d, want 1500", lInt)
+	}
+	if lStr != lInt {
+		t.Errorf("string form league=%d, int form league=%d — must be equal", lStr, lInt)
+	}
+}
+
+// TestPostMonster_OpenAPI_GenderAndLeagueAreStringEnums verifies that the
+// generated OpenAPI schema for the pokemon endpoint shows gender and
+// pvp_ranking_league as string enums (not raw objects or bare integers).
+func TestPostMonster_OpenAPI_GenderAndLeagueAreStringEnums(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	// We only need the huma API to get the spec; the exact endpoint doesn't matter.
+	r := buildHumaTestEngine(t, mock, false, RegisterTrackingMonster)
+
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /openapi.json: %d %s", w.Code, w.Body.String())
+	}
+
+	specBody := w.Body.String()
+	// The OpenAPI must contain the gender string enum values.
+	for _, name := range []string{"any", "male", "female", "genderless"} {
+		if !strings.Contains(specBody, `"`+name+`"`) {
+			t.Errorf("OpenAPI spec missing gender enum value %q", name)
+		}
+	}
+	// The OpenAPI must contain the league string enum values.
+	for _, name := range []string{"none", "little", "great", "ultra"} {
+		if !strings.Contains(specBody, `"`+name+`"`) {
+			t.Errorf("OpenAPI spec missing pvp_ranking_league enum value %q", name)
+		}
+	}
+}

@@ -31,3 +31,10 @@ linters:
       # by passing the error to the callback which returns nil.
       - linters: [errcheck]
         text: "Error return value of `filepath\\.WalkDir` is not checked"
+      # flex_enum.go is a pre-built fan-out toolkit: enum types for all 10 tracking
+      # types are defined here so the subsequent type migrations can import them.
+      # Only pokemon is wired so far; the remaining types (team, rsvp, rewardType,
+      # lureID, invasionGender) will be consumed by raid/egg/quest/lure/invasion.
+      # isSet() is part of the shared interface and is exercised in tests.
+      - linters: [unused]
+        path: "internal/api/flex_enum\\.go"

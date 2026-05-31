@@ -116,7 +116,7 @@ type monsterRuleRequest struct {
 	MaxATK                flexInt  `json:"max_atk"                doc:"Maximum attack IV (server default: 15)"`
 	MaxDEF                flexInt  `json:"max_def"                doc:"Maximum defence IV (server default: 15)"`
 	MaxSTA                flexInt  `json:"max_sta"                doc:"Maximum stamina IV (server default: 15)"`
-	Gender                flexInt  `json:"gender"                 doc:"Gender filter: 0 = any, 1 = male, 2 = female, 3 = genderless (server default: 0)"`
+	Gender                flexPokemonGender `json:"gender"            doc:"Gender filter: any | male | female | genderless (server default: any/0). Also accepts legacy integer 0–3."`
 	MinWeight             flexInt  `json:"min_weight"             doc:"Minimum weight in grams (server default: 0)"`
 	MaxWeight             flexInt  `json:"max_weight"             doc:"Maximum weight in grams (server default: 9000000)"`
 	MinTime               flexInt  `json:"min_time"               doc:"Minimum seconds remaining until despawn (server default: 0)"`
@@ -124,7 +124,7 @@ type monsterRuleRequest struct {
 	MaxRarity             flexInt  `json:"max_rarity"             doc:"Maximum rarity tier (server default: 6)"`
 	Size                  flexInt  `json:"size"                   doc:"Minimum size tier (-1 = server default: any size)"`
 	MaxSize               flexInt  `json:"max_size"               doc:"Maximum size tier (server default: 5)"`
-	PVPRankingLeague      flexInt  `json:"pvp_ranking_league"     doc:"PVP league ID: 0 = none, 1 = great, 2 = ultra, 3 = little (server default: 0)"`
+	PVPRankingLeague      flexLeague `json:"pvp_ranking_league"   doc:"PVP league: none | little | great | ultra (server default: none/0). Also accepts legacy integer CP cap (0/500/1500/2500)."`
 	PVPRankingBest        flexInt  `json:"pvp_ranking_best"       doc:"Best (lowest) PVP rank to alert on (server default: 1 = rank 1)"`
 	PVPRankingWorst       flexInt  `json:"pvp_ranking_worst"      doc:"Worst (highest) PVP rank to alert on (server default: 4096)"`
 	PVPRankingMinCP       flexInt  `json:"pvp_ranking_min_cp"     doc:"Minimum CP floor for PVP ranking filter (server default: 0)"`
