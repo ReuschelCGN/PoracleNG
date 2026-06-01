@@ -138,6 +138,7 @@ type monsterInsertRequest struct {
 	PVPRankingWorst       flexInt  `json:"pvp_ranking_worst"`
 	PVPRankingMinCP       flexInt  `json:"pvp_ranking_min_cp"`
 	PVPRankingCap         flexInt  `json:"pvp_ranking_cap"`
+	PVPRankingEvolution   flexInt  `json:"pvp_ranking_evolution"`
 	OverrideLocationLabel string   `json:"override_location_label"`
 	OverrideAreas         []string `json:"override_areas"`
 }
@@ -252,8 +253,9 @@ func HandleCreateMonster(deps *TrackingDeps) gin.HandlerFunc {
 				PVPRankingLeague: req.PVPRankingLeague.intValue(0),
 				PVPRankingBest:   req.PVPRankingBest.intValue(1),
 				PVPRankingWorst:  req.PVPRankingWorst.intValue(4096),
-				PVPRankingMinCP:  req.PVPRankingMinCP.intValue(0),
-				PVPRankingCap:    req.PVPRankingCap.intValue(0),
+				PVPRankingMinCP:     req.PVPRankingMinCP.intValue(0),
+				PVPRankingCap:       req.PVPRankingCap.intValue(0),
+				PVPRankingEvolution: req.PVPRankingEvolution.intValue(0),
 			}
 
 			if req.UID.isSet() {

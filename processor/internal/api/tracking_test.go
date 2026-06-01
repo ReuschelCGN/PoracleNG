@@ -12,6 +12,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/db"
+	"github.com/pokemon/poracleng/processor/internal/gamedata"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
@@ -578,6 +579,52 @@ func TestTrackingAPI_RejectsAreaNotPermitted(t *testing.T) {
 	// Must NOT be rejected as "not permitted" — london is in the user's community.
 	if w2.Code == http.StatusBadRequest && strings.Contains(w2.Body.String(), "not permitted") {
 		t.Fatalf("london should be permitted for teamcity user, got %d / %s", w2.Code, w2.Body.String())
+	}
+}
+
+// TestCreateMonster_PersistsPVPRankingEvolution verifies that pvp_ranking_evolution
+// from the POST body is accepted and persisted to the inserted tracking row.
+func TestCreateMonster_PersistsPVPRankingEvolution(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{ID: "u1", Type: "discord:user", Name: "User", Enabled: true, Language: "en", CurrentProfileNo: 1})
+
+	mockMonsters := store.NewMockTrackingStore(store.MonsterGetUID, store.MonsterSetUID)
+
+	// Minimal GameData with initialized maps so rowtext doesn't nil-panic.
+	minGD := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{},
+		Util:     &gamedata.UtilData{},
+	}
+
+	deps := &TrackingDeps{
+		Humans: mock,
+		Tracking: &store.TrackingStores{
+			Monsters: mockMonsters,
+		},
+		Config:       &config.Config{},
+		RowText:      &rowtext.Generator{DefaultTemplateName: "1", GD: minGD},
+		Translations: i18n.NewBundle(),
+	}
+
+	r := gin.New()
+	r.POST("/api/tracking/pokemon/:id", HandleCreateMonster(deps))
+
+	body := `{"pokemon_id":6,"pvp_ranking_league":1500,"pvp_ranking_best":1,"pvp_ranking_worst":5,"pvp_ranking_evolution":2}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tracking/pokemon/u1", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	rows := mockMonsters.AllRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 inserted row, got %d", len(rows))
+	}
+	inserted := rows[0]
+	if inserted.PVPRankingEvolution != 2 {
+		t.Fatalf("PVPRankingEvolution = %d, want 2", inserted.PVPRankingEvolution)
 	}
 }
 
