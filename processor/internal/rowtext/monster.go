@@ -50,6 +50,15 @@ func (g *Generator) MonsterRowText(tr *i18n.Translator, monster *db.MonsterTrack
 			tr.T("tracking.pvp_ranking"), leagueName,
 			bestPrefix, monster.PVPRankingWorst,
 			monster.PVPRankingMinCP, capStr)
+
+		switch monster.PVPRankingEvolution {
+		case 1:
+			pvpString += " " + tr.T("tracking.pvp_mega_any")
+		case 2:
+			pvpString += " " + tr.T("tracking.pvp_mega_x")
+		case 3:
+			pvpString += " " + tr.T("tracking.pvp_mega_y")
+		}
 	}
 
 	s := fmt.Sprintf("**%s** %s", name, formName)
