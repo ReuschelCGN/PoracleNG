@@ -50,6 +50,17 @@ func TestBuildMonsterIndexFromRules(t *testing.T) {
 	}
 }
 
+func TestBuildMonsterIndex_CarriesEvolution(t *testing.T) {
+	rules := []MonsterTracking{
+		{ID: "u1", PokemonID: 6, PVPRankingLeague: 1500, PVPRankingEvolution: 2},
+	}
+	idx := BuildMonsterIndexFromRules(rules)
+	got := idx.PVPSpecific[1500]
+	if len(got) != 1 || got[0].PVPRankingEvolution != 2 {
+		t.Fatalf("expected one PVP rule with PVPRankingEvolution=2, got %#v", got)
+	}
+}
+
 func TestBuildMonsterIndexFromRulesEmpty(t *testing.T) {
 	idx := BuildMonsterIndexFromRules(nil)
 	if idx == nil {
