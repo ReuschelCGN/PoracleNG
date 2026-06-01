@@ -232,11 +232,10 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	// Warn if a specific mega form (mega:x / mega:y) targets a species that
 	// has no such temporary evolution — the rule could never match.
 	if specificEvo := specificMegaEvo(pvpEntries); specificEvo != 0 && ctx.GameData != nil {
-		formLabel := "X"
+		formLabel := tr.T("tracking.mega_x_label")
 		if specificEvo == 3 {
-			formLabel = "Y"
+			formLabel = tr.T("tracking.mega_y_label")
 		}
-		tr := ctx.Tr()
 		for _, mon := range monsterList {
 			if mon.PokemonID == 0 {
 				continue // "everything" catch-all — skip

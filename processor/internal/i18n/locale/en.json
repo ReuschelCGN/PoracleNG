@@ -67,6 +67,8 @@
   "tracking.pvp_mega_any": "mega",
   "tracking.pvp_mega_x": "mega x",
   "tracking.pvp_mega_y": "mega y",
+  "tracking.mega_x_label": "X",
+  "tracking.mega_y_label": "Y",
   "tracking.level_cap_fmt": "level cap: {0}",
   "tracking.everything": "Everything",
   "tracking.unknown_monster": "Unknown monster",
