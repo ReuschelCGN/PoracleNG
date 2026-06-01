@@ -196,13 +196,13 @@ func (m *PokemonMatcher) matchMonsters(
 		// PVP league filters
 		if league != 0 {
 			// Mega/temporary-evolution discriminator (parallel to the cap filter).
-			switch {
-			case monster.PVPRankingEvolution == 0:
+			switch monster.PVPRankingEvolution {
+			case 0:
 				// "without mega": base only, unless the server default includes megas.
 				if !m.IncludeMegaEvolution && leagueData.Evolution != 0 {
 					continue
 				}
-			case monster.PVPRankingEvolution == 1:
+			case 1:
 				if leagueData.Evolution == 0 { // any mega
 					continue
 				}

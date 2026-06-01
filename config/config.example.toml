@@ -44,7 +44,12 @@ cache_dir = ".cache/geofences"           # shared cache directory for downloaded
 
 [pvp]
 level_caps = [50]                        # level caps to include in rank calculations, eg [50, 51]
-include_mega_evolution = false           # whether to include mega evolutions in rank calculations
+# include_mega_evolution - server default for PVP rules that do NOT specify a
+# mega keyword (i.e. pvp_ranking_evolution = 0). false: those rules match base
+# forms only; true: they also match mega/temporary-evolution ranks. Per-rule
+# `mega` / `mega:x` / `mega:y` keywords always override this regardless of the
+# flag.
+include_mega_evolution = false
 evolution_direct_tracking = false
 filter_by_track = false                  # whether PVP listings are auto-filtered by user's track requirements
 # filter_* - minimums on the track command to help users get PVP tracking right
