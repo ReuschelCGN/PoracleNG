@@ -110,6 +110,7 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 	for _, stats := range leagueData {
 		var caps []int
 		if stats.Cap == 0 && !stats.Capped {
+			// Golbat non-ohbem format (cap=0, not capped) — treat as cap 50
 			caps = append(caps, 50)
 		} else if stats.Capped {
 			for _, c := range capsConsidered {
