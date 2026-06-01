@@ -321,6 +321,8 @@
   "arg.prefix.maxsize": "maxsize",
   "arg.prefix.gen": "gen",
   "arg.prefix.cap": "cap",
+  "arg.mega": "mega",
+  "arg.prefix.mega": "mega",
   "arg.prefix.form": "form",
   "arg.prefix.template": "template",
   "arg.prefix.gym": "gym",

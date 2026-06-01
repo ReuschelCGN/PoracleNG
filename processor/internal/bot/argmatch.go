@@ -303,7 +303,7 @@ var knownPrefixKeys = []string{
 	// can't add weight constraints.
 	"arg.prefix.rarity", "arg.prefix.maxrarity",
 	"arg.prefix.size", "arg.prefix.maxsize",
-	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap",
+	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap", "arg.prefix.mega",
 	"arg.prefix.form", "arg.prefix.template", "arg.prefix.move", "arg.prefix.language",
 	"arg.prefix.gym",
 	"arg.prefix.stardust", "arg.prefix.energy", "arg.prefix.candy",
@@ -319,7 +319,7 @@ var knownKeywordKeys = []string{
 	"arg.remove", "arg.everything", "arg.individually",
 	"arg.clean", "arg.edit", "arg.summary", "arg.shiny", "arg.ex",
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
-	"arg.gmax",
+	"arg.gmax", "arg.mega",
 	"arg.pokestop", "arg.gym", "arg.station", "arg.location", "arg.new", "arg.removal", "arg.photo", "arg.name", "arg.description", "arg.include_empty",
 	"arg.stardust", "arg.energy", "arg.candy",
 	"arg.slot_changes", "arg.battle_changes",

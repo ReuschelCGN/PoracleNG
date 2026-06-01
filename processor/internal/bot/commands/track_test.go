@@ -620,3 +620,27 @@ func TestTrack_RejectsAreaWithDistance(t *testing.T) {
 		t.Fatalf("expected a+d rejection, got %+v", replies)
 	}
 }
+
+func TestParsePVP_MegaKeywords(t *testing.T) {
+	cases := []struct {
+		args string
+		want int
+	}{
+		{"great5", 0},
+		{"great5 mega", 1},
+		{"great5 mega:x", 2},
+		{"great5 mega:y", 3},
+	}
+	for _, tc := range cases {
+		ctx := trackCtx(t)
+		params := trackParams(ctx)
+		parsed := ctx.ArgMatcher.Match(strings.Fields(tc.args), params, "en")
+		entries := (&TrackCommand{}).parsePVP(ctx, parsed)
+		if len(entries) != 1 {
+			t.Fatalf("%q: expected 1 pvp entry, got %d", tc.args, len(entries))
+		}
+		if entries[0].Evolution != tc.want {
+			t.Errorf("%q: Evolution = %d, want %d", tc.args, entries[0].Evolution, tc.want)
+		}
+	}
+}

@@ -187,6 +187,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				PVPRankingWorst:       pe.Worst,
 				PVPRankingMinCP:       pe.MinCP,
 				PVPRankingCap:         pe.Cap,
+				PVPRankingEvolution:   pe.Evolution,
 				OverrideLocationLabel: override.LocationLabel,
 				OverrideAreas:         override.Areas,
 			})
@@ -264,6 +265,8 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.t"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.gen"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.cap"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
+		{Type: bot.ParamKeyword, Key: "arg.mega"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.form"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.template"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
@@ -475,11 +478,12 @@ func (c *TrackCommand) parseFilters(ctx *bot.CommandContext, parsed *bot.ParsedA
 
 // pvpEntry holds resolved PVP parameters for a single league.
 type pvpEntry struct {
-	League int // CP cap: 500, 1500, 2500
-	Best   int
-	Worst  int
-	MinCP  int
-	Cap    int
+	League    int // CP cap: 500, 1500, 2500
+	Best      int
+	Worst     int
+	MinCP     int
+	Cap       int
+	Evolution int // 0 base, 1 any mega, 2 Mega X, 3 Mega Y
 }
 
 // parsePVP resolves all PVP league parameters from parsed args.
@@ -499,6 +503,21 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 	cap := 0
 	if v, ok := parsed.Singles["cap"]; ok {
 		cap = v
+	}
+
+	megaEvo := 0
+	if v, ok := parsed.Strings["mega"]; ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "", "1":
+			megaEvo = 1
+		case "x":
+			megaEvo = 2
+		case "y":
+			megaEvo = 3
+		}
+	}
+	if megaEvo == 0 && parsed.HasKeyword("arg.mega") {
+		megaEvo = 1
 	}
 
 	var entries []pvpEntry
@@ -535,11 +554,12 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 		}
 
 		entries = append(entries, pvpEntry{
-			League: l.cp,
-			Best:   best,
-			Worst:  worst,
-			MinCP:  minCP,
-			Cap:    cap,
+			League:    l.cp,
+			Best:      best,
+			Worst:     worst,
+			MinCP:     minCP,
+			Cap:       cap,
+			Evolution: megaEvo,
 		})
 	}
 
