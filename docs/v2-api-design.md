@@ -70,6 +70,8 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 - **Create** body is an **array** of rule objects (bulk is the common case; a single rule is a one-element array). `user`/`profile` come from the query (one owner per request), not repeated in each rule.
 - **List** returns `{ "rules": [ <rule>, ... ] }` (object wrapper leaves room for pagination metadata later).
 - **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }`.
+- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; any omitted field resets to its documented default. (No `PATCH`/partial-update in v2 scope.)
+- Unknown body **and** query parameters are rejected (`422`) — v2 is strict.
 - Every rule object carries its `uid` (int) in responses.
 
 ### Field conventions
@@ -102,15 +104,15 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 
 **egg** — `level` (int), `team` (enum), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum).
 
-**quest** — `reward_type`* (int — proto id: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon, `12`=mega_energy), `reward` (int — the rewarded item/pokemon id), `amount` (int), `shiny` (bool). *(reward field set to be confirmed against the quest handler.)*
+**quest** — `reward_type`* (int — proto id: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon, `12`=mega_energy), `reward` (int — the rewarded item/pokemon id), `amount` (int), `form` (int — for pokemon-reward forms), `shiny` (bool).
 
-**invasion** (Rocket grunts) — target by **either** axis: `type_id` (int, grunt poke-type) [+ `gender` (enum `any|male|female`)], **or** `grunt_id` (int, the exact grunt character — implies type+gender). Plus `everything` (bool) and `boss` (bool) catch-alls.
+**invasion** (Rocket grunts) — target via **exactly one** mode per rule: `type_id` (int, grunt poke-type — `gender` (enum `any|male|female`) applies only here) | `grunt_id` (int, the exact grunt character, implies type+gender) | `everything` (bool) | `boss` (bool).
 
 **incident** (events) — `display_type`* (int — game `PokestopEvent` id, e.g. `9` = Showcase; names documented in the field description).
 
 **lure** — `lure_id` (int — game item id: `0`=any, `501`=normal, `502`=glacial, `503`=mossy, `504`=magnetic, `505`=rainy, `506`=sparkly).
 
-**nest** — `pokemon_id` (int), `form` (int), `min_spawn_avg` (number).
+**nest** — `pokemon_id` (int), `form` (int), `min_spawn_avg` (int).
 
 **gym** — `team` (enum), `slot_changes` (bool), `battle_changes` (bool), `gym_id` (string).
 
@@ -177,13 +179,14 @@ Done on this branch for the (now-superseded) in-place approach; triage:
 
 - [ ] **List/Create response shapes** — `{rules:[…]}` vs bare array; `{created,updated,unchanged}` vs just the rules. (Proposed above; confirm.)
 - [ ] **Collection scoping** — `?user=&profile=` vs `/users/{id}/tracking/{type}`. (Proposed query; confirm.)
-- [ ] **quest** `reward`/`amount` fields — confirm exact fields against the quest handler.
-- [ ] **PUT semantics** — full replace vs partial update (PATCH). Proposed: `PUT` = full replace of the rule's filter fields.
-- [ ] **`everything`/`boss`** on invasion — booleans, or fold into the model differently?
 - [ ] **humans & profiles v2 shape** — not yet designed; tracking first. (humans: registration/areas/locations/profile switch; profiles: CRUD.) Separate design pass.
-- [ ] **Validation strictness vs unknown fields** — strict `additionalProperties:false` confirmed; confirm we want unknown query params rejected too.
-- [ ] **Client transition** — deprecation header/sunset policy on v1? Timeline for PoracleWeb cutover?
 - [ ] **Pagination/filtering** on list endpoints — out of scope for v1 parity, but the `{rules:[…]}` wrapper reserves room.
+
+**Decided (no longer open):**
+- **Update verb** — `PUT` full-replace only; no `PATCH` in v2 scope.
+- **Strictness** — strict throughout: unknown body and query params both rejected (`422`).
+- **v1 deprecation** — v1 stays fully supported with no sunset date yet; add a `Deprecation` marker + link to v2 on v1 responses once PoracleWeb has moved; set a hard sunset date later.
+- **quest / nest / invasion fields** — quest (`reward_type`,`reward`,`amount`,`form`,`shiny`), nest `min_spawn_avg` = int, invasion exactly-one-mode (`type_id`|`grunt_id`|`everything`|`boss`).
 
 ## 6. Remaining design walkthrough
 
