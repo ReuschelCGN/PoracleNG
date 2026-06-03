@@ -115,14 +115,14 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		OperationID: "list-summaries-for-user", Method: "GET", Path: "/summaries/{id}",
 		Summary: "List summary schedules for a user", Tags: []string{"summaries"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *summaryIDInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *summaryIDInput) (*summaryListOutput, error) {
 		if deps.Schedules == nil {
 			return nil, huma.Error503ServiceUnavailable(summaryDisabledMsg)
 		}
 		if in.ID == "" {
 			return nil, huma.Error400BadRequest("missing id parameter")
 		}
-		out := make([]summaryScheduleResponse, 0)
+		schedules := make([]summaryScheduleResponse, 0)
 		for _, alertType := range knownSummaryAlertTypes {
 			s, err := deps.Schedules.Get(in.ID, alertType)
 			if err != nil {
@@ -132,9 +132,12 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 			if s == nil {
 				continue
 			}
-			out = append(out, toSummaryResponse(s))
+			schedules = append(schedules, toSummaryResponse(s))
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "schedules": out}}, nil
+		out := &summaryListOutput{}
+		out.Body.Status = "ok"
+		out.Body.Schedules = schedules
+		return out, nil
 	})
 
 	// GET /api/summaries/{id}/{alertType} — fetch one schedule.
@@ -142,7 +145,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		OperationID: "get-summary", Method: "GET", Path: "/summaries/{id}/{alertType}",
 		Summary: "Get a summary schedule", Tags: []string{"summaries"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *summaryAlertInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *summaryAlertInput) (*summaryGetOutput, error) {
 		if deps.Schedules == nil {
 			return nil, huma.Error503ServiceUnavailable(summaryDisabledMsg)
 		}
@@ -160,7 +163,10 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		if s == nil {
 			return nil, huma.Error404NotFound("schedule not found")
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "schedule": toSummaryResponse(s)}}, nil
+		out := &summaryGetOutput{}
+		out.Body.Status = "ok"
+		out.Body.Schedule = toSummaryResponse(s)
+		return out, nil
 	})
 
 	// DELETE /api/summaries/{id}/{alertType} — remove a schedule (idempotent).
@@ -168,7 +174,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		OperationID: "delete-summary", Method: "DELETE", Path: "/summaries/{id}/{alertType}",
 		Summary: "Delete a summary schedule", Tags: []string{"summaries"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *summaryAlertInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *summaryAlertInput) (*statusOKOutput, error) {
 		if deps.Schedules == nil {
 			return nil, huma.Error503ServiceUnavailable(summaryDisabledMsg)
 		}
@@ -185,7 +191,9 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		if deps.ReloadFunc != nil {
 			deps.ReloadFunc()
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok"}}, nil
+		out := &statusOKOutput{}
+		out.Body.Status = "ok"
+		return out, nil
 	})
 
 	// POST /api/summaries/{id}/{alertType}/trigger — flush the buffer now.
@@ -193,7 +201,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 		OperationID: "trigger-summary", Method: "POST", Path: "/summaries/{id}/{alertType}/trigger",
 		Summary: "Trigger a summary dispatch", Tags: []string{"summaries"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *summaryAlertInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *summaryAlertInput) (*statusOKOutput, error) {
 		if deps.Dispatch == nil {
 			return nil, huma.Error503ServiceUnavailable(summaryDisabledMsg)
 		}
@@ -204,8 +212,28 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 			return nil, huma.Error400BadRequest(unknownAlertTypeMsg)
 		}
 		deps.Dispatch(in.ID, in.AlertType)
-		return &anyBodyOutput{Body: map[string]any{"status": "ok"}}, nil
+		out := &statusOKOutput{}
+		out.Body.Status = "ok"
+		return out, nil
 	})
+}
+
+// summaryListOutput is the typed body for GET /api/summaries/{id}: {status,
+// schedules}.
+type summaryListOutput struct {
+	Body struct {
+		Status    string                    `json:"status"`
+		Schedules []summaryScheduleResponse `json:"schedules"`
+	}
+}
+
+// summaryGetOutput is the typed body for GET /api/summaries/{id}/{alertType}:
+// {status, schedule}.
+type summaryGetOutput struct {
+	Body struct {
+		Status   string                  `json:"status"`
+		Schedule summaryScheduleResponse `json:"schedule"`
+	}
 }
 
 // summaryDisabledMsg / unknownAlertTypeMsg keep the legacy wording stable.
@@ -233,6 +261,12 @@ type commandInput struct {
 	Body commandBody
 }
 
+// commandOutput is the typed body for POST /api/command: the same
+// commandResponse shape the legacy handler returned ({status, replies}).
+type commandOutput struct {
+	Body commandResponse
+}
+
 // RegisterCommand registers POST /api/command on the shared huma instance,
 // replacing the legacy gin HandleCommand. The success body is the same
 // commandResponse shape; error paths surface as problem+json.
@@ -244,7 +278,7 @@ func RegisterCommand(api huma.API, deps *bot.BotDeps) {
 		OperationID: "post-command", Method: "POST", Path: "/command",
 		Summary: "Execute a bot command", Tags: []string{"command"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *commandInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *commandInput) (*commandOutput, error) {
 		req := commandRequest{
 			Text:      in.Body.Text,
 			UserID:    in.Body.UserID,
@@ -266,7 +300,7 @@ func RegisterCommand(api huma.API, deps *bot.BotDeps) {
 		// Parse commands from text
 		parsed := deps.Parser.Parse(req.Text)
 		if len(parsed) == 0 {
-			return &anyBodyOutput{Body: commandResponse{Status: "ok", Replies: nil}}, nil
+			return &commandOutput{Body: commandResponse{Status: "ok", Replies: nil}}, nil
 		}
 
 		// Look up user in DB for language, profile, location, area
@@ -366,6 +400,6 @@ func RegisterCommand(api huma.API, deps *bot.BotDeps) {
 			allReplies = append(allReplies, replies...)
 		}
 
-		return &anyBodyOutput{Body: commandResponse{Status: "ok", Replies: allReplies}}, nil
+		return &commandOutput{Body: commandResponse{Status: "ok", Replies: allReplies}}, nil
 	})
 }

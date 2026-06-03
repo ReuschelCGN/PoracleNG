@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "ActionInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "required_scope": {
+            "type": "boolean"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "scopes",
+          "required_scope"
+        ],
+        "type": "object"
+      },
       "AdminRolesResult": {
         "additionalProperties": false,
         "properties": {
@@ -11,6 +46,67 @@
             "$ref": "#/components/schemas/TelegramAdminRoles"
           }
         },
+        "type": "object"
+      },
+      "Attachment": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "contentEncoding": "base64",
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content"
+        ],
+        "type": "object"
+      },
+      "BlockScope": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "helper": {
+            "type": "string"
+          },
+          "iterableFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "helper",
+          "description",
+          "fields"
+        ],
         "type": "object"
       },
       "CommandBody": {
@@ -40,6 +136,265 @@
         },
         "type": "object"
       },
+      "CommandResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/Reply"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "replies"
+        ],
+        "type": "object"
+      },
+      "ConfigDependency": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "field",
+          "value"
+        ],
+        "type": "object"
+      },
+      "ConfigFieldDef": {
+        "additionalProperties": false,
+        "properties": {
+          "advanced": {
+            "type": "boolean"
+          },
+          "default": {},
+          "dependsOn": {
+            "$ref": "#/components/schemas/ConfigDependency"
+          },
+          "deprecated": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "hideDefault": {
+            "type": "boolean"
+          },
+          "hotReload": {
+            "type": "boolean"
+          },
+          "maxLength": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minLength": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigSelectOption"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "resolve": {
+            "type": "string"
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "description"
+        ],
+        "type": "object"
+      },
+      "ConfigSchemaOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigSection"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "sections"
+        ],
+        "type": "object"
+      },
+      "ConfigSection": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigFieldDef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigTableDef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "ConfigSelectOption": {
+        "additionalProperties": false,
+        "properties": {
+          "deprecated": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "description"
+        ],
+        "type": "object"
+      },
+      "ConfigTableDef": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigFieldDef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "description",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "Def": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "applies_to": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "response_template_id": {
+            "type": "string"
+          },
+          "response_template_inline": {},
+          "response_text": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "show_if": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string"
+          },
+          "visible_to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
       "DefaultLocation": {
         "additionalProperties": false,
         "properties": {
@@ -55,6 +410,23 @@
         "required": [
           "latitude",
           "longitude"
+        ],
+        "type": "object"
+      },
+      "DeliverMessagesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "queued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "queued"
         ],
         "type": "object"
       },
@@ -90,6 +462,222 @@
         ],
         "type": "object"
       },
+      "DtsActionsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionInfo"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actions"
+        ],
+        "type": "object"
+      },
+      "DtsEntryWithContent": {
+        "additionalProperties": false,
+        "properties": {
+          "buttons": {
+            "items": {
+              "$ref": "#/components/schemas/Def"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "readonly": {
+            "type": "boolean"
+          },
+          "template": {},
+          "templateFile": {
+            "type": "string"
+          },
+          "templateFileContent": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "platform",
+          "language",
+          "default",
+          "hidden",
+          "template"
+        ],
+        "type": "object"
+      },
+      "DtsFieldTypesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "types"
+        ],
+        "type": "object"
+      },
+      "DtsFieldsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blockScopes": {
+            "items": {
+              "$ref": "#/components/schemas/BlockScope"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "snippets": {
+            "items": {
+              "$ref": "#/components/schemas/Snippet"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "type",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "DtsGetTemplatesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/DtsEntryWithContent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "templates"
+        ],
+        "type": "object"
+      },
+      "DtsPartialsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "partials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "partials"
+        ],
+        "type": "object"
+      },
+      "DtsSaveOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "saved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "saved"
+        ],
+        "type": "object"
+      },
+      "DtsSendTestOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
       "DtsTemplateFileWriteInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -99,6 +687,48 @@
         },
         "required": [
           "content"
+        ],
+        "type": "object"
+      },
+      "DtsTemplateFileWriteOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "templateFile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "templateFile",
+          "backup"
+        ],
+        "type": "object"
+      },
+      "DtsTestdataOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "testdata": {
+            "items": {
+              "$ref": "#/components/schemas/TestDataEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "testdata"
         ],
         "type": "object"
       },
@@ -172,6 +802,295 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "Fence": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "displayInMatches": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "multipath": {
+            "items": {
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "userSelectable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "id",
+          "color",
+          "group",
+          "description",
+          "userSelectable",
+          "displayInMatches"
+        ],
+        "type": "object"
+      },
+      "FieldDef": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "deprecated": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preferred": {
+            "type": "boolean"
+          },
+          "preferredAlternative": {
+            "type": "string"
+          },
+          "rawWebhook": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "description",
+          "category"
+        ],
+        "type": "object"
+      },
+      "ForwardResult": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "latitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "type": "object"
+      },
+      "GeoJSONFeature": {
+        "additionalProperties": false,
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/GeoJSONGeometry"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/GeoJSONProperties"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "properties",
+          "geometry"
+        ],
+        "type": "object"
+      },
+      "GeoJSONGeometry": {
+        "additionalProperties": false,
+        "properties": {
+          "coordinates": {},
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "type": "object"
+      },
+      "GeoJSONProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "displayInMatches": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "userSelectable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "color",
+          "id",
+          "group",
+          "description",
+          "userSelectable",
+          "displayInMatches"
+        ],
+        "type": "object"
+      },
+      "GeoJSONStruct": {
+        "additionalProperties": false,
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/GeoJSONFeature"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "features"
+        ],
+        "type": "object"
+      },
+      "GeofenceAllOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "geofence": {
+            "items": {
+              "$ref": "#/components/schemas/Fence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "geofence"
+        ],
+        "type": "object"
+      },
+      "GeofenceGeoJSONOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "geoJSON": {
+            "$ref": "#/components/schemas/GeoJSONStruct"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "geoJSON"
+        ],
+        "type": "object"
+      },
+      "GeofenceHashOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "areas": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "areas"
+        ],
         "type": "object"
       },
       "GuildRoleInfo": {
@@ -432,6 +1351,28 @@
         ],
         "type": "object"
       },
+      "Reply": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/Attachment"
+          },
+          "embed": {},
+          "imageUrl": {
+            "type": "string"
+          },
+          "isDM": {
+            "type": "boolean"
+          },
+          "react": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RoleInfo": {
         "additionalProperties": false,
         "properties": {
@@ -452,6 +1393,126 @@
         ],
         "type": "object"
       },
+      "Snapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "alertType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "enrichment": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "expiresAt": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "language": {
+            "type": "string"
+          },
+          "matchedAreas": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "perLang": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "perUser": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          },
+          "templateRequested": {
+            "type": "string"
+          },
+          "templateSelected": {
+            "type": "string"
+          },
+          "templateType": {
+            "type": "string"
+          },
+          "trackingUids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "webhookFields": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "version",
+          "messageId",
+          "target",
+          "targetType",
+          "createdAt",
+          "expiresAt",
+          "alertType",
+          "templateType",
+          "templateRequested",
+          "templateSelected",
+          "language",
+          "platform"
+        ],
+        "type": "object"
+      },
+      "Snippet": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "insert": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "insert",
+          "description"
+        ],
+        "type": "object"
+      },
       "StatusOKOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -461,6 +1522,44 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "SummaryGetOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "schedule": {
+            "$ref": "#/components/schemas/SummaryScheduleResponse"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "SummaryListOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryScheduleResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "schedules"
         ],
         "type": "object"
       },
@@ -501,6 +1600,28 @@
         "required": [
           "channels",
           "users"
+        ],
+        "type": "object"
+      },
+      "TestDataEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "type": "string"
+          },
+          "test": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "webhook": {}
+        },
+        "required": [
+          "type",
+          "test",
+          "location",
+          "webhook"
         ],
         "type": "object"
       },
@@ -9586,7 +10707,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
               }
             },
             "description": "OK"
@@ -9655,7 +10778,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigSchemaOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -9872,7 +10997,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DeliverMessagesOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -9906,7 +11033,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsActionsOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -9935,6 +11064,7 @@
     },
     "/dts/emoji": {
       "get": {
+        "description": "Returns emoji lookup data for template editing. The response body is left open (freeform): with a `platform` query it is {status, platform, emoji}; without it is {status, defaults, platforms}.",
         "operationId": "get-dts-emoji",
         "parameters": [
           {
@@ -10027,7 +11157,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsFieldTypesOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10071,7 +11203,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsFieldsOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10105,7 +11239,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsPartialsOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10261,7 +11397,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsSendTestOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10329,7 +11467,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10395,7 +11535,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsGetTemplatesOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10436,7 +11578,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsSaveOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10514,7 +11658,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsTemplateFileWriteOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10558,7 +11704,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsTestdataOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10603,7 +11751,15 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ForwardResult"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
               }
             },
             "description": "OK"
@@ -10637,7 +11793,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceAllOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10671,7 +11829,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceGeoJSONOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -10705,7 +11865,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeofenceHashOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11081,6 +12243,7 @@
     },
     "/masterdata/grunts": {
       "get": {
+        "description": "Returns the poracle-v2 grunts map keyed by grunt id. The response body is left open (freeform): it is an object with arbitrary id-keyed entries, so it has no fixed schema.",
         "operationId": "get-masterdata-grunts",
         "responses": {
           "200": {
@@ -11115,6 +12278,7 @@
     },
     "/masterdata/monsters": {
       "get": {
+        "description": "Returns the poracle-v2 monsters map keyed by `<id>_<form>`. The response body is left open (freeform): it is an object with arbitrary id-keyed entries (and an empty `[]` when game data is unavailable), so it has no fixed schema.",
         "operationId": "get-masterdata-monsters",
         "parameters": [
           {
@@ -11173,7 +12337,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DeliverMessagesOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11339,7 +12505,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
               }
             },
             "description": "OK"
@@ -11368,6 +12536,7 @@
     },
     "/stats/rarity": {
       "get": {
+        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
         "operationId": "get-stats-rarity",
         "responses": {
           "200": {
@@ -11402,6 +12571,7 @@
     },
     "/stats/shiny": {
       "get": {
+        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
         "operationId": "get-stats-shiny",
         "responses": {
           "200": {
@@ -11436,6 +12606,7 @@
     },
     "/stats/shiny-possible": {
       "get": {
+        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
         "operationId": "get-stats-shiny-possible",
         "responses": {
           "200": {
@@ -11485,7 +12656,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryListOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11537,7 +12710,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11587,7 +12762,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryGetOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11700,7 +12877,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -11743,7 +12922,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -19325,7 +20506,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "type": "object"
+                }
               }
             },
             "description": "OK"

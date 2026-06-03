@@ -166,6 +166,15 @@ type dtsSaveInput struct {
 	Body openJSON
 }
 
+// dtsSaveOutput is the typed body for POST /api/dts/templates: {status, saved}
+// where saved is the count of entries persisted.
+type dtsSaveOutput struct {
+	Body struct {
+		Status string `json:"status"`
+		Saved  int    `json:"saved"`
+	}
+}
+
 // RegisterDTSSaveTemplates registers POST /api/dts/templates, saving an array
 // of DTS entries. Replaces gin HandleDTSSaveTemplates. The request body is open
 // ([]DTSEntry with a polymorphic `template` value). Each entry is saved to its
@@ -177,7 +186,7 @@ func RegisterDTSSaveTemplates(api huma.API, ts dtsSaveWriter) {
 		Description: "Saves an array of DTS entries. Request body is open: []DTSEntry where each entry's `template` field is polymorphic (string, object, or array). Readonly (bundled) entries are rejected.",
 		Tags:        []string{"dts"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsSaveInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsSaveInput) (*dtsSaveOutput, error) {
 		var entries []dts.DTSEntry
 		if err := json.Unmarshal(in.Body, &entries); err != nil {
 			log.Warnf("dts save: invalid request body: %v", err)
@@ -207,7 +216,10 @@ func RegisterDTSSaveTemplates(api huma.API, ts dtsSaveWriter) {
 		}
 
 		log.Infof("dts save: saved %d template(s) via API", saved)
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "saved": saved}}, nil
+		out := &dtsSaveOutput{}
+		out.Body.Status = "ok"
+		out.Body.Saved = saved
+		return out, nil
 	})
 }
 
@@ -268,6 +280,15 @@ type dtsSendTestInput struct {
 	Body openJSON
 }
 
+// dtsSendTestOutput is the typed body for POST /api/dts/sendtest: {status,
+// message} where message is the fixed string "sent" on success.
+type dtsSendTestOutput struct {
+	Body struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+}
+
 // RegisterDTSSendTest registers POST /api/dts/sendtest, rendering a template
 // with provided variables and delivering it to a target. Replaces gin
 // HandleDTSSendTest. The request body is open: a polymorphic `template` value,
@@ -279,7 +300,7 @@ func RegisterDTSSendTest(api huma.API, dispatcher dtsDispatcher, ts dtsSendTestR
 		Description: "Renders a template with provided variables and delivers it to a target. Request body is open: a polymorphic `template` value (string or object), an arbitrary `variables` map, plus {target,language,platform}.",
 		Tags:        []string{"dts"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsSendTestInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsSendTestInput) (*dtsSendTestOutput, error) {
 		if dispatcher == nil {
 			return nil, huma.Error503ServiceUnavailable("delivery dispatcher not configured")
 		}
@@ -366,7 +387,10 @@ func RegisterDTSSendTest(api huma.API, dispatcher dtsDispatcher, ts dtsSendTestR
 		}
 		dispatcher.Dispatch(job)
 
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "message": "sent"}}, nil
+		out := &dtsSendTestOutput{}
+		out.Body.Status = "ok"
+		out.Body.Message = "sent"
+		return out, nil
 	})
 }
 

@@ -44,11 +44,17 @@ type dtsEmojiInput struct {
 // RegisterDTSEmoji registers GET /api/dts/emoji. With a platform query it
 // returns the merged flat map for that platform; otherwise the full
 // defaults+overrides set. Replaces gin HandleDTSEmoji. Success JSON preserved.
+//
+// The response is left open (freeform): the body shape depends on the query —
+// with a `platform` it is {status, platform, emoji}, without it is {status,
+// defaults, platforms} — so there is no single fixed schema.
 func RegisterDTSEmoji(api huma.API, emoji dtsEmojiLookup) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-emoji", Method: "GET", Path: "/dts/emoji",
-		Summary: "Emoji lookup map for template editing", Tags: []string{"dts"},
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Summary:     "Emoji lookup map for template editing",
+		Description: "Returns emoji lookup data for template editing. The response body is left open (freeform): with a `platform` query it is {status, platform, emoji}; without it is {status, defaults, platforms}.",
+		Tags:        []string{"dts"},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsEmojiInput) (*anyBodyOutput, error) {
 		if in.Platform != "" {
 			return &anyBodyOutput{Body: map[string]any{
@@ -80,6 +86,15 @@ type dtsEntryWithContent struct {
 	TemplateFileContent string `json:"templateFileContent,omitempty"`
 }
 
+// dtsGetTemplatesOutput is the typed body for GET /api/dts/templates: a status
+// envelope plus the filtered DTS entries (with resolved templateFile content).
+type dtsGetTemplatesOutput struct {
+	Body struct {
+		Status    string                `json:"status"`
+		Templates []dtsEntryWithContent `json:"templates"`
+	}
+}
+
 // RegisterDTSGetTemplates registers GET /api/dts/templates, returning filtered
 // DTS entries with resolved content. Replaces gin HandleDTSGetTemplates.
 func RegisterDTSGetTemplates(api huma.API, ts dtsTemplateReader) {
@@ -87,7 +102,7 @@ func RegisterDTSGetTemplates(api huma.API, ts dtsTemplateReader) {
 		OperationID: "get-dts-templates", Method: "GET", Path: "/dts/templates",
 		Summary: "DTS template entries with full content", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsTemplatesQueryInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsTemplatesQueryInput) (*dtsGetTemplatesOutput, error) {
 		entries := ts.FilteredEntries(in.Type, in.Platform, in.Language, in.ID)
 		result := make([]dtsEntryWithContent, len(entries))
 		for i, e := range entries {
@@ -100,7 +115,10 @@ func RegisterDTSGetTemplates(api huma.API, ts dtsTemplateReader) {
 				result[i].TemplateFileContent = fileContent
 			}
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "templates": result}}, nil
+		out := &dtsGetTemplatesOutput{}
+		out.Body.Status = "ok"
+		out.Body.Templates = result
+		return out, nil
 	})
 }
 
@@ -121,7 +139,7 @@ func RegisterDTSDeleteTemplate(api huma.API, ts dtsTemplateReader) {
 		OperationID: "delete-dts-template", Method: "DELETE", Path: "/dts/templates",
 		Summary: "Delete a DTS template entry", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsDeleteTemplateInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsDeleteTemplateInput) (*statusOKOutput, error) {
 		if in.Type == "" || in.Platform == "" || in.ID == "" {
 			return nil, huma.Error400BadRequest("type, platform, and id query parameters are required")
 		}
@@ -131,7 +149,9 @@ func RegisterDTSDeleteTemplate(api huma.API, ts dtsTemplateReader) {
 			}
 			return nil, huma.Error403Forbidden(err.Error())
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok"}}, nil
+		out := &statusOKOutput{}
+		out.Body.Status = "ok"
+		return out, nil
 	})
 }
 
@@ -151,12 +171,22 @@ type dtsTemplateFileWriteInput struct {
 // key fields — no client paths are used. Replaces gin HandleDTSTemplateFileWrite.
 // Missing entry → 404; non-templateFile entry → 400; readonly → 403; path
 // traversal → 403; filesystem errors → 500.
+// dtsTemplateFileWriteOutput is the typed body for PUT /api/dts/templates/file:
+// {status, templateFile, backup}.
+type dtsTemplateFileWriteOutput struct {
+	Body struct {
+		Status       string `json:"status"`
+		TemplateFile string `json:"templateFile"`
+		Backup       string `json:"backup"`
+	}
+}
+
 func RegisterDTSTemplateFileWrite(api huma.API, ts dtsTemplateReader, configDir string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "put-dts-template-file", Method: "PUT", Path: "/dts/templates/file",
 		Summary: "Update raw templateFile content", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsTemplateFileWriteInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsTemplateFileWriteInput) (*dtsTemplateFileWriteOutput, error) {
 		entry := ts.GetEntry(in.Type, in.Platform, in.Language, in.ID)
 		if entry == nil {
 			return nil, huma.Error404NotFound("template not found")
@@ -193,12 +223,20 @@ func RegisterDTSTemplateFileWrite(api huma.API, ts dtsTemplateReader, configDir 
 		ts.ClearCache()
 
 		log.Infof("dts: updated template file %s via API", entry.TemplateFile)
-		return &anyBodyOutput{Body: map[string]any{
-			"status":       "ok",
-			"templateFile": entry.TemplateFile,
-			"backup":       backupRel,
-		}}, nil
+		out := &dtsTemplateFileWriteOutput{}
+		out.Body.Status = "ok"
+		out.Body.TemplateFile = entry.TemplateFile
+		out.Body.Backup = backupRel
+		return out, nil
 	})
+}
+
+// dtsFieldTypesOutput is the typed body for GET /api/dts/fields: {status, types}.
+type dtsFieldTypesOutput struct {
+	Body struct {
+		Status string   `json:"status"`
+		Types  []string `json:"types"`
+	}
 }
 
 // RegisterDTSFieldTypes registers GET /api/dts/fields, returning the list of
@@ -208,18 +246,34 @@ func RegisterDTSFieldTypes(api huma.API) {
 		OperationID: "get-dts-fields", Method: "GET", Path: "/dts/fields",
 		Summary: "List all DTS type names", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
+	}, func(_ context.Context, _ *struct{}) (*dtsFieldTypesOutput, error) {
 		types := make([]string, 0, len(fieldsByType))
 		for t := range fieldsByType {
 			types = append(types, t)
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "types": types}}, nil
+		out := &dtsFieldTypesOutput{}
+		out.Body.Status = "ok"
+		out.Body.Types = types
+		return out, nil
 	})
 }
 
 // dtsFieldsInput carries the type path param.
 type dtsFieldsInput struct {
 	Type string `path:"type"`
+}
+
+// dtsFieldsOutput is the typed body for GET /api/dts/fields/{type}: {status,
+// type, fields} plus optional blockScopes/snippets (present only when non-empty,
+// matching the legacy conditional keys via omitempty).
+type dtsFieldsOutput struct {
+	Body struct {
+		Status      string       `json:"status"`
+		Type        string       `json:"type"`
+		Fields      []FieldDef   `json:"fields"`
+		BlockScopes []BlockScope `json:"blockScopes,omitempty"`
+		Snippets    []Snippet    `json:"snippets,omitempty"`
+	}
 }
 
 // RegisterDTSFields registers GET /api/dts/fields/{type}, returning the field
@@ -230,28 +284,33 @@ func RegisterDTSFields(api huma.API) {
 		OperationID: "get-dts-fields-type", Method: "GET", Path: "/dts/fields/{type}",
 		Summary: "Template fields, block scopes, and snippets for a type", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsFieldsInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsFieldsInput) (*dtsFieldsOutput, error) {
+		out := &dtsFieldsOutput{}
+		out.Body.Status = "ok"
+		out.Body.Type = in.Type
 		entry, ok := fieldsByType[in.Type]
 		if !ok {
-			return &anyBodyOutput{Body: map[string]any{
-				"status": "ok",
-				"type":   in.Type,
-				"fields": commonFields,
-			}}, nil
+			out.Body.Fields = commonFields
+			return out, nil
 		}
-		resp := map[string]any{
-			"status": "ok",
-			"type":   in.Type,
-			"fields": entry.Fields,
-		}
+		out.Body.Fields = entry.Fields
 		if len(entry.BlockScopes) > 0 {
-			resp["blockScopes"] = entry.BlockScopes
+			out.Body.BlockScopes = entry.BlockScopes
 		}
 		if len(entry.Snippets) > 0 {
-			resp["snippets"] = entry.Snippets
+			out.Body.Snippets = entry.Snippets
 		}
-		return &anyBodyOutput{Body: resp}, nil
+		return out, nil
 	})
+}
+
+// dtsPartialsOutput is the typed body for GET /api/dts/partials: {status,
+// partials} where partials maps partial name → Handlebars source.
+type dtsPartialsOutput struct {
+	Body struct {
+		Status   string            `json:"status"`
+		Partials map[string]string `json:"partials"`
+	}
 }
 
 // RegisterDTSPartials registers GET /api/dts/partials, returning the Handlebars
@@ -261,8 +320,11 @@ func RegisterDTSPartials(api huma.API, ts dtsTemplateReader) {
 		OperationID: "get-dts-partials", Method: "GET", Path: "/dts/partials",
 		Summary: "Handlebars partials for client-side rendering", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "partials": ts.Partials()}}, nil
+	}, func(_ context.Context, _ *struct{}) (*dtsPartialsOutput, error) {
+		out := &dtsPartialsOutput{}
+		out.Body.Status = "ok"
+		out.Body.Partials = ts.Partials()
+		return out, nil
 	})
 }
 
@@ -274,12 +336,22 @@ type dtsTestdataInput struct {
 // RegisterDTSTestdata registers GET /api/dts/testdata, returning test webhook
 // scenarios merged from config + fallback testdata.json. Replaces gin
 // HandleDTSTestdata. A missing testdata.json yields 404.
+// dtsTestdataOutput is the typed body for GET /api/dts/testdata: {status,
+// testdata}. testdata is null when a type filter matches nothing (preserved via
+// a nil slice marshalling to null, matching the legacy handler).
+type dtsTestdataOutput struct {
+	Body struct {
+		Status   string          `json:"status"`
+		Testdata []TestDataEntry `json:"testdata"`
+	}
+}
+
 func RegisterDTSTestdata(api huma.API, configDir, fallbackDir string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-testdata", Method: "GET", Path: "/dts/testdata",
 		Summary: "Test webhook scenarios from testdata.json", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsTestdataInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsTestdataInput) (*dtsTestdataOutput, error) {
 		entries := loadTestdata(configDir, fallbackDir)
 		if entries == nil {
 			return nil, huma.Error404NotFound("testdata.json not found")
@@ -293,8 +365,19 @@ func RegisterDTSTestdata(api huma.API, configDir, fallbackDir string) {
 			}
 			entries = filtered
 		}
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "testdata": entries}}, nil
+		out := &dtsTestdataOutput{}
+		out.Body.Status = "ok"
+		out.Body.Testdata = entries
+		return out, nil
 	})
+}
+
+// dtsActionsOutput is the typed body for GET /api/dts/actions: {actions} (no
+// status envelope, matching the legacy handler).
+type dtsActionsOutput struct {
+	Body struct {
+		Actions []ActionInfo `json:"actions"`
+	}
 }
 
 // RegisterButtonActions registers GET /api/dts/actions, returning the list of
@@ -305,16 +388,18 @@ func RegisterButtonActions(api huma.API, reg *buttonactions.Registry) {
 		OperationID: "get-dts-actions", Method: "GET", Path: "/dts/actions",
 		Summary: "List registered button actions + their scopes/params", Tags: []string{"dts"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
+	}, func(_ context.Context, _ *struct{}) (*dtsActionsOutput, error) {
 		if reg == nil {
 			return nil, huma.Error503ServiceUnavailable("button actions not configured")
 		}
 		names := reg.Names()
-		out := make([]ActionInfo, 0, len(names))
+		actions := make([]ActionInfo, 0, len(names))
 		for _, n := range names {
-			out = append(out, describeAction(n))
+			actions = append(actions, describeAction(n))
 		}
-		return &anyBodyOutput{Body: map[string]any{"actions": out}}, nil
+		out := &dtsActionsOutput{}
+		out.Body.Actions = actions
+		return out, nil
 	})
 }
 

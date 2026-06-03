@@ -10,11 +10,21 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
 	"github.com/pokemon/poracleng/processor/internal/snapshots"
 	"github.com/pokemon/poracleng/processor/internal/state"
 )
+
+// geofenceAllOutput is the typed body for GET /api/geofence/all: a status
+// envelope plus the full list of loaded geofences.
+type geofenceAllOutput struct {
+	Body struct {
+		Status   string           `json:"status"`
+		Geofence []geofence.Fence `json:"geofence"`
+	}
+}
 
 // RegisterGeofenceAll registers GET /api/geofence/all, returning all geofence
 // data. Replaces the legacy gin HandleGeofenceAll. Body is {status, geofence}.
@@ -23,13 +33,22 @@ func RegisterGeofenceAll(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-all", Method: "GET", Path: "/geofence/all",
 		Summary: "All geofence data", Tags: []string{"geofence"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
+	}, func(_ context.Context, _ *struct{}) (*geofenceAllOutput, error) {
 		st := stateMgr.Get()
-		return &anyBodyOutput{Body: map[string]any{
-			"status":   "ok",
-			"geofence": st.Fences,
-		}}, nil
+		out := &geofenceAllOutput{}
+		out.Body.Status = "ok"
+		out.Body.Geofence = st.Fences
+		return out, nil
 	})
+}
+
+// geofenceHashOutput is the typed body for GET /api/geofence/all/hash: a status
+// envelope plus a per-area-name MD5 hash of the area's path.
+type geofenceHashOutput struct {
+	Body struct {
+		Status string            `json:"status"`
+		Areas  map[string]string `json:"areas"`
+	}
 }
 
 // RegisterGeofenceHash registers GET /api/geofence/all/hash, returning MD5
@@ -40,18 +59,56 @@ func RegisterGeofenceHash(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-hash", Method: "GET", Path: "/geofence/all/hash",
 		Summary: "MD5 hashes of geofence paths", Tags: []string{"geofence"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
+	}, func(_ context.Context, _ *struct{}) (*geofenceHashOutput, error) {
 		st := stateMgr.Get()
 		areas := make(map[string]string, len(st.Fences))
 		for _, f := range st.Fences {
 			pathJSON, _ := json.Marshal(f.Path)
 			areas[f.Name] = fmt.Sprintf("%x", md5.Sum(pathJSON)) //nolint:gosec // see import note
 		}
-		return &anyBodyOutput{Body: map[string]any{
-			"status": "ok",
-			"areas":  areas,
-		}}, nil
+		out := &geofenceHashOutput{}
+		out.Body.Status = "ok"
+		out.Body.Areas = areas
+		return out, nil
 	})
+}
+
+// geoJSONProperties mirrors the per-feature properties block emitted for each
+// geofence. Field names/casing match the legacy map keys exactly.
+type geoJSONProperties struct {
+	Name             string `json:"name"`
+	Color            string `json:"color"`
+	ID               int    `json:"id"`
+	Group            string `json:"group"`
+	Description      string `json:"description"`
+	UserSelectable   bool   `json:"userSelectable"`
+	DisplayInMatches bool   `json:"displayInMatches"`
+}
+
+// geoJSONGeometry is the geometry block for a feature. coordinates is left open
+// (any) because the nesting depth differs for Polygon vs MultiPolygon; the
+// marshaled value is byte-identical to the legacy handler.
+type geoJSONGeometry struct {
+	Type        string `json:"type"`
+	Coordinates any    `json:"coordinates"`
+}
+
+// geoJSONFeature is a single GeoJSON Feature.
+type geoJSONFeature struct {
+	Type       string            `json:"type"`
+	Properties geoJSONProperties `json:"properties"`
+	Geometry   geoJSONGeometry   `json:"geometry"`
+}
+
+// geofenceGeoJSONOutput is the typed body for GET /api/geofence/all/geojson.
+type geofenceGeoJSONOutput struct {
+	Body struct {
+		Status  string `json:"status"`
+		GeoJSON struct {
+			Type     string           `json:"type"`
+			Features []geoJSONFeature `json:"features"`
+		} `json:"geoJSON"`
+	}
 }
 
 // RegisterGeofenceGeoJSON registers GET /api/geofence/all/geojson, returning
@@ -62,19 +119,19 @@ func RegisterGeofenceGeoJSON(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-geojson", Method: "GET", Path: "/geofence/all/geojson",
 		Summary: "Geofences as a GeoJSON FeatureCollection", Tags: []string{"geofence"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
+	}, func(_ context.Context, _ *struct{}) (*geofenceGeoJSONOutput, error) {
 		st := stateMgr.Get()
 
-		features := make([]map[string]any, 0, len(st.Fences))
+		features := make([]geoJSONFeature, 0, len(st.Fences))
 		for _, f := range st.Fences {
-			properties := map[string]any{
-				"name":             f.Name,
-				"color":            f.Color,
-				"id":               f.ID,
-				"group":            f.Group,
-				"description":      f.Description,
-				"userSelectable":   f.UserSelectable,
-				"displayInMatches": f.DisplayInMatches,
+			properties := geoJSONProperties{
+				Name:             f.Name,
+				Color:            f.Color,
+				ID:               f.ID,
+				Group:            f.Group,
+				Description:      f.Description,
+				UserSelectable:   f.UserSelectable,
+				DisplayInMatches: f.DisplayInMatches,
 			}
 
 			var geomType string
@@ -106,24 +163,31 @@ func RegisterGeofenceGeoJSON(api huma.API, stateMgr *state.Manager) {
 				coordinates = [][][2]float64{ring}
 			}
 
-			features = append(features, map[string]any{
-				"type":       "Feature",
-				"properties": properties,
-				"geometry": map[string]any{
-					"type":        geomType,
-					"coordinates": coordinates,
+			features = append(features, geoJSONFeature{
+				Type:       "Feature",
+				Properties: properties,
+				Geometry: geoJSONGeometry{
+					Type:        geomType,
+					Coordinates: coordinates,
 				},
 			})
 		}
 
-		return &anyBodyOutput{Body: map[string]any{
-			"status": "ok",
-			"geoJSON": map[string]any{
-				"type":     "FeatureCollection",
-				"features": features,
-			},
-		}}, nil
+		out := &geofenceGeoJSONOutput{}
+		out.Body.Status = "ok"
+		out.Body.GeoJSON.Type = "FeatureCollection"
+		out.Body.GeoJSON.Features = features
+		return out, nil
 	})
+}
+
+// configSchemaOutput is the typed body for GET /api/config/schema: a status
+// envelope plus the config editor section list.
+type configSchemaOutput struct {
+	Body struct {
+		Status   string          `json:"status"`
+		Sections []ConfigSection `json:"sections"`
+	}
 }
 
 // RegisterConfigSchema registers GET /api/config/schema, returning the config
@@ -134,11 +198,11 @@ func RegisterConfigSchema(api huma.API) {
 		OperationID: "get-config-schema", Method: "GET", Path: "/config/schema",
 		Summary: "Config editor schema", Tags: []string{"config"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
-		return &anyBodyOutput{Body: map[string]any{
-			"status":   "ok",
-			"sections": configSchema,
-		}}, nil
+	}, func(_ context.Context, _ *struct{}) (*configSchemaOutput, error) {
+		out := &configSchemaOutput{}
+		out.Body.Status = "ok"
+		out.Body.Sections = configSchema
+		return out, nil
 	})
 }
 
@@ -154,8 +218,10 @@ type masterdataMonstersInput struct {
 func RegisterMasterdataMonsters(api huma.API, gd *gamedata.GameData, translations *i18n.Bundle) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-masterdata-monsters", Method: "GET", Path: "/masterdata/monsters",
-		Summary: "All pokemon with names, forms, types", Tags: []string{"masterdata"},
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Summary:     "All pokemon with names, forms, types",
+		Description: "Returns the poracle-v2 monsters map keyed by `<id>_<form>`. The response body is left open (freeform): it is an object with arbitrary id-keyed entries (and an empty `[]` when game data is unavailable), so it has no fixed schema.",
+		Tags:        []string{"masterdata"},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *masterdataMonstersInput) (*anyBodyOutput, error) {
 		if gd == nil {
 			return &anyBodyOutput{Body: []any{}}, nil
@@ -232,8 +298,10 @@ func RegisterMasterdataGrunts(api huma.API, gd *gamedata.GameData) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-masterdata-grunts", Method: "GET", Path: "/masterdata/grunts",
-		Summary: "Grunt types", Tags: []string{"masterdata"},
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Summary:     "Grunt types",
+		Description: "Returns the poracle-v2 grunts map keyed by grunt id. The response body is left open (freeform): it is an object with arbitrary id-keyed entries, so it has no fixed schema.",
+		Tags:        []string{"masterdata"},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
 		return &anyBodyOutput{Body: result}, nil
 	})
@@ -252,6 +320,12 @@ type snapshotGetInput struct {
 	Target    string `query:"target" required:"true"`
 }
 
+// snapshotGetOutput is the typed body for GET /api/snapshots/{messageID}: the
+// stored snapshot record itself (no envelope, matching the legacy handler).
+type snapshotGetOutput struct {
+	Body *snapshots.Snapshot
+}
+
 // RegisterSnapshotGet registers GET /api/snapshots/{messageID}, returning the
 // stored Snapshot for a delivered message. Replaces the legacy gin
 // HandleSnapshotGet. A nil store (snapshots disabled) yields 503; a missing
@@ -261,7 +335,7 @@ func RegisterSnapshotGet(api huma.API, store SnapshotReader) {
 		OperationID: "get-snapshot", Method: "GET", Path: "/snapshots/{messageID}",
 		Summary: "Inspect a delivered-message snapshot", Tags: []string{"snapshots"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(ctx context.Context, in *snapshotGetInput) (*anyBodyOutput, error) {
+	}, func(ctx context.Context, in *snapshotGetInput) (*snapshotGetOutput, error) {
 		// proc.snapshotStore is a nil snapshots.Store interface when
 		// [snapshots] enabled = false; passed through the SnapshotReader
 		// param it stays a nil interface, so this check surfaces 503,
@@ -284,6 +358,6 @@ func RegisterSnapshotGet(api huma.API, store SnapshotReader) {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 		metrics.SnapshotReadsTotal.WithLabelValues("hit").Inc()
-		return &anyBodyOutput{Body: snap}, nil
+		return &snapshotGetOutput{Body: snap}, nil
 	})
 }

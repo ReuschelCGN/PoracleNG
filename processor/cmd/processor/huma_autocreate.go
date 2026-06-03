@@ -36,6 +36,24 @@ type deleteTemplateInput struct {
 	Name string `path:"name"`
 }
 
+// autocreateDeleteOutput is the typed body for DELETE
+// /api/autocreate/templates/{name}: {status, backup}.
+type autocreateDeleteOutput struct {
+	Body struct {
+		Status string `json:"status"`
+		Backup string `json:"backup"`
+	}
+}
+
+// autocreateSchemaOutput is the typed body for GET
+// /api/autocreate/templates/schema: {status, schema}.
+type autocreateSchemaOutput struct {
+	Body struct {
+		Status string                `json:"status"`
+		Schema channelTemplatesEnums `json:"schema"`
+	}
+}
+
 // registerAutocreateHuma registers the autocreate run / delete-template /
 // templates-schema ops on the shared huma instance, in place — same paths,
 // same success JSON as the legacy gin handlers; error paths surface as
@@ -46,8 +64,10 @@ func registerAutocreateHuma(humaAPI huma.API, cfg *config.Config, bot *discordbo
 	// POST /api/autocreate/run — sync one or all autocreate rules.
 	huma.Register(humaAPI, huma.Operation{
 		OperationID: "post-autocreate-run", Method: "POST", Path: "/autocreate/run",
-		Summary: "Run autocreate rule sync", Tags: []string{"autocreate"},
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Summary:     "Run autocreate rule sync",
+		Description: "Syncs one or all autocreate rules. The response body is left open (freeform): {status, rules:[]SyncOneRuleResult} where each result carries per-fence created/reused/orphan/removed/skipped logs and a free-form errors list, so it has no fixed schema.",
+		Tags:        []string{"autocreate"},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *autocreateRunInput) (*autocreateBodyOutput, error) {
 		req := in.Body
 
@@ -93,7 +113,7 @@ func registerAutocreateHuma(humaAPI huma.API, cfg *config.Config, bot *discordbo
 		OperationID: "delete-autocreate-template", Method: "DELETE", Path: "/autocreate/templates/{name}",
 		Summary: "Delete a channel template", Tags: []string{"autocreate"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *deleteTemplateInput) (*autocreateBodyOutput, error) {
+	}, func(_ context.Context, in *deleteTemplateInput) (*autocreateDeleteOutput, error) {
 		if in.Name == "" {
 			return nil, huma.Error400BadRequest("template name is required")
 		}
@@ -104,7 +124,10 @@ func registerAutocreateHuma(humaAPI huma.API, cfg *config.Config, bot *discordbo
 		if err != nil {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
-		return &autocreateBodyOutput{Body: map[string]any{"status": "ok", "backup": backup}}, nil
+		out := &autocreateDeleteOutput{}
+		out.Body.Status = "ok"
+		out.Body.Backup = backup
+		return out, nil
 	})
 
 	// GET /api/autocreate/templates/schema — static editor metadata.
@@ -112,8 +135,8 @@ func registerAutocreateHuma(humaAPI huma.API, cfg *config.Config, bot *discordbo
 		OperationID: "get-autocreate-templates-schema", Method: "GET", Path: "/autocreate/templates/schema",
 		Summary: "Get channel templates schema", Tags: []string{"autocreate"},
 		Security: []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*autocreateBodyOutput, error) {
-		out := channelTemplatesEnums{
+	}, func(_ context.Context, _ *struct{}) (*autocreateSchemaOutput, error) {
+		schema := channelTemplatesEnums{
 			ChannelTypes:    []string{"text", "voice"},
 			ControlTypes:    []string{"", "bot", "webhook"},
 			ButtonStyles:    []string{"primary", "secondary", "success", "danger"},
@@ -124,6 +147,9 @@ func registerAutocreateHuma(humaAPI huma.API, cfg *config.Config, bot *discordbo
 			},
 			BackupNamePrefix: "channelTemplate.json.bak.",
 		}
-		return &autocreateBodyOutput{Body: map[string]any{"status": "ok", "schema": out}}, nil
+		out := &autocreateSchemaOutput{}
+		out.Body.Status = "ok"
+		out.Body.Schema = schema
+		return out, nil
 	})
 }

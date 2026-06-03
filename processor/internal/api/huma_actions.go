@@ -30,7 +30,7 @@ func RegisterTest(api huma.API, proc bot.TestProcessor) {
 		Description: "Runs a webhook through the enrichment + render pipeline (skipping matching/dedup) and delivers it to a specific target. Request body is open: {type, target, webhook} where `webhook` is a polymorphic webhook payload.",
 		Tags:        []string{"test"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *testInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *testInput) (*statusOKOutput, error) {
 		var req TestRequest
 		if err := json.Unmarshal(in.Body, &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid JSON")
@@ -47,7 +47,9 @@ func RegisterTest(api huma.API, proc bot.TestProcessor) {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 
-		return &anyBodyOutput{Body: map[string]any{"status": "ok"}}, nil
+		out := &statusOKOutput{}
+		out.Body.Status = "ok"
+		return out, nil
 	})
 }
 
@@ -66,6 +68,15 @@ type deliverInput struct {
 	Body openJSON
 }
 
+// deliverMessagesOutput is the typed body for the deliver-messages ops:
+// {status, queued} where queued is the count of accepted jobs.
+type deliverMessagesOutput struct {
+	Body struct {
+		Status string `json:"status"`
+		Queued int    `json:"queued"`
+	}
+}
+
 // RegisterDeliverMessages registers a deliver-messages op at the given opID and
 // path. It accepts pre-rendered delivery jobs and dispatches them. Replaces gin
 // HandleDeliverMessages. Used twice in main.go: once for /deliverMessages and
@@ -78,7 +89,7 @@ func RegisterDeliverMessages(api huma.API, opID, path string, dispatcher deliver
 		Description: "Accepts an array of pre-rendered delivery jobs and dispatches them to the delivery system. Request body is open: []Job where each job's `message` field is a pre-rendered RawMessage.",
 		Tags:        []string{"delivery"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *deliverInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *deliverInput) (*deliverMessagesOutput, error) {
 		if isNilDispatcher(dispatcher) {
 			return nil, huma.Error503ServiceUnavailable("delivery dispatcher not configured")
 		}
@@ -99,7 +110,10 @@ func RegisterDeliverMessages(api huma.API, opID, path string, dispatcher deliver
 
 		log.Debugf("Accepted %d delivery jobs via API", queued)
 
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "queued": queued}}, nil
+		out := &deliverMessagesOutput{}
+		out.Body.Status = "ok"
+		out.Body.Queued = queued
+		return out, nil
 	})
 }
 

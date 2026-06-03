@@ -1,6 +1,22 @@
 {
   "components": {
     "schemas": {
+      "AutocreateDeleteOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "backup"
+        ],
+        "type": "object"
+      },
       "AutocreateRunInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -20,6 +36,81 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "AutocreateSchemaOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "$ref": "#/components/schemas/ChannelTemplatesEnums"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "schema"
+        ],
+        "type": "object"
+      },
+      "ChannelTemplatesEnums": {
+        "additionalProperties": false,
+        "properties": {
+          "backupNamePrefix": {
+            "type": "string"
+          },
+          "buttonStyles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "channelTypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "controlTypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "permissionFlags": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionFlag"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "placeholderHelp": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "channelTypes",
+          "controlTypes",
+          "buttonStyles",
+          "permissionFlags",
+          "placeholderHelp",
+          "backupNamePrefix"
+        ],
         "type": "object"
       },
       "ErrorDetail": {
@@ -93,6 +184,26 @@
           }
         },
         "type": "object"
+      },
+      "PermissionFlag": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "group"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -111,6 +222,7 @@
   "paths": {
     "/autocreate/run": {
       "post": {
+        "description": "Syncs one or all autocreate rules. The response body is left open (freeform): {status, rules:[]SyncOneRuleResult} where each result carries per-fence created/reused/orphan/removed/skipped logs and a free-form errors list, so it has no fixed schema.",
         "operationId": "post-autocreate-run",
         "requestBody": {
           "content": {
@@ -234,7 +346,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AutocreateSchemaOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -320,7 +434,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AutocreateDeleteOutputBody"
+                }
               }
             },
             "description": "OK"
