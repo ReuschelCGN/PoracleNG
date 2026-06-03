@@ -348,13 +348,15 @@ func main() {
 	api.RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 
-	// Weather, stats, geocode, test
-	apiGroup.GET("/weather", api.HandleWeather(proc.weather))
-	apiGroup.GET("/stats/rarity", api.HandleStats(func() any { return proc.stats.ExportGroups() }))
-	apiGroup.GET("/stats/shiny", api.HandleStats(func() any { return proc.stats.ExportShinyStats() }))
-	apiGroup.GET("/stats/shiny-possible", api.HandleStats(func() any { return proc.stats.ExportShinyPossible() }))
+	// Weather, stats, geocode (migrated to huma, in place — same paths, same
+	// success JSON, problem+json errors). test stays on gin below.
+	api.RegisterWeather(humaAPI, proc.weather)
+	api.RegisterStats(humaAPI, "get-stats-rarity", "/stats/rarity", func() any { return proc.stats.ExportGroups() })
+	api.RegisterStats(humaAPI, "get-stats-shiny", "/stats/shiny", func() any { return proc.stats.ExportShinyStats() })
+	api.RegisterStats(humaAPI, "get-stats-shiny-possible", "/stats/shiny-possible", func() any { return proc.stats.ExportShinyPossible() })
+	api.RegisterGeocode(humaAPI, proc.enricher.Geocoder)
+
 	apiGroup.POST("/test", api.HandleTest(proc))
-	apiGroup.GET("/geocode/forward", api.HandleGeocode(proc.enricher.Geocoder))
 
 	// Geofence data and tile generation endpoints
 	tileDeps := api.TileDeps{
