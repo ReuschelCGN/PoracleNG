@@ -72,6 +72,44 @@ type v2TrackingType[Req any, T any] struct {
 	// RowText renders a rule's human-readable description in the human's
 	// language (for ?include_descriptions=true). tr is the human's translator.
 	RowText func(deps *TrackingDeps, tr *i18n.Translator, row *T) string
+
+	// Filter, when non-nil, restricts every READ/scoping path to rows for which
+	// it returns true. This lets two tracking types share one underlying store
+	// (table) yet each only see its own rows: invasion and incident both back
+	// onto the invasion table, discriminated by grunt_type. nil = no filter (the
+	// common single-type-per-store case; behaviour identical to before).
+	//
+	// Applied on: list, get-by-uid (a row failing Filter → 404), delete-by-uid
+	// and bulk-delete (a uid whose row fails Filter → 404 / skipped), and the
+	// existing-rows set fed into the create/PUT diff (so one type never diffs
+	// against the other's rows).
+	Filter func(*T) bool
+}
+
+// passesFilter reports whether row is visible to this type. A nil Filter admits
+// everything (the single-type-per-store case).
+func (typ v2TrackingType[Req, T]) passesFilter(row *T) bool {
+	return typ.Filter == nil || typ.Filter(row)
+}
+
+// scopedRows returns the human+profile rows visible to this type (Filter applied
+// when set). It is the single read entrypoint every CRUD path funnels through so
+// a shared-store type can never observe another type's rows.
+func (typ v2TrackingType[Req, T]) scopedRows(deps *TrackingDeps, humanID string, profileNo int) ([]T, error) {
+	rows, err := typ.Store(deps).SelectByIDProfile(humanID, profileNo)
+	if err != nil {
+		return nil, err
+	}
+	if typ.Filter == nil {
+		return rows, nil
+	}
+	out := rows[:0:0]
+	for i := range rows {
+		if typ.Filter(&rows[i]) {
+			out = append(out, rows[i])
+		}
+	}
+	return out, nil
 }
 
 // --- huma input/output types ---------------------------------------------
@@ -148,7 +186,7 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 		if err != nil {
 			return nil, err
 		}
-		rows, err := typ.Store(deps).SelectByIDProfile(human.ID, profileNo)
+		rows, err := typ.scopedRows(deps, human.ID, profileNo)
 		if err != nil {
 			log.Errorf("v2 tracking %s list: %s", typ.Name, err)
 			return nil, huma.Error500InternalServerError("database error")
@@ -243,12 +281,19 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 		if err != nil {
 			return nil, err
 		}
-		rows, err := typ.Store(deps).SelectByIDProfile(human.ID, profileNo)
+		rows, err := typ.scopedRows(deps, human.ID, profileNo)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("database error")
 		}
+		// Only the requested uids whose rows are visible to this type are acted
+		// on; a uid belonging to the other shared-store type is silently skipped
+		// (it never appears in scopedRows, so owned excludes it).
 		owned := filterOwnedRows(typ, rows, uids)
-		if err := typ.Store(deps).DeleteByUIDs(human.ID, uids); err != nil {
+		ownedUIDs := make([]int64, len(owned))
+		for i := range owned {
+			ownedUIDs[i] = typ.GetUID(&owned[i])
+		}
+		if err := typ.Store(deps).DeleteByUIDs(human.ID, ownedUIDs); err != nil {
 			log.Errorf("v2 tracking %s bulk delete: %s", typ.Name, err)
 			return nil, huma.Error500InternalServerError("database error")
 		}
@@ -306,7 +351,9 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 		candidates = append(candidates, row)
 	}
 
-	existing, err := typ.Store(deps).SelectByIDProfile(human.ID, profileNo)
+	// Scope the existing set through Filter so a shared-store type never diffs
+	// (and thus never deletes-as-update) against the other type's rows.
+	existing, err := typ.scopedRows(deps, human.ID, profileNo)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("database error")
 	}
@@ -380,6 +427,11 @@ func v2FindOwnedRow[Req any, T any](typ v2TrackingType[Req, T], deps *TrackingDe
 	}
 	for i := range rows {
 		if typ.GetUID(&rows[i]) == uid {
+			// A uid that exists but belongs to the other type sharing this store
+			// (Filter rejects it) is, for this endpoint, "not found".
+			if !typ.passesFilter(&rows[i]) {
+				break
+			}
 			return &rows[i], nil
 		}
 	}
