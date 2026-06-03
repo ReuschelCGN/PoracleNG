@@ -403,6 +403,7 @@ func main() {
 	// tracking types fan out from.
 	api.RegisterV2TrackingPokemon(humaAPI, trackingDeps)
 	api.RegisterV2TrackingNest(humaAPI, trackingDeps)
+	api.RegisterV2TrackingLure(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
