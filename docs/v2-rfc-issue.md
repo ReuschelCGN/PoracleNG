@@ -75,12 +75,35 @@ POST /api/v2/tracking/incident?user=123456&profile=1
 DELETE /api/v2/tracking/raid/80921
 ```
 
+### Humans, profiles & schedules (v2)
+
+Discrete, typed endpoints under `/api/v2` (problem+json, strict):
+
+**Humans:** `POST /api/v2/humans` (create) · `GET …/humans/{id}` (resource; includes read-only `blocked_alerts`) · `GET …/{id}/areas` · `POST …/{id}/{enable|disable|admin-disable|language|location|areas|profile}` · `GET …/{id}/check-location?lat=&lon=` · **saved locations** `GET` (list), `GET/{label}`, `POST {label,lat,lon}`, **`PUT/{label} {lat,lon}` (NEW — edit a saved location)**, `DELETE/{label}` · **roles** `GET`, `POST|DELETE …/{roleId}`, `GET …/{id}/admin-roles`.
+
+**Profiles:** `GET /api/v2/profiles/{id}` · `POST` (add) · `PATCH …/{profile_no}` (active_hours) · `DELETE …/{profile_no}` · `POST …/{profile_no}/copy`.
+
+**`active_hours` — now a real typed schema** (shared by profile schedules and `POST /summaries/{id}/{alertType}`; replaces the old freeform-JSON passthrough). An array of entries:
+
+| field | type | required | bounds |
+|---|---|---|---|
+| `day` | int | yes | 0–6 (0 = Sunday) |
+| `hours` | int | yes | 0–23 |
+| `mins` | int | yes | 0–59 |
+| `step` | int | no | ≥0 hours; `>0` ⇒ range entry |
+| `end_hours` / `end_mins` | int | iff `step>0` | 0–23 / 0–59 |
+
+Single-fire `{day,hours,mins}`, or range (adds `step`/`end_*`, fires every `step` hours to `end`, no cross-midnight). Strict ints (drops v1's `"00"` string coercion).
+
+**`blocked_alerts`** is read-only on the human resource (derived from Discord roles / `command_security`, not API-settable): `monster`(=pokemon)`|pvp|raid|egg|quest|invasion|lure|nest|gym|fort|maxbattle|specificgym|specificstation`.
+
 ### Questions we'd love your input on
 
 1. **Collection scoping** — is `?user=&profile=` on the collection comfortable, or would you prefer `/api/v2/users/{id}/tracking/{type}`?
 2. **Create response** — is `{created, updated, unchanged}` useful, or do you just want the resulting rules?
 3. **int vs string-enum split** — does the game-master-id-as-int / fixed-category-as-string-enum split match how you think about these fields? Any field you'd flip?
 4. **invasion two-axis** (`type_id` vs `grunt_id`) and the **separate `incident` type** — does this fit your use cases?
-5. **Anything in v1 you depend on** that isn't represented here?
+5. **humans/profiles shape** — we kept **discrete action endpoints** (enable/disable/language/location/areas/profile) rather than a consolidated `PATCH`. Does that suit your client, and is the typed `active_hours` schema right?
+6. **Anything in v1 you depend on** that isn't represented here?
 
 Thanks! Comments here or on the linked design doc.
