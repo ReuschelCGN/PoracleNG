@@ -421,6 +421,10 @@ func main() {
 	// inputs + problem+json; v1 gin human routes below stay frozen.
 	api.RegisterV2Humans(humaAPI, trackingDeps)
 
+	// Strict v2 saved-locations CRUD (huma). Re-exposes v1's location actions
+	// plus a new PUT (update coords); v1 gin location routes stay frozen.
+	api.RegisterV2Locations(humaAPI, trackingDeps)
+
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
@@ -491,6 +495,12 @@ func main() {
 		Config: cfg,
 		Humans: humanStore,
 	}
+
+	// Strict v2 roles surface (huma): list/add(POST)/remove(DELETE)/admin-roles.
+	// Re-exposes v1's role actions with REST-clean verbs; v1 gin role routes
+	// below stay frozen.
+	api.RegisterV2Roles(humaAPI, roleDeps)
+
 	humans := apiGroup.Group("/humans")
 	humans.GET("/one/:id", api.HandleGetOneHuman(trackingDeps))
 	humans.GET("/:id", api.HandleGetHumanAreas(trackingDeps))
