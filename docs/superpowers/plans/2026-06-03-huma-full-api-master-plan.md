@@ -22,7 +22,7 @@
 2. **Errors: `problem+json` everywhere.** Remove `InstallLegacyErrorModel`/the legacy override; use huma's default error model. Success bodies unchanged per-op.
 3. **v1 frozen.** Revert the in-place pokemon huma migration; restore original gin pokemon routes. Remove v1-compat huma machinery (`lenient[T]`, the flex `SchemaProvider` leniency, `monsterRuleRows`, single-or-array) — **not** needed by strict v2.
 4. **In-place coverage:** all EASY (~30) + all MODERATE (~15, **including** `config/values`+`validate` with open `any`/`RawMessage` bodies). LEAVE-ON-GIN: webhook `POST /`, `/metrics`, `/openapi.json`, `/docs`, pprof.
-5. **v2 = strict:** `additionalProperties:false`, required enforced, **no lenient coercion**. Enums are **pure string** (no legacy-int acceptance); game-master IDs are int. uid-global REST resource model (`/v2/tracking/{type}` + `/{uid}`).
+5. **v2 = strict:** `additionalProperties:false`, required enforced, **no lenient coercion**. Enums are **pure string** (no legacy-int acceptance); game-master IDs are int. **Human-scoped** resource model `/v2/humans/{id}/tracking/{type}[/{uid}]`, item ops scoped by `(human, uid)` (ownership guard, like v1).
 6. **v2 humans/profiles:** **discrete action endpoints** (not PATCH-consolidated), cleaned/typed, under `/api/v2`.
 7. **CHANGELOG** items: error-format change to problem+json on the new huma surface; `include_empty` default→true; v1→v2 migration encouragement.
 
@@ -45,7 +45,7 @@ Every one of the 124 registered routes is accounted for below. **Built in huma**
 
 ### B. BUILT IN HUMA — new clean `/api/v2/*`
 
-- **Tracking (11 types × CRUD):** `GET|POST /api/v2/tracking/{type}`, `GET|PUT|DELETE /api/v2/tracking/{type}/{uid}`, bulk `DELETE …?uid=`. Types: `pokemon, raid, egg, quest, invasion, incident (NEW), lure, nest, gym, fort, maxbattle`.
+- **Tracking (11 types × CRUD), human-scoped:** `GET|POST /api/v2/humans/{id}/tracking/{type}`, `GET|PUT|DELETE /api/v2/humans/{id}/tracking/{type}/{uid}` (scoped by `(human, uid)` — ownership guard), bulk `DELETE …/{type}?uid=`, plus **full snapshot** `GET /api/v2/humans/{id}/tracking` → `{human, tracking:{<type>:[...]}, profiles, locations, summaries}` (`?all_profiles=`, `?include_descriptions=`). Types: `pokemon, raid, egg, quest, invasion, incident (NEW), lure, nest, gym, fort, maxbattle`.
 - **Humans (discrete actions):** `POST /api/v2/humans`, `GET /api/v2/humans/{id}`, `GET …/{id}/areas`, `POST …/{id}/{enable,disable,admin-disable,language,location,areas,profile}`, `GET …/{id}/check-location`, locations `GET (list)`, `GET/{label}`, `POST`, **`PUT/{label}` (NEW)**, `DELETE/{label}`, roles `GET`, `POST/DELETE …/{roleId}`, `GET …/{id}/admin-roles`.
 - **Profiles:** `GET /api/v2/profiles/{id}`, `POST` (add), `PATCH …/{profile_no}` (active_hours), `DELETE …/{profile_no}`, `POST …/{profile_no}/copy`.
 
@@ -120,7 +120,7 @@ Open schemas for freeform fields. Each: typed input for path/query, `Body json.R
 
 ## Phase 3 — v2 tracking (gated on #138)
 
-Strict, per `docs/v2-api-design.md` + the field audit. Resource model: `/v2/tracking/{type}` (GET list `?user=&profile=`, POST create), `/v2/tracking/{type}/{uid}` (GET/PUT/DELETE), `?uid=` bulk delete; `?silent=true` on mutations.
+Strict, per `docs/v2-api-design.md` + the field audit. Resource model: **human-scoped** `/v2/humans/{id}/tracking/{type}` (GET list `?profile=&include_descriptions=`, POST create), `/v2/humans/{id}/tracking/{type}/{uid}` (GET/PUT/DELETE, **scoped by `(human, uid)`** — like v1's `DeleteByUID(id, uid)`), `?uid=` bulk delete; `?silent=true` on mutations.
 
 ### Task 3.1: Strict v2 building blocks
 - [ ] **Strict enum types** — rework/parallel `flex_enum.go`: v2 enums are **string-only** (no int acceptance), `additionalProperties:false`-compatible. Keep the name↔int maps for storage translation. (team, gender, fort_type, rsvp_changes; reward_type/lure_id/league/pvp_ranking_evolution stay **int**.)
@@ -133,7 +133,7 @@ Strict, per `docs/v2-api-design.md` + the field audit. Resource model: `/v2/trac
 ### Task 3.3: Fan-out the other 10 types (raid, egg, quest, invasion, **incident**, lure, nest, gym, fort, maxbattle)
 - [ ] Per type: apply the audit's per-field modeling; **invasion** exactly-one-mode (`type_id`|`grunt_id`|`everything`|`boss`) with facade down-translation to the stored grunt-type name; **incident** new type keyed by `display_type` int; `fort.include_empty` default true. One commit per type.
 
-### Task 3.4: v2 tracking aggregates — `/v2/tracking?user=` (all types) if desired; reload alias. Commit.
+### Task 3.4: v2 full snapshot — `GET /v2/humans/{id}/tracking` returns `{human, tracking:{<type>:[...]}, profiles, locations, summaries}` (replaces v1 `all/{id}`); `?all_profiles=true` spans all profiles (replaces `allProfiles/{id}`); `?include_descriptions=` adds rowtext. Reuses the per-type list logic + profile/location/summary reads. Commit.
 
 ## Phase 4 — v2 humans/profiles (gated on #138)
 
@@ -154,7 +154,7 @@ Strict, per `docs/v2-api-design.md` + the field audit. Resource model: `/v2/trac
 | `GET /v2/humans/{id}/roles`, `POST/DELETE …/{roleId}` | roles | typed |
 | `GET /v2/humans/{id}/admin-roles` | getAdministrationRoles | typed |
 | `POST /v2/humans/{id}/profile` | switchProfile/{n} | `{profile_no: int}` |
-| `GET /v2/profiles/{id}`, `POST` (add), `PATCH …/{profile_no}` (update active_hours), `DELETE …/{profile_no}`, `POST …/{profile_no}/copy` | profiles | typed |
+| `GET /v2/humans/{id}/profiles`, `POST` (add), `PATCH …/{profile_no}` (update active_hours), `DELETE …/{profile_no}`, `POST …/{profile_no}/copy` | profiles (sub-resource of human) | typed |
 
 - [ ] Field modeling (all DEFINED — see `docs/v2-api-design.md` §2b): `enabled`/admin-disable → bool; `areas` → `[]string`; `location` → `{lat,lon}` floats; `language` → string (validate against locales); `blocked_alerts` → read-only `[]string` enum (`monster|pvp|raid|egg|quest|invasion|lure|nest|gym|fort|maxbattle|specificgym|specificstation`); `active_hours` → typed `[]ActiveHourEntry` (`day 0-6, hours 0-23, mins 0-59, optional step/end_hours/end_mins`, strict ints, no cross-midnight) shared by profile-schedule update **and** `POST /v2/summaries/{id}/{alertType}` (replaces the freeform passthrough).
 - [ ] **NEW capability:** `PUT /v2/humans/{id}/locations/{label}` to update a saved location's coords (v1 has no update — only add/delete). Completes locations CRUD.

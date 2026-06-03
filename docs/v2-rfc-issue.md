@@ -26,20 +26,24 @@ The current API is undocumented and, by necessity, tolerant of malformed input (
 
 ### Resource model
 
-A tracking rule's `uid` is unique per type across all users, so rules are addressable directly. `{type}` ∈ `pokemon, raid, egg, quest, invasion, incident, lure, nest, gym, fort, maxbattle`.
+Tracking rules are **sub-resources of the human** (the human is the user). `uid` is unique per type; every item op is **scoped by `(human, uid)`** — you can't touch a uid that isn't the addressed human's (matches v1's ownership guard). `{type}` ∈ `pokemon, raid, egg, quest, invasion, incident, lure, nest, gym, fort, maxbattle`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v2/tracking/{type}?user={id}&profile={n}` | List a user's rules |
-| `POST` | `/api/v2/tracking/{type}?user={id}&profile={n}` | Create rule(s) — body is an array of rule objects |
-| `GET` | `/api/v2/tracking/{type}/{uid}` | Fetch one rule |
-| `PUT` | `/api/v2/tracking/{type}/{uid}` | Full-replace one rule |
-| `DELETE` | `/api/v2/tracking/{type}/{uid}` | Delete one rule |
-| `DELETE` | `/api/v2/tracking/{type}?uid=1,2,3` | Bulk delete |
+| `GET` | `/api/v2/humans/{id}/tracking` | Full snapshot — human + all-type rules + profiles + locations + summaries |
+| `GET` | `/api/v2/humans/{id}/tracking/{type}` | List one type |
+| `POST` | `/api/v2/humans/{id}/tracking/{type}` | Create rule(s) — body is an array |
+| `GET` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Fetch one rule |
+| `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule |
+| `DELETE` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Delete one rule |
+| `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete |
 
-- List → `{ "rules": [ … ] }`. Create → `{ "created": [...], "updated": [...], "unchanged": [...] }` (each rule carries its `uid`).
-- `PUT` is a full replace; omitted fields reset to their documented defaults.
-- Mutating endpoints accept `?silent=true` (bool) to apply the change without sending the user a confirmation message (single param; v1's `silent`+`suppressMessage` are consolidated).
+- `{id}` (the human) is always in the path; `profile` is `?profile={n}` (defaults to active).
+- List → `{ "rules": [ … ] }`. **Snapshot** (`…/tracking`, no type) → `{ "human": {…}, "tracking": { "<type>": [...] }, "profiles": [...], "locations": [...], "summaries": [...] }` (`?all_profiles=true` spans all profiles; replaces v1 `all/{id}` + `allProfiles/{id}`).
+- Create → `{ "created": [...], "updated": [...], "unchanged": [...] }` (each rule carries its `uid`; POST keeps v1's diff/upsert).
+- `?include_descriptions=true` (list + snapshot) adds the human-readable rowtext per rule.
+- `PUT` is a full replace; omitted fields reset to defaults.
+- Mutations accept `?silent=true` to apply without notifying the user (single param; replaces v1's `silent`+`suppressMessage`).
 
 ### Common rule fields
 
@@ -62,17 +66,18 @@ A tracking rule's `uid` is unique per type across all users, so rules are addres
 ### Examples
 
 ```
-POST /api/v2/tracking/pokemon?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/pokemon?profile=1
 [ { "pokemon_id": 149, "min_iv": 95, "gender": "female", "clean": true },
   { "pokemon_id": 384, "pvp_ranking_league": 1500, "pvp_ranking_best": 1, "pvp_ranking_worst": 5, "edit": true } ]
 
-POST /api/v2/tracking/invasion?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/invasion?profile=1
 [ { "grunt_id": 41 }, { "type_id": 12, "gender": "female" } ]
 
-POST /api/v2/tracking/incident?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/incident?profile=1
 [ { "display_type": 9 } ]
 
-DELETE /api/v2/tracking/raid/80921
+GET    /api/v2/humans/123456/tracking?include_descriptions=true   # full snapshot
+DELETE /api/v2/humans/123456/tracking/raid/80921
 ```
 
 ### Humans, profiles & schedules (v2)
@@ -81,7 +86,7 @@ Discrete, typed endpoints under `/api/v2` (problem+json, strict):
 
 **Humans:** `POST /api/v2/humans` (create) · `GET …/humans/{id}` (resource; includes read-only `blocked_alerts`) · `GET …/{id}/areas` · `POST …/{id}/{enable|disable|admin-disable|language|location|areas|profile}` · `GET …/{id}/check-location?lat=&lon=` · **saved locations** `GET` (list), `GET/{label}`, `POST {label,lat,lon}`, **`PUT/{label} {lat,lon}` (NEW — edit a saved location)**, `DELETE/{label}` · **roles** `GET`, `POST|DELETE …/{roleId}`, `GET …/{id}/admin-roles`.
 
-**Profiles:** `GET /api/v2/profiles/{id}` · `POST` (add) · `PATCH …/{profile_no}` (active_hours) · `DELETE …/{profile_no}` · `POST …/{profile_no}/copy`.
+**Profiles:** `GET /api/v2/humans/{id}/profiles` · `POST` (add) · `PATCH …/{profile_no}` (active_hours) · `DELETE …/{profile_no}` · `POST …/{profile_no}/copy`.
 
 **`active_hours` — now a real typed schema** (shared by profile schedules and `POST /summaries/{id}/{alertType}`; replaces the old freeform-JSON passthrough). An array of entries:
 

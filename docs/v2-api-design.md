@@ -56,24 +56,27 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 
 ### Resource model
 
-`{type}` ∈ `pokemon`, `raid`, `egg`, `quest`, `invasion`, `incident`, `lure`, `nest`, `gym`, `fort`, `maxbattle`.
+Tracking rules are **sub-resources of the human** (the human *is* the user). `uid` is unique per type, and every item operation is **scoped by `(human, uid)`** — the ownership guard v1 enforces (`WHERE id=? AND uid=?`); you cannot touch a uid that isn't the addressed human's. `{type}` ∈ `pokemon`, `raid`, `egg`, `quest`, `invasion`, `incident`, `lure`, `nest`, `gym`, `fort`, `maxbattle`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v2/tracking/{type}?user={id}&profile={n}` | List a user's rules of this type |
-| `POST` | `/api/v2/tracking/{type}?user={id}&profile={n}` | Create rule(s) for that user/profile |
-| `GET` | `/api/v2/tracking/{type}/{uid}` | Fetch one rule by global uid |
-| `PUT` | `/api/v2/tracking/{type}/{uid}` | Replace one rule |
-| `DELETE` | `/api/v2/tracking/{type}/{uid}` | Delete one rule |
-| `DELETE` | `/api/v2/tracking/{type}?uid=1,2,3` | Bulk delete |
+| `GET` | `/api/v2/humans/{id}/tracking` | **Full snapshot** — human + all-type rules + profiles + locations + summaries |
+| `GET` | `/api/v2/humans/{id}/tracking/{type}` | List one type |
+| `POST` | `/api/v2/humans/{id}/tracking/{type}` | Create rule(s) |
+| `GET` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Fetch one rule |
+| `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule |
+| `DELETE` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Delete one rule |
+| `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete |
 
-- **Create** body is an **array** of rule objects (bulk is the common case; a single rule is a one-element array). `user`/`profile` come from the query (one owner per request), not repeated in each rule.
-- **List** returns `{ "rules": [ <rule>, ... ] }` (object wrapper leaves room for pagination metadata later).
-- **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }`.
-- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; any omitted field resets to its documented default. (No `PATCH`/partial-update in v2 scope.)
-- Mutating endpoints (`POST`/`PUT`/`DELETE`) accept **`?silent=true`** (bool, default `false`) to apply the change without sending the user the confirmation/change message. This is a single param — v2 drops v1's `silent` + `suppressMessage` duplication.
-- Unknown body **and** query parameters are rejected (`422`) — v2 is strict.
-- Every rule object carries its `uid` (int) in responses.
+- `{id}` (the human) is **always in the path** — required, and the ownership scope for every op. `profile` is a query param (`?profile={n}`, defaults to the human's active profile).
+- **Create** body is an **array** of rule objects (a single rule is a one-element array); the owner is the path `{id}`, not repeated per rule.
+- **List one type** returns `{ "rules": [ <rule>, … ] }`. **Full snapshot** (`…/tracking`, no `{type}`) returns `{ "human": {…}, "tracking": { "pokemon": [...], "raid": [...], … }, "profiles": [...], "locations": [...], "summaries": [...] }` — replaces v1's `all/{id}`; `?all_profiles=true` spans every profile (v1's `allProfiles/{id}`).
+- **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour).
+- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. (No `PATCH`/partial-update in v2.)
+- **`?include_descriptions=true`** (on list + snapshot) adds the human-readable rowtext per rule (v1 parity for PoracleWeb).
+- Mutations (`POST`/`PUT`/`DELETE`) accept **`?silent=true`** (default false) — apply without notifying the user. (Single param; replaces v1's `silent`+`suppressMessage`.)
+- Unknown body **and** query params are rejected (`422`) — v2 is strict. Every rule carries its `uid` (int) in responses.
+- **Consistency note:** humans/profiles/locations are likewise under `/api/v2/humans/{id}/…` (see §2b), so everything user-scoped shares one prefix.
 
 ### Field conventions
 
@@ -125,9 +128,9 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 
 ### Examples
 
-Create two pokemon rules for a user:
+Create two pokemon rules for a human:
 ```
-POST /api/v2/tracking/pokemon?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/pokemon?profile=1
 [
   { "pokemon_id": 149, "min_iv": 95, "gender": "female", "clean": true },
   { "pokemon_id": 384, "pvp_ranking_league": 1500, "pvp_ranking_best": 1, "pvp_ranking_worst": 5, "edit": true }
@@ -135,17 +138,21 @@ POST /api/v2/tracking/pokemon?user=123456&profile=1
 ```
 Track a specific grunt by character id, and (separately) any female grass grunt:
 ```
-POST /api/v2/tracking/invasion?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/invasion?profile=1
 [ { "grunt_id": 41 }, { "type_id": 12, "gender": "female" } ]
 ```
 Track Showcase incidents:
 ```
-POST /api/v2/tracking/incident?user=123456&profile=1
+POST /api/v2/humans/123456/tracking/incident?profile=1
 [ { "display_type": 9 } ]
 ```
-Delete a rule by global uid:
+Full snapshot (tracking + profiles + locations + summaries):
 ```
-DELETE /api/v2/tracking/raid/80921
+GET /api/v2/humans/123456/tracking?include_descriptions=true
+```
+Delete a rule (scoped to this human):
+```
+DELETE /api/v2/humans/123456/tracking/raid/80921
 ```
 
 ### Questions for implementors
