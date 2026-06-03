@@ -1,13 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"io"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-
-	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/discordbot"
 )
 
@@ -22,99 +15,8 @@ type channelTemplatesEnums struct {
 	BackupNamePrefix string                      `json:"backupNamePrefix"`
 }
 
-// handleGetChannelTemplates implements GET /api/autocreate/templates.
-// Returns the live channelTemplate.json contents as a typed array.
-// A missing file yields {"status":"ok","templates":[]}.
-func handleGetChannelTemplates(cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, err := discordbot.LoadChannelTemplatesRaw(cfg.BaseDir)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
-			return
-		}
-		// Round-trip via json.RawMessage so the response carries a real
-		// JSON array (not a base64-encoded string) regardless of the
-		// editor's deserialiser.
-		c.Data(http.StatusOK, "application/json", buildOKEnvelope("templates", raw))
-	}
-}
-
-// channelTemplatesPostRequest is the body shared by POST .../templates and
-// POST .../templates/validate. The Templates field is treated as a raw
-// JSON array so unknown fields survive a write through the API (any
-// future field the bot adds can be set in the editor before the bot
-// supports decoding it).
-type channelTemplatesPostRequest struct {
-	Templates json.RawMessage `json:"templates"`
-}
-
-// handlePostChannelTemplates implements POST /api/autocreate/templates —
-// validate + write. On success returns the backup filename so the
-// operator can roll back if the change was a mistake.
-func handlePostChannelTemplates(cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		req, raw, ok := readTemplatesBody(c)
-		if !ok {
-			return
-		}
-		_ = req // body shape verified
-
-		if errs := discordbot.ValidateChannelTemplatesRaw(raw); hasBlockingErrors(errs) {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "errors": errs})
-			return
-		}
-		backup, err := discordbot.SaveChannelTemplatesRaw(cfg.BaseDir, raw)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"status":   "ok",
-			"backup":   backup,
-			"warnings": nonBlocking(discordbot.ValidateChannelTemplatesRaw(raw)),
-		})
-	}
-}
-
-// handleValidateChannelTemplates implements POST /api/autocreate/templates/validate.
-// Same body as POST .../templates but never writes — useful for "lint as
-// you type" in the editor.
-func handleValidateChannelTemplates() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		_, raw, ok := readTemplatesBody(c)
-		if !ok {
-			return
-		}
-		errs := discordbot.ValidateChannelTemplatesRaw(raw)
-		if hasBlockingErrors(errs) {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "errors": errs})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "warnings": nonBlocking(errs)})
-	}
-}
-
-// readTemplatesBody validates and extracts the templates raw JSON from a
-// POST body shaped {"templates":[...]}. Writes the error response and
-// returns ok=false on failure.
-func readTemplatesBody(c *gin.Context) (channelTemplatesPostRequest, []byte, bool) {
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "read body: " + err.Error()})
-		return channelTemplatesPostRequest{}, nil, false
-	}
-	var req channelTemplatesPostRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "parse body: " + err.Error()})
-		return channelTemplatesPostRequest{}, nil, false
-	}
-	if len(req.Templates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "templates field is required"})
-		return channelTemplatesPostRequest{}, nil, false
-	}
-	return req, []byte(req.Templates), true
-}
-
+// hasBlockingErrors reports whether any validation error has "error" severity
+// (a blocking error that must prevent a write).
 func hasBlockingErrors(errs []discordbot.TemplateValidationError) bool {
 	for _, e := range errs {
 		if e.Severity == "error" {
@@ -124,6 +26,8 @@ func hasBlockingErrors(errs []discordbot.TemplateValidationError) bool {
 	return false
 }
 
+// nonBlocking returns the subset of validation errors that are warnings (not
+// blocking). The result reuses the input backing array.
 func nonBlocking(errs []discordbot.TemplateValidationError) []discordbot.TemplateValidationError {
 	out := errs[:0]
 	for _, e := range errs {
@@ -132,17 +36,4 @@ func nonBlocking(errs []discordbot.TemplateValidationError) []discordbot.Templat
 		}
 	}
 	return out
-}
-
-// buildOKEnvelope wraps a raw JSON value under {"status":"ok","<key>":<raw>}.
-// Used so the GET endpoint can return the live file's array as actual
-// JSON (not as a base64 string the way gin's c.JSON would render []byte).
-func buildOKEnvelope(key string, raw []byte) []byte {
-	var buf []byte
-	buf = append(buf, `{"status":"ok","`...)
-	buf = append(buf, key...)
-	buf = append(buf, `":`...)
-	buf = append(buf, raw...)
-	buf = append(buf, '}')
-	return buf
 }

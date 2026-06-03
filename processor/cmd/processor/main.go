@@ -1042,12 +1042,11 @@ func main() {
 	// body, open request, problem+json errors).
 	api.RegisterResolve(humaAPI, resolveDeps)
 	// autocreate run / delete-template / templates-schema migrated to huma,
-	// in place — same paths, same success JSON, problem+json errors. The
-	// templates GET/POST + validate endpoints stay on gin (raw-JSON bodies).
+	// in place — same paths, same success JSON, problem+json errors.
 	registerAutocreateHuma(humaAPI, cfg, discordBot)
-	apiGroup.GET("/autocreate/templates", handleGetChannelTemplates(cfg))
-	apiGroup.POST("/autocreate/templates", handlePostChannelTemplates(cfg))
-	apiGroup.POST("/autocreate/templates/validate", handleValidateChannelTemplates())
+	// autocreate templates GET/POST + validate migrated to huma, in place —
+	// open (raw-JSON) bodies, same success JSON, problem+json errors.
+	registerAutocreateTemplatesHuma(humaAPI, cfg)
 
 	// Backup-cleanup sweeper: walks config/backups/ on startup and every
 	// 24h, removes files older than the retention window.
