@@ -318,9 +318,14 @@ func (s *SQLHumanStore) ListAll() ([]*Human, error) {
 }
 
 func (s *SQLHumanStore) LookupWebhookByName(name string) (string, error) {
-	var id string
-	err := s.db.Get(&id, `SELECT id FROM humans WHERE name = ? AND type = 'webhook' LIMIT 1`, name)
+	query, args, err := sqlx.In(
+		`SELECT id FROM humans WHERE name = ? AND type IN (?) LIMIT 1`, name, NamedTargetTypes)
 	if err != nil {
+		return "", fmt.Errorf("build webhook lookup for %s: %w", name, err)
+	}
+	query = s.db.Rebind(query)
+	var id string
+	if err := s.db.Get(&id, query, args...); err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil
 		}

@@ -13,6 +13,14 @@ import (
 // errors.Is(err, store.ErrDuplicateLocation) to detect this condition.
 var ErrDuplicateLocation = errors.New("duplicate location label")
 
+// NamedTargetTypes are the human types that are addressed by name via the
+// `name:` command override — destinations you can't run commands inside, so
+// the only way to manage their tracking is by name. This is the Discord
+// webhook plus its cross-platform equivalents (discord:channel,
+// telegram:channel, telegram:group). LookupWebhookByName resolves against
+// exactly this set. Keep in sync with the apply.go named-target query.
+var NamedTargetTypes = []string{"webhook", "discord:channel", "telegram:channel", "telegram:group"}
+
 // Human represents a complete human record with all columns.
 // JSON fields (Area, CommunityMembership, AreaRestriction, BlockedAlerts)
 // are stored as JSON arrays in the database but exposed here as Go slices.
@@ -159,7 +167,9 @@ type HumanStore interface {
 	// ListAll returns all humans (for admin userlist).
 	ListAll() ([]*Human, error)
 
-	// LookupWebhookByName finds a webhook human by name.
+	// LookupWebhookByName resolves a named, non-command destination by name
+	// (the `name:` command override). Matches NamedTargetTypes — webhooks plus
+	// the channel/group destinations you can't run commands inside.
 	LookupWebhookByName(name string) (string, error)
 
 	// CountByName returns the number of humans with the given name.
