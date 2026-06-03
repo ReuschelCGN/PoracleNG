@@ -371,12 +371,9 @@ func main() {
 	api.RegisterGeofenceHash(humaAPI, stateMgr)
 	api.RegisterGeofenceGeoJSON(humaAPI, stateMgr)
 	api.RegisterGeofenceAll(humaAPI, stateMgr)
-	geofence := apiGroup.Group("/geofence")
-	geofence.GET("/weatherMap/:lat/:lon", api.HandleWeatherMap(tileDeps))
-	geofence.GET("/locationMap/:lat/:lon", api.HandleLocationMap(tileDeps))
-	geofence.GET("/distanceMap/:lat/:lon/:distance", api.HandleDistanceMap(tileDeps))
-	geofence.POST("/overviewMap", api.HandleOverviewMap(tileDeps))
-	geofence.GET("/:area/map", api.HandleGeofenceAreaMap(tileDeps))
+	// Geofence tile-URL endpoints (migrated to huma, in place — same paths,
+	// same {status, url} bodies, problem+json errors).
+	api.RegisterTileEndpoints(humaAPI, api.NewHumaTileDeps(tileDeps))
 
 	// Tracking CRUD endpoints (registered after proc is created so enricher/scanner are available)
 	defaultTemplate := "1"
