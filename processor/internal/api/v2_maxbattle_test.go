@@ -112,18 +112,24 @@ func TestV2Maxbattle_RejectsLevelLessThanOneByLevel(t *testing.T) {
 	}
 }
 
-func TestV2Maxbattle_RejectsByLevelWithoutLevel(t *testing.T) {
-	r, _, _, restore := newV2MaxbattleTestAPI(t)
+// By-level with no level supplied is "everything" (any tier) ⇒ level 90, NOT a
+// 422 (replaces the old "level required when pokemon_id=9000" rule). See
+// matching/maxbattle.go:48 — stored 9000/90 is any-boss/any-tier.
+func TestV2Maxbattle_ByLevelOmittedLevelStores90(t *testing.T) {
+	r, ms, _, restore := newV2MaxbattleTestAPI(t)
 	defer restore()
-	// pokemon_id 9000 explicit, level omitted ⇒ defaults to 9000 which is >= 1, so OK.
 	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/maxbattle", `[{"pokemon_id":9000}]`)
 	if w.Code != http.StatusOK {
-		t.Fatalf("level defaulting to 9000 should be accepted, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("by-level without a level should be 'everything', got %d: %s", w.Code, w.Body.String())
+	}
+	rows := ms.AllRows()
+	if len(rows) != 1 || rows[0].PokemonID != 9000 || rows[0].Level != 90 {
+		t.Fatalf("by-level no-level must store 9000/90, got %+v", rows)
 	}
 }
 
-// Omitting pokemon_id entirely must store the 9000 track-by-level sentinel
-// (locks the omit-to-wildcard contract for the pokemon_id field).
+// Omitting pokemon_id entirely (with a tier) stores the 9000 track-by-level
+// sentinel and the supplied tier.
 func TestV2Maxbattle_OmittedPokemonIDStoresSentinel(t *testing.T) {
 	r, ms, _, restore := newV2MaxbattleTestAPI(t)
 	defer restore()
@@ -145,6 +151,55 @@ func TestV2Maxbattle_ByPokemonForcesLevelSentinel(t *testing.T) {
 	rows := ms.AllRows()
 	if len(rows) != 1 || rows[0].Level != 9000 {
 		t.Fatalf("by-pokemon must force level to 9000, got %+v", rows)
+	}
+}
+
+// Response projection: 9000/90 => null/null; 9000/5 => null/5; 150/9000 => 150/null.
+func TestV2Maxbattle_LevelNullProjection(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantPokemon any
+		wantLevel   any
+	}{
+		{"everything", `[{"pokemon_id":9000}]`, nil, nil},
+		{"by_level_tier", `[{"level":5}]`, nil, float64(5)},
+		{"specific_boss", `[{"pokemon_id":150}]`, float64(150), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, _, _, restore := newV2MaxbattleTestAPI(t)
+			defer restore()
+			v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/maxbattle", c.body)
+			w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/maxbattle", "")
+			out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
+			if out[0]["pokemon_id"] != c.wantPokemon {
+				t.Fatalf("pokemon_id: got %v want %v", out[0]["pokemon_id"], c.wantPokemon)
+			}
+			if out[0]["level"] != c.wantLevel {
+				t.Fatalf("level: got %v want %v", out[0]["level"], c.wantLevel)
+			}
+		})
+	}
+}
+
+// Round-trip (GET->PUT->GET identical) for the three derivation cases.
+func TestV2Maxbattle_LevelRoundTrip(t *testing.T) {
+	cases := map[string]string{
+		"everything":    `[{"pokemon_id":9000}]`,
+		"specific_boss": `[{"pokemon_id":150}]`,
+		"by_level_tier": `[{"level":5}]`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			r, ms, _, restore := newV2MaxbattleTestAPI(t)
+			defer restore()
+			roundTripRule(t, r, "/api/v2/humans/u1/tracking/maxbattle", body)
+			rows := ms.AllRows()
+			if len(rows) != 1 {
+				t.Fatalf("expected 1 row after round-trip, got %d", len(rows))
+			}
+		})
 	}
 }
 

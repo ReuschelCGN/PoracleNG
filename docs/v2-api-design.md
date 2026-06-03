@@ -92,13 +92,23 @@ The sentinels (verified against the matcher's "match any" semantics):
 
 | sentinel | meaning | where it appears |
 |---|---|---|
-| `9000` | project-wide "any / track-by-level" — the engine treats this id/level/move/evolution as "match anything" | raid & maxbattle `pokemon_id`, `move`, `evolution`; raid/maxbattle `level` (when a specific `pokemon_id` is set, `level` is ignored and stored as `9000`; in track-by-level mode the "all tiers" value is `90`, not `9000`) |
+| `9000` | project-wide "any / track-by-level" — the engine treats this id/move/evolution as "match anything" | raid & maxbattle `pokemon_id`, `move`, `evolution`; raid/maxbattle `level` placeholder (see below) |
 | `-1` | "no lower bound / any" | pokemon `min_iv`, `rarity`, `size` |
 | `100` / `55` / `15` / `6` / `5` | the ceiling of the range, i.e. "no upper bound" | pokemon `max_iv` (100), `max_level` (55), `max_atk`/`max_def`/`max_sta` (15), `max_rarity` (6), `max_size` (5) |
 | `4096` | "no upper rank limit" (PVP ranks never exceed it) | pokemon `pvp_ranking_worst` |
 | `9000000` | "no upper weight" | pokemon `max_weight` |
 | `0` | context-dependent "any / none / no floor" — e.g. `form` 0 = any form, `pvp_ranking_league` 0 = IV-mode (no PVP), nest `pokemon_id`/`min_spawn_avg` 0 = any | most types |
 | `0` (distance) | **NOT zero metres** — `distance` 0 means "match by the profile's geofence AREAS instead of a radius". A positive `distance` switches to a haversine radius. | common field, all types |
+
+**raid / maxbattle `level` is derived from `pokemon_id`** (the matcher reads `level` only in by-level mode — `matching/raid.go:65`, `matching/maxbattle.go:48`):
+
+| input `pokemon_id` / `level` | stored | meaning |
+|---|---|---|
+| omitted / omitted | `9000 / 90` | everything (any boss, any tier) |
+| omitted / 5 | `9000 / 5` | any boss at tier 5 |
+| 149 / (any) | `149 / 9000` | that boss, any tier (level ignored) |
+
+So `90` is the by-level "all tiers" value; `9000` is the specific-boss `level` **placeholder** (level unused). `9000` is kept (rather than, say, 0) so v2 rows are byte-identical to bot/v1 rows — same dedup, no surprise duplicate rules. An explicit by-level `level < 1` is rejected `422`; a `level` supplied alongside a specific `pokemon_id` is ignored (not an error), matching the bot. On read, `level` is hidden as `null` when stored ∈ {`9000`, `90`} (no meaningful tier).
 
 **Catch-all selectors** (not omit-to-wildcard — set explicitly):
 
@@ -137,7 +147,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 
 **pokemon** — `pokemon_id`* (int), `form` (int), `min_iv`/`max_iv` (int), `min_cp`/`max_cp` (int), `min_level`/`max_level` (int), `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta` (int, 0–15), `gender` (enum `any|male|female|genderless`), `rarity`/`max_rarity` (int), `size`/`max_size` (int), `pvp_ranking_league` (int — the CP cap: `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst` (int), `pvp_ranking_min_cp` (int), `pvp_ranking_cap` (int), `pvp_ranking_evolution` (int — mega/temporary-evolution discriminator: `0`=default/any, `2`=Mega X, `3`=Mega Y; **prospective — from the `pvp-mega-evolution` PR**).
 
-**raid** — `pokemon_id` (int, `9000` = any / track by level), `form` (int), `level` (int), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `move` (int), `evolution` (int), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
+**raid** — `pokemon_id` (int, omit = track by level / any boss; stored `9000`), `form` (int), `level` (int, by-level only — omit for any tier; derived from `pokemon_id`, see Wildcard conventions), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `move` (int), `evolution` (int), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
 
 **egg** — `level` (int), `team` (enum), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum).
 
@@ -155,7 +165,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 
 **fort** — `fort_type` (enum `pokestop|gym|everything`), `include_empty` (bool, **default `true`**), `change_types` (string[] of `location|new|removal|image_url|name|description`).
 
-**maxbattle** — `pokemon_id` (int), `level` (int), `gmax` (bool), `move` (int).
+**maxbattle** — `pokemon_id` (int, omit = track by level / any boss; stored `9000`), `level` (int, by-level only — omit for any tier; derived from `pokemon_id`, see Wildcard conventions), `gmax` (bool), `move` (int).
 
 \* = required.
 

@@ -12,16 +12,18 @@ import (
 // object.
 //
 // All filter fields are optional POINTERS (omitted ⇒ documented default via
-// valueOr); there is no required field. The track-by-level rule (level >= 1 when
-// pokemon_id == 9000) is validated explicitly in translateV2Maxbattle, matching
-// v1. gmax is a BOOL on the wire, stored as 0/1. station_id is a nullable
-// string. ping is server-managed (not a caller input).
+// valueOr); there is no required field. The level sentinel is derived from
+// pokemon_id in translateV2Maxbattle (see matching/maxbattle.go:48): omit both
+// for "everything" (stored 9000/90), an explicit by-level level must be >= 1, a
+// specific pokemon_id stores the 9000 level placeholder. gmax is a BOOL on the
+// wire, stored as 0/1. station_id is a nullable string. ping is server-managed
+// (not a caller input).
 //
-// pokemon_id, level, move, evolution all default to 9000 (the "any / by level"
+// pokemon_id, move, evolution all default to 9000 (the "any / by level"
 // sentinel the engine uses), per the field audit maxbattle table.
 type v2MaxbattleRule struct {
-	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard."`
-	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard."`
+	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level."`
+	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused)."`
 	Form      *int    `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
 	Move      *int    `json:"move,omitempty" nullable:"true" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel). Returned as null when at its wildcard."`
 	Gmax      *bool   `json:"gmax,omitempty" nullable:"true" doc:"Match Gigantamax only. Omit to match regardless (default false). Returned as null when false."`
@@ -46,13 +48,20 @@ type v2MaxbattleRule struct {
 func translateV2Maxbattle(deps *TrackingDeps, humanID string, profileNo int, oc overrideContext, req *v2MaxbattleRule) (db.MaxbattleTrackingAPI, error) {
 	pokemonID := valueOr(req.PokemonID, 9000)
 
-	// v1 rule: when tracking by level (no pokemon), a concrete level >= 1 is
-	// required; otherwise level is forced to the 9000 "any" sentinel.
+	// The level field's meaning depends on pokemon_id (see matching/maxbattle.go:48):
+	//   - by-level mode (pokemon_id == 9000): omitted level => 90 ("any tier" /
+	//     "everything"); an explicit level must be >= 1.
+	//   - specific-pokemon mode: level is ignored by the matcher and stored as the
+	//     9000 placeholder (byte-identical to bot/v1 rows).
 	level := 9000
 	if pokemonID == 9000 {
-		level = valueOr(req.Level, 9000)
-		if level < 1 {
-			return db.MaxbattleTrackingAPI{}, huma.Error422UnprocessableEntity("Invalid level (must be specified if no pokemon_id)")
+		if req.Level == nil {
+			level = 90
+		} else {
+			level = *req.Level
+			if level < 1 {
+				return db.MaxbattleTrackingAPI{}, huma.Error422UnprocessableEntity("Invalid level (must be >= 1 when tracking by level)")
+			}
 		}
 	}
 
@@ -105,8 +114,10 @@ func maxbattleRowToRule(row *db.MaxbattleTrackingAPI) v2MaxbattleRule {
 		stationID = row.StationID
 	}
 	return v2MaxbattleRule{
-		PokemonID:             ptrUnless(row.PokemonID, 9000),
-		Level:                 ptrUnless(row.Level, 9000),
+		PokemonID: ptrUnless(row.PokemonID, 9000),
+		// level has no meaningful tier when stored 9000 (specific-pokemon
+		// placeholder, incl. legacy bot rows) or 90 (by-level any-tier).
+		Level:                 raidLevelOrNull(row.Level),
 		Form:                  ptrUnless(row.Form, 0),
 		Move:                  ptrUnless(row.Move, 9000),
 		Gmax:                  ptrUnless(row.Gmax != 0, false),

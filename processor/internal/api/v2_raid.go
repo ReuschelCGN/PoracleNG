@@ -25,12 +25,16 @@ import (
 // now unknown fields and 422 under additionalProperties:false / type checking.
 //
 // pokemon_id defaults to 9000, the engine sentinel for "track by level, not a
-// specific pokemon" (consistent with the shipped maxbattle type). level/move/
-// evolution also default to 9000 ("any"), per the field audit raid table.
+// specific pokemon" (consistent with the shipped maxbattle type). The level
+// sentinel is derived from pokemon_id in translateV2Raid (see
+// matching/raid.go:65): omit both for "everything" (stored 9000/90), an
+// explicit by-level level must be >= 1, a specific pokemon_id stores the 9000
+// level placeholder. move/evolution default to 9000 ("any"), per the field
+// audit raid table.
 type v2RaidRule struct {
-	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard."`
+	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level."`
 	Form      *int    `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
-	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard."`
+	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused)."`
 	Team      *string `json:"team,omitempty" nullable:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4). Returned as null when 'any'."`
 	Exclusive *bool   `json:"exclusive,omitempty" nullable:"true" doc:"Match EX-raids only. Omit to match regardless (default false). Returned as null when false."`
 	Move      *int    `json:"move,omitempty" nullable:"true" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel). Returned as null when at its wildcard."`
@@ -71,6 +75,25 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		return db.RaidTrackingAPI{}, humaErr(code, msg)
 	}
 
+	// The level field's meaning depends on pokemon_id (see matching/raid.go:65):
+	//   - by-level mode (pokemon_id == 9000): omitted level => 90 ("any tier" /
+	//     "everything"); an explicit level must be >= 1 (mirrors v1's "Invalid
+	//     level" guard).
+	//   - specific-pokemon mode: level is ignored by the matcher and stored as the
+	//     9000 placeholder (byte-identical to bot/v1 rows).
+	pokemonID := valueOr(req.PokemonID, 9000)
+	level := 9000
+	if pokemonID == 9000 {
+		if req.Level == nil {
+			level = 90
+		} else {
+			level = *req.Level
+			if level < 1 {
+				return db.RaidTrackingAPI{}, huma.Error422UnprocessableEntity("Invalid level (must be >= 1 when tracking by level)")
+			}
+		}
+	}
+
 	var gymID null.String
 	if req.GymID != nil && *req.GymID != "" {
 		gymID = null.StringFrom(*req.GymID)
@@ -83,9 +106,9 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		Template:              valueOr(req.Template, ""),
 		Distance:              distance,
 		Team:                  team,
-		PokemonID:             valueOr(req.PokemonID, 9000),
+		PokemonID:             pokemonID,
 		Form:                  valueOr(req.Form, 0),
-		Level:                 valueOr(req.Level, 9000),
+		Level:                 level,
 		Exclusive:             db.IntBool(valueOr(req.Exclusive, false)),
 		Move:                  valueOr(req.Move, 9000),
 		Evolution:             valueOr(req.Evolution, 9000),
@@ -96,6 +119,17 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
 	}
 	return row, nil
+}
+
+// raidLevelOrNull projects a stored raid/maxbattle level back to the response,
+// emitting null when there is no meaningful tier: 9000 (specific-pokemon
+// placeholder, incl. legacy bot rows) or 90 (by-level "any tier"). Any other
+// value is a concrete tracked tier.
+func raidLevelOrNull(level int) *int {
+	if level == 9000 || level == 90 {
+		return nil
+	}
+	return &level
 }
 
 // raidRowToRule converts a stored RaidTrackingAPI back into the strict v2 rule
@@ -109,9 +143,11 @@ func raidRowToRule(row *db.RaidTrackingAPI) v2RaidRule {
 		gymID = &s
 	}
 	return v2RaidRule{
-		PokemonID:             ptrUnless(row.PokemonID, 9000),
-		Form:                  ptrUnless(row.Form, 0),
-		Level:                 ptrUnless(row.Level, 9000),
+		PokemonID: ptrUnless(row.PokemonID, 9000),
+		Form:      ptrUnless(row.Form, 0),
+		// level has no meaningful tier when stored 9000 (specific-pokemon
+		// placeholder, incl. legacy bot rows) or 90 (by-level any-tier).
+		Level:                 raidLevelOrNull(row.Level),
 		Team:                  ptrUnless(team, "any"),
 		Exclusive:             ptrUnless(bool(row.Exclusive), false),
 		Move:                  ptrUnless(row.Move, 9000),

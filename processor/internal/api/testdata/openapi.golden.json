@@ -2679,7 +2679,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+                  "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -2712,7 +2712,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -2810,7 +2810,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+                  "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -2843,7 +2843,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -2941,7 +2941,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+                  "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -2974,7 +2974,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -4656,7 +4656,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+                  "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -4689,7 +4689,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -4813,7 +4813,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+                  "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -4846,7 +4846,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -4970,7 +4970,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+                  "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -5003,7 +5003,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -5795,7 +5795,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+                  "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -5828,7 +5828,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6480,7 +6480,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+                  "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6513,7 +6513,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -7735,7 +7735,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+                  "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -7768,7 +7768,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8420,7 +8420,7 @@
                   ]
                 },
                 "level": {
-                  "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+                  "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8453,7 +8453,7 @@
                   ]
                 },
                 "pokemon_id": {
-                  "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+                  "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8704,7 +8704,7 @@
             ]
           },
           "level": {
-            "description": "Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Returned as null when at its wildcard.",
+            "description": "Max battle tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Returned as null when stored 90 (any tier) or 9000 (level unused).",
             "format": "int64",
             "type": [
               "integer",
@@ -8737,7 +8737,7 @@
             ]
           },
           "pokemon_id": {
-            "description": "Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel). Returned as null when at its wildcard.",
+            "description": "Omit pokemon_id to track by battle level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
             "format": "int64",
             "type": [
               "integer",
@@ -9303,7 +9303,7 @@
             ]
           },
           "level": {
-            "description": "Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard.",
+            "description": "Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused).",
             "format": "int64",
             "type": [
               "integer",
@@ -9336,7 +9336,7 @@
             ]
           },
           "pokemon_id": {
-            "description": "Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard.",
+            "description": "Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level.",
             "format": "int64",
             "type": [
               "integer",

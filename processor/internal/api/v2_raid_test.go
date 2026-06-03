@@ -298,6 +298,100 @@ func TestV2Raid_LevelOptional(t *testing.T) {
 	}
 }
 
+// Level sentinel derivation from pokemon_id (see matching/raid.go:65). Stored
+// 9000/90 is what the matcher treats as any-boss/any-tier ("everything").
+func TestV2Raid_LevelSentinelDerivation(t *testing.T) {
+	cases := []struct {
+		name         string
+		body         string
+		wantPokemon  int
+		wantLevel    int
+		wantHTTPCode int
+	}{
+		// Omit both => everything: any boss (9000), any tier (90).
+		{"everything", `[{}]`, 9000, 90, http.StatusOK},
+		// Specific boss (with a level supplied) ignores level => 9000 placeholder.
+		{"specific_boss_level_ignored", `[{"pokemon_id":149,"level":3}]`, 149, 9000, http.StatusOK},
+		// Specific boss, no level => 9000 placeholder.
+		{"specific_boss_no_level", `[{"pokemon_id":149}]`, 149, 9000, http.StatusOK},
+		// By-level tier 5.
+		{"by_level_tier", `[{"level":5}]`, 9000, 5, http.StatusOK},
+		// By-level explicit level 0 => 422.
+		{"by_level_zero_422", `[{"level":0}]`, 0, 0, http.StatusUnprocessableEntity},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, rs, _, restore := newV2RaidTestAPI(t)
+			defer restore()
+			w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/raid", c.body)
+			if w.Code != c.wantHTTPCode {
+				t.Fatalf("expected %d, got %d: %s", c.wantHTTPCode, w.Code, w.Body.String())
+			}
+			if c.wantHTTPCode != http.StatusOK {
+				if len(rs.AllRows()) != 0 {
+					t.Fatalf("invalid rule must not be stored: %+v", rs.AllRows())
+				}
+				return
+			}
+			rows := rs.AllRows()
+			if len(rows) != 1 || rows[0].PokemonID != c.wantPokemon || rows[0].Level != c.wantLevel {
+				t.Fatalf("expected pokemon=%d level=%d, got %+v", c.wantPokemon, c.wantLevel, rows)
+			}
+		})
+	}
+}
+
+// Response projection: stored 9000/90 (everything) => pokemon_id null + level
+// null; 9000/5 (any boss tier 5) => pokemon_id null + level 5; 149/9000
+// (specific boss) => pokemon_id 149 + level null.
+func TestV2Raid_LevelNullProjection(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantPokemon any
+		wantLevel   any
+	}{
+		{"everything", `[{}]`, nil, nil},
+		{"by_level_tier", `[{"level":5}]`, nil, float64(5)},
+		{"specific_boss", `[{"pokemon_id":149}]`, float64(149), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, _, _, restore := newV2RaidTestAPI(t)
+			defer restore()
+			v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/raid", c.body)
+			w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/raid", "")
+			out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
+			if out[0]["pokemon_id"] != c.wantPokemon {
+				t.Fatalf("pokemon_id: got %v want %v", out[0]["pokemon_id"], c.wantPokemon)
+			}
+			if out[0]["level"] != c.wantLevel {
+				t.Fatalf("level: got %v want %v", out[0]["level"], c.wantLevel)
+			}
+		})
+	}
+}
+
+// Round-trip (GET->PUT->GET identical) for the three derivation cases.
+func TestV2Raid_LevelRoundTrip(t *testing.T) {
+	cases := map[string]string{
+		"everything":    `[{}]`,
+		"specific_boss": `[{"pokemon_id":149}]`,
+		"by_level_tier": `[{"level":5}]`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			r, rs, _, restore := newV2RaidTestAPI(t)
+			defer restore()
+			roundTripRule(t, r, "/api/v2/humans/u1/tracking/raid", body)
+			rows := rs.AllRows()
+			if len(rows) != 1 {
+				t.Fatalf("expected 1 row after round-trip, got %d", len(rows))
+			}
+		})
+	}
+}
+
 func TestV2Raid_GymIDRoundTrip(t *testing.T) {
 	r, rs, _, restore := newV2RaidTestAPI(t)
 	defer restore()
