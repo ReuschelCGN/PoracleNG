@@ -508,12 +508,11 @@ func main() {
 		Dispatch:   proc.DispatchQuestSummary,
 		ReloadFunc: proc.triggerReload,
 	}
+	// Summary reads/delete/trigger run on the shared huma instance; the POST
+	// upsert (active_hours body) stays on gin for now.
+	api.RegisterSummaries(humaAPI, summaryDeps)
 	summaries := apiGroup.Group("/summaries")
-	summaries.GET("/:id", api.HandleSummaryListForUser(summaryDeps))
-	summaries.GET("/:id/:alertType", api.HandleSummaryGet(summaryDeps))
 	summaries.POST("/:id/:alertType", api.HandleSummarySet(summaryDeps))
-	summaries.DELETE("/:id/:alertType", api.HandleSummaryDelete(summaryDeps))
-	summaries.POST("/:id/:alertType/trigger", api.HandleSummaryTrigger(summaryDeps))
 
 	// reloadDTS reloads DTS templates and returns the number of loaded entries.
 	// It is used by both the HTTP /api/dts/reload handlers and the BotDeps closure
@@ -939,7 +938,7 @@ func main() {
 	{
 		apiCmdDeps := sharedBotDeps
 		apiCmdDeps.Parser = cmdParser
-		apiGroup.POST("/command", api.HandleCommand(&apiCmdDeps))
+		api.RegisterCommand(humaAPI, &apiCmdDeps)
 	}
 
 	gatewayToken := cfg.Discord.DiscordGatewayToken()
