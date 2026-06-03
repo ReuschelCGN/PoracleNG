@@ -562,7 +562,6 @@ func main() {
 	}
 
 	// Config and master data endpoints
-	apiGroup.GET("/config/poracleWeb", api.HandleConfigPoracleWeb(cfg))
 	configDeps := api.ConfigDeps{
 		Cfg:       cfg,
 		ConfigDir: filepath.Join(cfg.BaseDir, "config"),
@@ -574,9 +573,13 @@ func main() {
 	}
 	// Config schema (migrated to huma, in place — same {status, sections} body).
 	api.RegisterConfigSchema(humaAPI)
-	apiGroup.GET("/config/values", api.HandleConfigValues(configDeps))
-	apiGroup.POST("/config/values", api.HandleConfigSave(configDeps))
-	apiGroup.POST("/config/validate", api.HandleConfigValidate(configDeps))
+	// Config poracleWeb / values / validate (migrated to huma, in place — same
+	// paths, same success JSON, open bodies, problem+json errors). POST
+	// /config/values preserves the config.toml rewrite side effect.
+	api.RegisterConfigPoracleWeb(humaAPI, cfg)
+	api.RegisterConfigValues(humaAPI, configDeps)
+	api.RegisterConfigSave(humaAPI, configDeps)
+	api.RegisterConfigValidate(humaAPI, configDeps)
 	// Masterdata reads (migrated to huma, in place — typed maps re-marshalled to
 	// the same JSON the gin handlers produced).
 	api.RegisterMasterdataMonsters(humaAPI, proc.enricher.GameData, proc.enricher.Translations)
