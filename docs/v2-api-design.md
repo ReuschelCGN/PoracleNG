@@ -71,6 +71,7 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 - **List** returns `{ "rules": [ <rule>, ... ] }` (object wrapper leaves room for pagination metadata later).
 - **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }`.
 - **PUT** is a **full replace**: the body fully specifies the rule's filter fields; any omitted field resets to its documented default. (No `PATCH`/partial-update in v2 scope.)
+- Mutating endpoints (`POST`/`PUT`/`DELETE`) accept **`?silent=true`** (bool, default `false`) to apply the change without sending the user the confirmation/change message. This is a single param — v2 drops v1's `silent` + `suppressMessage` duplication.
 - Unknown body **and** query parameters are rejected (`422`) — v2 is strict.
 - Every rule object carries its `uid` (int) in responses.
 

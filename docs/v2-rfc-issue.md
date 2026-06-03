@@ -39,6 +39,7 @@ A tracking rule's `uid` is unique per type across all users, so rules are addres
 
 - List → `{ "rules": [ … ] }`. Create → `{ "created": [...], "updated": [...], "unchanged": [...] }` (each rule carries its `uid`).
 - `PUT` is a full replace; omitted fields reset to their documented defaults.
+- Mutating endpoints accept `?silent=true` (bool) to apply the change without sending the user a confirmation message (single param; v1's `silent`+`suppressMessage` are consolidated).
 
 ### Common rule fields
 
