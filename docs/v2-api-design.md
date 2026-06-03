@@ -52,7 +52,7 @@ All errors use a standard problem document:
 }
 ```
 
-No `{ "status": "ok" }` envelope on success — success responses are the typed body directly.
+**Success responses — no envelope on resources, minimal ack on pure actions.** Endpoints that return a resource (tracking `GET`/`POST`/`PUT`/`DELETE`, the full snapshot, profile/location reads and creates) return the typed body directly — the rule/diff/resource is **not** wrapped in a `{ "status": "ok" }` envelope. Pure **action** endpoints that have no resource to return (humans/profiles/locations actions: enable, disable, admin-disable, language, set-areas, set-location, switch-profile, profile mutations, location PUT/DELETE, etc.) return a minimal `{ "status": "ok" }` acknowledgement, since there is nothing else meaningful to hand back.
 
 ### Resource model
 
@@ -104,7 +104,7 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 
 **pokemon** — `pokemon_id`* (int), `form` (int), `min_iv`/`max_iv` (int), `min_cp`/`max_cp` (int), `min_level`/`max_level` (int), `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta` (int, 0–15), `gender` (enum `any|male|female|genderless`), `rarity`/`max_rarity` (int), `size`/`max_size` (int), `pvp_ranking_league` (int — the CP cap: `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst` (int), `pvp_ranking_min_cp` (int), `pvp_ranking_cap` (int), `pvp_ranking_evolution` (int — mega/temporary-evolution discriminator: `0`=default/any, `2`=Mega X, `3`=Mega Y; **prospective — from the `pvp-mega-evolution` PR**).
 
-**raid** — `pokemon_id` (int, `0` = any), `form` (int), `level` (int), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `move` (int), `evolution` (int), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
+**raid** — `pokemon_id` (int, `9000` = any / track by level), `form` (int), `level` (int), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `move` (int), `evolution` (int), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
 
 **egg** — `level` (int), `team` (enum), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum).
 
