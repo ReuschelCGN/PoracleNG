@@ -1,11 +1,5 @@
 package api
 
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-)
-
 // FieldDef describes a single template field for the DTS editor.
 type FieldDef struct {
 	Name                 string `json:"name"`
@@ -751,49 +745,3 @@ var fieldsByType = map[string]fieldEntry{
 	"greeting":       {Fields: append(commonFields, greetingFields...), Snippets: commonSnippets},
 }
 
-// HandleDTSFields returns available template fields for a DTS type.
-// GET /api/dts/fields/:type
-func HandleDTSFields() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		typeName := c.Param("type")
-
-		entry, ok := fieldsByType[typeName]
-		if !ok {
-			// Return just common fields for unknown types
-			c.JSON(http.StatusOK, gin.H{
-				"status": "ok",
-				"type":   typeName,
-				"fields": commonFields,
-			})
-			return
-		}
-
-		resp := gin.H{
-			"status": "ok",
-			"type":   typeName,
-			"fields": entry.Fields,
-		}
-		if len(entry.BlockScopes) > 0 {
-			resp["blockScopes"] = entry.BlockScopes
-		}
-		if len(entry.Snippets) > 0 {
-			resp["snippets"] = entry.Snippets
-		}
-		c.JSON(http.StatusOK, resp)
-	}
-}
-
-// HandleDTSFieldTypes returns the list of available DTS types.
-// GET /api/dts/fields
-func HandleDTSFieldTypes() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		types := make([]string, 0, len(fieldsByType))
-		for t := range fieldsByType {
-			types = append(types, t)
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"types":  types,
-		})
-	}
-}

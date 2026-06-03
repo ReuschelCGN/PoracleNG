@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	raymond "github.com/mailgun/raymond/v2"
@@ -87,38 +86,6 @@ func HandleDTSRender(ts *dts.TemplateStore) gin.HandlerFunc {
 	}
 }
 
-// HandleDTSGetTemplates returns DTS template entries with full content.
-// GET /api/dts/templates?type=monster&platform=discord&language=en&id=1
-func HandleDTSGetTemplates(ts *dts.TemplateStore) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		entries := ts.FilteredEntries(
-			c.Query("type"),
-			c.Query("platform"),
-			c.Query("language"),
-			c.Query("id"),
-		)
-		// Resolve @include directives and join string arrays so the editor
-		// sees fully expanded content. For templateFile entries, the resolved
-		// file content is returned in templateFileContent.
-		type entryWithContent struct {
-			dts.DTSEntry
-			TemplateFileContent string `json:"templateFileContent,omitempty"`
-		}
-		result := make([]entryWithContent, len(entries))
-		for i, e := range entries {
-			resolved, fileContent := ts.ResolveEntryContent(e)
-			if resolved != nil {
-				e.Template = resolved
-			}
-			result[i].DTSEntry = e
-			if fileContent != "" {
-				result[i].TemplateFileContent = fileContent
-			}
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "templates": result})
-	}
-}
-
 // HandleDTSSaveTemplates accepts an array of DTS entries and saves them.
 // Each entry is saved to its own file in config/dts/ and removed from its
 // previous source file. Readonly entries are rejected.
@@ -166,38 +133,3 @@ func HandleDTSSaveTemplates(ts *dts.TemplateStore) gin.HandlerFunc {
 	}
 }
 
-// HandleDTSDeleteTemplate deletes a DTS template entry by its key fields.
-// Removes from in-memory state and from the source file on disk.
-// DELETE /api/dts/templates?type=monster&platform=discord&language=en&id=1
-func HandleDTSDeleteTemplate(ts *dts.TemplateStore) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		filterType := c.Query("type")
-		filterPlatform := c.Query("platform")
-		filterLanguage := c.Query("language")
-		filterID := c.Query("id")
-
-		if filterType == "" || filterPlatform == "" || filterID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "type, platform, and id query parameters are required"})
-			return
-		}
-
-		if err := ts.DeleteEntry(filterType, filterPlatform, filterLanguage, filterID); err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": err.Error()})
-			} else {
-				c.JSON(http.StatusForbidden, gin.H{"status": "error", "message": err.Error()})
-			}
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	}
-}
-
-// HandleDTSPartials returns Handlebars partials for the DTS editor.
-// GET /api/dts/partials
-func HandleDTSPartials(ts *dts.TemplateStore) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "partials": ts.Partials()})
-	}
-}

@@ -536,23 +536,23 @@ func main() {
 	if proc.dtsRenderer != nil {
 		apiGroup.GET("/config/templates", api.HandleTemplateConfig(proc.dtsRenderer.Templates()))
 		apiGroup.POST("/dts/render", api.HandleDTSRender(proc.dtsRenderer.Templates()))
-		apiGroup.GET("/dts/emoji", api.HandleDTSEmoji(proc.dtsRenderer.Emoji()))
 		dtsConfigDir := filepath.Join(cfg.BaseDir, "config")
-		apiGroup.GET("/dts/templates", api.HandleDTSGetTemplates(proc.dtsRenderer.Templates()))
 		apiGroup.POST("/dts/templates", api.HandleDTSSaveTemplates(proc.dtsRenderer.Templates()))
-		apiGroup.DELETE("/dts/templates", api.HandleDTSDeleteTemplate(proc.dtsRenderer.Templates()))
-		apiGroup.PUT("/dts/templates/file", api.HandleDTSTemplateFileWrite(proc.dtsRenderer.Templates(), dtsConfigDir))
 		apiGroup.POST("/dts/enrich", api.HandleDTSEnrich(proc))
-		apiGroup.GET("/dts/fields", api.HandleDTSFieldTypes())
-		apiGroup.GET("/dts/fields/:type", api.HandleDTSFields())
-		apiGroup.GET("/dts/partials", api.HandleDTSPartials(proc.dtsRenderer.Templates()))
 		apiGroup.POST("/dts/sendtest", api.HandleDTSSendTest(proc.dispatcher, proc.dtsRenderer.Templates(), proc.dtsRenderer))
 		api.RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", func() error { _, err := reloadDTS(); return err })
 		api.RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", func() error { _, err := reloadDTS(); return err })
-		apiGroup.GET("/dts/testdata", api.HandleDTSTestdata(
-			filepath.Join(cfg.BaseDir, "config"),
+
+		// DTS editor read endpoints (migrated to huma, in place — same paths,
+		// same success JSON, problem+json errors). Stay gated behind
+		// dtsRenderer != nil so they don't exist when DTS rendering is disabled.
+		api.RegisterDTSReads(
+			humaAPI,
+			proc.dtsRenderer.Emoji(),
+			proc.dtsRenderer.Templates(),
+			dtsConfigDir,
 			filepath.Join(cfg.BaseDir, "fallbacks"),
-		))
+		)
 	}
 
 	// Config and master data endpoints
@@ -582,8 +582,10 @@ func main() {
 	api.RegisterSnapshotGet(humaAPI, proc.snapshotStore)
 
 	// Button action registry — config editor reads this to surface the
-	// dropdown of action choices + their accepted scopes/params.
-	apiGroup.GET("/dts/actions", api.HandleButtonActionsList(proc.buttonActions))
+	// dropdown of action choices + their accepted scopes/params. Migrated to
+	// huma, in place — same path, same {"actions":[...]} body. Registered
+	// unconditionally (outside the dtsRenderer block, matching legacy).
+	api.RegisterButtonActions(humaAPI, proc.buttonActions)
 
 	// Resolution cache — populated after bot init below
 	resolveCache := api.NewResolveCache()
