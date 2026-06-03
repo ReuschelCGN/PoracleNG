@@ -1,7 +1,9 @@
 # Huma Full-API Master Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
-> **Execution gate:** write/refine now; **do not start P3–P4 (v2) until GitHub issue #138 feedback is in** (it may reshape the v2 resource model). P0–P2 (foundation + in-place) can proceed independently.
+> **Execution:** build **all phases now (P0–P5)**. #138 implementor feedback is welcome but **non-blocking** — fold in any changes if they arrive. **Mega:** build v2 pokemon **without** `pvp_ranking_evolution` for now (it depends on the unmerged `pvp-mega-evolution` branch); add that one field as a follow-up after mega merges to `develop` and this branch rebases. Do **not** base this build on the mega branch (avoids carrying unmerged commits).
+>
+> **Build kickoff (fresh session):** "Execute this plan, **phases P0–P5**, using superpowers:subagent-driven-development. Companion specs: `docs/v2-api-design.md`, `docs/superpowers/specs/huma-tracking-field-audit.md`. Worktree `PoracleNG-huma-api`, branch `huma-api-migration`. Start at Task 0.1; Task 0.2 reverts the partial v1 pokemon huma migration before anything new is built."
 
 **Goal:** Migrate the *entire* PoracleNG `/api` HTTP surface to huma in one coordinated effort: document the simple/new endpoints **in place** at `/api/*`, and deliver a **clean, strict `/api/v2`** for the tracking/humans/profiles CRUD — all in a single OpenAPI spec, with `problem+json` errors throughout.
 
@@ -118,7 +120,7 @@ Open schemas for freeform fields. Each: typed input for path/query, `Body json.R
 - [ ] Per group: TDD port with open schemas, remove gin route, gate + commit `feat(api): huma in-place for <group>`.
 - [ ] Document in the spec that these bodies are intentionally open (`description` noting the freeform contract).
 
-## Phase 3 — v2 tracking (gated on #138)
+## Phase 3 — v2 tracking
 
 Strict, per `docs/v2-api-design.md` + the field audit. Resource model: **human-scoped** `/v2/humans/{id}/tracking/{type}` (GET list `?profile=&include_descriptions=`, POST create), `/v2/humans/{id}/tracking/{type}/{uid}` (GET/PUT/DELETE, **scoped by `(human, uid)`** — like v1's `DeleteByUID(id, uid)`), `?uid=` bulk delete; `?silent=true` on mutations.
 
@@ -128,14 +130,14 @@ Strict, per `docs/v2-api-design.md` + the field audit. Resource model: **human-s
 - [ ] **Resource helpers** — human-scoped addressing (`{id}` path), `(human, uid)` ownership scoping on item ops, `profile`/`include_descriptions`/`silent` query binding; list → `{rules:[…]}`; create → `{created,updated,unchanged}` (delete → `{deleted}`) with uids. **`?include_descriptions=true` is uniform across reads AND mutations**: when set, each rule in the response (rules/created/updated/unchanged/deleted) gets a `description` (human's language). No assembled `message` field — status is the array placement; the prefixed confirmation message stays the Discord/Telegram push (gated by `silent`). Reuse the rowtext generator + `translatorFor`.
 - [ ] Tests for the building blocks; gate + commit.
 
-### Task 3.2: pokemon v2 (worked example) — GET list, POST create, GET/PUT/DELETE by uid, bulk delete. Faithful to the engine; strict schemas. Commit.
+### Task 3.2: pokemon v2 (worked example) — GET list, POST create, GET/PUT/DELETE by uid, bulk delete, full snapshot. Faithful to the engine; strict schemas. **Omit `pvp_ranking_evolution`** (depends on the unmerged mega branch) — add it in a follow-up once `pvp-mega-evolution` is in `develop` and this branch rebases. Commit.
 
 ### Task 3.3: Fan-out the other 10 types (raid, egg, quest, invasion, **incident**, lure, nest, gym, fort, maxbattle)
 - [ ] Per type: apply the audit's per-field modeling; **invasion** exactly-one-mode (`type_id`|`grunt_id`|`everything`|`boss`) with facade down-translation to the stored grunt-type name; **incident** new type keyed by `display_type` int; `fort.include_empty` default true. One commit per type.
 
 ### Task 3.4: v2 full snapshot — `GET /v2/humans/{id}/tracking` returns `{human, tracking:{<type>:[...]}, profiles, locations, summaries}` (replaces v1 `all/{id}`); `?all_profiles=true` spans all profiles (replaces `allProfiles/{id}`); `?include_descriptions=` adds rowtext. Reuses the per-type list logic + profile/location/summary reads. Commit.
 
-## Phase 4 — v2 humans/profiles (gated on #138)
+## Phase 4 — v2 humans/profiles
 
 **Discrete action endpoints**, cleaned/typed, under `/api/v2`. Mirror v1's actions with proper types + problem+json + strict bodies. Reuse the store/business logic.
 
