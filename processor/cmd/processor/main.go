@@ -356,7 +356,9 @@ func main() {
 	api.RegisterStats(humaAPI, "get-stats-shiny-possible", "/stats/shiny-possible", func() any { return proc.stats.ExportShinyPossible() })
 	api.RegisterGeocode(humaAPI, proc.enricher.Geocoder)
 
-	apiGroup.POST("/test", api.HandleTest(proc))
+	// poracle-test (migrated to huma, in place — same path, same {"status":"ok"}
+	// body, open `webhook` request part, problem+json errors).
+	api.RegisterTest(humaAPI, proc)
 
 	// Geofence data and tile generation endpoints
 	tileDeps := api.TileDeps{
@@ -599,9 +601,11 @@ func main() {
 	// Resolution cache — populated after bot init below
 	resolveCache := api.NewResolveCache()
 
-	// Delivery endpoint — accepts pre-rendered jobs
-	apiGroup.POST("/deliverMessages", api.HandleDeliverMessages(proc.dispatcher))
-	apiGroup.POST("/postMessage", api.HandleDeliverMessages(proc.dispatcher)) // legacy alias
+	// Delivery endpoint — accepts pre-rendered jobs (migrated to huma, in place
+	// — same paths, same {"status":"ok","queued":N} body, open []Job request,
+	// problem+json errors). /postMessage is a legacy alias serving identically.
+	api.RegisterDeliverMessages(humaAPI, "post-deliver-messages", "/deliverMessages", proc.dispatcher)
+	api.RegisterDeliverMessages(humaAPI, "post-message", "/postMessage", proc.dispatcher)
 
 	// Command framework — shared by API endpoint and Discord/Telegram bots
 	var cmdLanguages []string
@@ -1035,7 +1039,9 @@ func main() {
 	if telegramBot != nil {
 		resolveDeps.TelegramAPI = telegramBot.API()
 	}
-	apiGroup.POST("/resolve", api.HandleResolve(resolveDeps))
+	// Resolve (migrated to huma, in place — same path, same freeform success
+	// body, open request, problem+json errors).
+	api.RegisterResolve(humaAPI, resolveDeps)
 	// autocreate run / delete-template / templates-schema migrated to huma,
 	// in place — same paths, same success JSON, problem+json errors. The
 	// templates GET/POST + validate endpoints stay on gin (raw-JSON bodies).
