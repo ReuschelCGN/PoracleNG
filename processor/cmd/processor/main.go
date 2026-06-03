@@ -337,19 +337,16 @@ func main() {
 	apiGroup := r.Group("/api")
 	apiGroup.Use(api.RequireSecretGin(cfg.Processor.APISecret))
 
-	// Reload
-	apiGroup.POST("/reload", api.HandleReload(func() error {
-		return state.Load(stateMgr, database, summaryScheduleStore)
-	}))
-	apiGroup.GET("/reload", api.HandleReload(func() error {
-		return state.Load(stateMgr, database, summaryScheduleStore)
-	}))
-	apiGroup.POST("/geofence/reload", api.HandleReload(func() error {
-		return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence)
-	}))
-	apiGroup.GET("/geofence/reload", api.HandleReload(func() error {
-		return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence)
-	}))
+	// Wire the huma API: serves /openapi.json and /docs publicly, and now serves
+	// the migrated in-place endpoints (reloads, with more to come) on the shared
+	// instance mounted on the authenticated /api group.
+	humaAPI := api.NewHumaAPI(r, apiGroup, buildVersion)
+
+	// Reload (migrated to huma, in place — same paths, same {"status":"ok"} body).
+	api.RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
+	api.RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
+	api.RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
+	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 
 	// Weather, stats, geocode, test
 	apiGroup.GET("/weather", api.HandleWeather(proc.weather))
@@ -397,11 +394,6 @@ func main() {
 		Dispatcher:   proc.dispatcher,
 		ReloadFunc:   proc.triggerReload,
 	}
-	// Wire the huma API: serves /openapi.json and /docs publicly. No endpoints are
-	// registered on it yet (v1 frozen); a later phase will bind the returned API to
-	// a named var and register huma ops on it.
-	_ = api.NewHumaAPI(r, apiGroup, buildVersion)
-
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
@@ -553,14 +545,8 @@ func main() {
 		apiGroup.GET("/dts/fields/:type", api.HandleDTSFields())
 		apiGroup.GET("/dts/partials", api.HandleDTSPartials(proc.dtsRenderer.Templates()))
 		apiGroup.POST("/dts/sendtest", api.HandleDTSSendTest(proc.dispatcher, proc.dtsRenderer.Templates(), proc.dtsRenderer))
-		apiGroup.POST("/dts/reload", api.HandleReload(func() error {
-			_, err := reloadDTS()
-			return err
-		}))
-		apiGroup.GET("/dts/reload", api.HandleReload(func() error {
-			_, err := reloadDTS()
-			return err
-		}))
+		api.RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", func() error { _, err := reloadDTS(); return err })
+		api.RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", func() error { _, err := reloadDTS(); return err })
 		apiGroup.GET("/dts/testdata", api.HandleDTSTestdata(
 			filepath.Join(cfg.BaseDir, "config"),
 			filepath.Join(cfg.BaseDir, "fallbacks"),
