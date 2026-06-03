@@ -402,6 +402,7 @@ func main() {
 	// (frozen). The v2 pokemon endpoints are the worked example the other 10
 	// tracking types fan out from.
 	api.RegisterV2TrackingPokemon(humaAPI, trackingDeps)
+	api.RegisterV2TrackingNest(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
