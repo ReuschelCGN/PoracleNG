@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -286,7 +287,7 @@ func (m *MockHumanStore) LookupWebhookByName(name string) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, h := range m.humans {
-		if h.Type == "webhook" && h.Name == name {
+		if h.Name == name && slices.Contains(NamedTargetTypes, h.Type) {
 			return h.ID, nil
 		}
 	}
