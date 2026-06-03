@@ -20,6 +20,12 @@ import (
 // isEventGruntType reports whether a stored grunt_type string is a pokestop
 // event name (lowercased gd.Util.PokestopEvent[*].Name). Comparison is
 // lowercased on both sides. gd or its Util being nil ⇒ never an event.
+//
+// Disjointness assumption: the invasion/incident partition assumes the three
+// grunt_type name spaces — pokemon-type names, the catch-all "everything"/"boss",
+// and PokestopEvent names — are mutually disjoint sets (true in current data). A
+// future PokestopEvent named like a pokemon type (or "everything"/"boss") would
+// be misfiled by this discriminator.
 func isEventGruntType(gruntType string, gd *gamedata.GameData) bool {
 	if gd == nil || gd.Util == nil {
 		return false

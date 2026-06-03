@@ -32,6 +32,10 @@ func (e v2RuleEnvelope[Req]) MarshalJSON() ([]byte, error) {
 		descBytes, _ := json.Marshal(e.Description)
 		merged["description"] = descBytes
 	}
+	if e.ProfileNo != nil {
+		pnBytes, _ := json.Marshal(*e.ProfileNo)
+		merged["profile_no"] = pnBytes
+	}
 	return json.Marshal(merged)
 }
 

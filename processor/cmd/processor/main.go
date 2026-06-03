@@ -30,6 +30,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/backup"
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/bot/commands"
+	"github.com/pokemon/poracleng/processor/internal/buttonactions"
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
@@ -45,19 +46,18 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/logging"
 	"github.com/pokemon/poracleng/processor/internal/matching"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
+	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/nlp"
 	"github.com/pokemon/poracleng/processor/internal/pvp"
 	"github.com/pokemon/poracleng/processor/internal/ratelimit"
 	"github.com/pokemon/poracleng/processor/internal/resources"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
 	"github.com/pokemon/poracleng/processor/internal/scanner"
+	"github.com/pokemon/poracleng/processor/internal/snapshots"
 	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/staticmap"
 	"github.com/pokemon/poracleng/processor/internal/store"
 	"github.com/pokemon/poracleng/processor/internal/telegrambot"
-	"github.com/pokemon/poracleng/processor/internal/buttonactions"
-	"github.com/pokemon/poracleng/processor/internal/mute"
-	"github.com/pokemon/poracleng/processor/internal/snapshots"
 	"github.com/pokemon/poracleng/processor/internal/tracker"
 	"github.com/pokemon/poracleng/processor/internal/uicons"
 	"github.com/pokemon/poracleng/processor/internal/validation"
@@ -396,6 +396,7 @@ func main() {
 		Config:       cfg,
 		Translations: proc.enricher.Translations,
 		Dispatcher:   proc.dispatcher,
+		Summaries:    summaryScheduleStore,
 		ReloadFunc:   proc.triggerReload,
 	}
 	// Strict v2 tracking surface (huma). v1 gin routes below are left untouched
@@ -412,6 +413,9 @@ func main() {
 	api.RegisterV2TrackingQuest(humaAPI, trackingDeps)
 	api.RegisterV2TrackingInvasion(humaAPI, trackingDeps)
 	api.RegisterV2TrackingIncident(humaAPI, trackingDeps)
+	// MUST follow every per-type register above so the snapshot provider
+	// registry is fully populated before the snapshot endpoint reads it.
+	api.RegisterV2TrackingSnapshot(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
@@ -845,7 +849,7 @@ func main() {
 		SnapshotStore:      proc.snapshotStore,
 		ButtonActions:      proc.buttonActions,
 		DTSRenderer:        proc.dtsRenderer,
-		ReloadDTS: reloadDTS,
+		ReloadDTS:          reloadDTS,
 		EmojiReload: func() (int, error) {
 			if cmdEmoji == nil {
 				return 0, errors.New("emoji config not loaded (DTS renderer not configured)")
@@ -865,7 +869,7 @@ func main() {
 		ReloadState: func() error {
 			return state.Load(stateMgr, database, summaryScheduleStore)
 		},
-		WebhookRate: webhookHandler.RateSnapshot,
+		WebhookRate:  webhookHandler.RateSnapshot,
 		AlertLimiter: proc.rateLimiter,
 		DiscordRate:  proc.dispatcher.DiscordRateSnapshot,
 		TelegramRate: proc.dispatcher.TelegramRateSnapshot,

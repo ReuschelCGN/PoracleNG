@@ -14,12 +14,13 @@ import (
 // rows owned by id, and DeleteByUID(s) only affects rows whose owning id matches.
 // This lets handler-layer tests verify that one human cannot touch another's uid.
 type MockTrackingStore[T any] struct {
-	mu      sync.Mutex
-	rows    []T
-	nextUID atomic.Int64
-	getUID  func(*T) int64
-	setUID  func(*T, int64)
-	getID   func(*T) string // nil = no id scoping (legacy single-user behaviour)
+	mu        sync.Mutex
+	rows      []T
+	nextUID   atomic.Int64
+	getUID    func(*T) int64
+	setUID    func(*T, int64)
+	getID     func(*T) string // nil = no id scoping (legacy single-user behaviour)
+	getProfNo func(*T) int    // nil = no profile scoping (legacy single-profile behaviour)
 }
 
 // NewMockTrackingStore creates a MockTrackingStore with the given UID accessor functions.
@@ -40,12 +41,25 @@ func (m *MockTrackingStore[T]) WithIDScope(getID func(*T) string) *MockTrackingS
 	return m
 }
 
+// WithProfileScope enables profile filtering using the given profile-no accessor,
+// then returns the store for chaining. Without it the mock ignores profileNo (the
+// legacy single-profile behaviour), so SelectByIDProfile returns every owned row
+// regardless of profile. With it, the mock mirrors the SQL store's
+// `WHERE id=? AND profile_no=?` — required for tests that span profiles.
+func (m *MockTrackingStore[T]) WithProfileScope(getProfNo func(*T) int) *MockTrackingStore[T] {
+	m.getProfNo = getProfNo
+	return m
+}
+
 func (m *MockTrackingStore[T]) SelectByIDProfile(id string, profileNo int) ([]T, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]T, 0, len(m.rows))
 	for i := range m.rows {
 		if m.getID != nil && m.getID(&m.rows[i]) != id {
+			continue
+		}
+		if m.getProfNo != nil && m.getProfNo(&m.rows[i]) != profileNo {
 			continue
 		}
 		out = append(out, m.rows[i])

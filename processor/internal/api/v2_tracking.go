@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -40,6 +41,13 @@ type v2RuleEnvelope[Req any] struct {
 	UID         int64  `json:"uid"`
 	Description string `json:"description,omitempty"`
 	Rule        Req    `json:"-"` // flattened at marshal time
+
+	// ProfileNo, when non-nil, adds the rule's profile_no to the flattened
+	// object. It is set ONLY by the full-snapshot endpoint in all_profiles mode
+	// (so a client can tell which profile a rule belongs to). The per-type list
+	// endpoints leave it nil, so their wire shape and OpenAPI schema are
+	// unchanged.
+	ProfileNo *int `json:"-"`
 }
 
 // v2TrackingType captures everything the generic layer needs to serve one
@@ -168,8 +176,41 @@ func resolveHuman(deps *TrackingDeps, id string, profile int) (*store.HumanLite,
 	return human, profileNo, nil
 }
 
-// registerV2Tracking wires the six strict endpoints for one tracking type.
+// v2SnapshotProvider is a type-erased view over one registered tracking type,
+// used by the full-snapshot endpoint (GET /v2/humans/{id}/tracking). It reuses
+// the EXACT same scoping + envelope-building logic the per-type list endpoint
+// uses, so the rules in the snapshot are byte-identical to the per-type list for
+// the same (human, profile, includeDesc). The only addition is the optional
+// profile_no field injected in all_profiles mode (see buildSnapshotEnvelopes).
+//
+// typeName is the tracking-type URL segment (the snapshot's "tracking" map key).
+// When allProfiles is true, the provider spans every profile the human owns and
+// each returned rule carries its profile_no.
+type v2SnapshotProvider struct {
+	// TypeName is the "tracking" map key (e.g. "pokemon", "invasion", "incident").
+	TypeName string
+	// Rules returns the rules-as-envelopes (already JSON-marshalled) for this
+	// type, scoped to the human (and profile, or all profiles).
+	Rules func(human *store.HumanLite, profiles []store.Profile, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error)
+}
+
+// registerV2Tracking wires the six strict endpoints for one tracking type. It
+// also appends a snapshot provider to deps so the full-snapshot endpoint can
+// serve this type's rules via the same list logic. The provider list lives on
+// the per-instance *TrackingDeps (built once per server/test), so it is NOT a
+// leaky package-level global: a fresh deps starts with an empty provider list.
 func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2TrackingType[Req, T]) {
+	deps.v2SnapshotProviders = append(deps.v2SnapshotProviders, v2SnapshotProvider{
+		TypeName: typ.Name,
+		Rules: func(human *store.HumanLite, profiles []store.Profile, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error) {
+			return buildSnapshotRules(deps, typ, human, profiles, profileNo, allProfiles, includeDesc)
+		},
+	})
+	registerV2TrackingOps(api, deps, typ)
+}
+
+// registerV2TrackingOps wires the six strict endpoints for one tracking type.
+func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ v2TrackingType[Req, T]) {
 	base := "/v2/humans/{id}/tracking/" + typ.Name
 	tag := []string{"v2-tracking"}
 	sec := []map[string][]string{{"poracleSecret": {}}}
@@ -213,7 +254,7 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 		OperationID: "v2-get-" + typ.Name, Method: "GET", Path: base + "/{uid}",
 		Summary:     "Fetch one " + typ.Name + " tracking rule",
 		Description: "Scoped by (human, uid). 404 if the uid is not owned by this human.",
-		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2ItemInput) (*v2ListOutput[Req], error) {
 		human, profileNo, err := resolveHuman(deps, in.ID, in.Profile)
 		if err != nil {
@@ -245,7 +286,7 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 		OperationID: "v2-delete-" + typ.Name, Method: "DELETE", Path: base + "/{uid}",
 		Summary:     "Delete one " + typ.Name + " tracking rule",
 		Description: "Scoped by (human, uid). Returns {deleted:[...]}. 404 if the uid is not owned by this human.",
-		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2ItemInput) (*v2DeleteOutput[Req], error) {
 		human, profileNo, err := resolveHuman(deps, in.ID, in.Profile)
 		if err != nil {
@@ -271,7 +312,7 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 		OperationID: "v2-bulk-delete-" + typ.Name, Method: "DELETE", Path: base,
 		Summary:     "Bulk-delete " + typ.Name + " tracking rules",
 		Description: "Deletes the comma-separated ?uid=1,2,3 rules (scoped to this human). Returns {deleted:[...]}.",
-		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2BulkDeleteInput) (*v2DeleteOutput[Req], error) {
 		human, profileNo, err := resolveHuman(deps, in.ID, in.Profile)
 		if err != nil {
@@ -476,6 +517,69 @@ func buildRuleEnvelopes[Req any, T any](deps *TrackingDeps, typ v2TrackingType[R
 		out[i] = env
 	}
 	return out
+}
+
+// buildSnapshotRules returns this type's rules-as-marshalled-JSON for the
+// full-snapshot endpoint. It reuses the SAME scopedRows + buildRuleEnvelopes
+// path the per-type list endpoint uses, so a snapshot rule is byte-identical to
+// the per-type list rule for the same (human, profile, includeDesc) — the only
+// difference is the optional profile_no injected in all_profiles mode.
+//
+// Single-profile mode (allProfiles=false): one scopedRows(profileNo) read,
+// envelopes without profile_no — exactly the per-type list shape.
+//
+// all_profiles mode: enumerate every profile the human owns, read each, and
+// stamp profile_no onto every envelope so a client can tell them apart. (The
+// per-type list logic lists one profile; spanning profiles is the snapshot's
+// job, done here by looping the human's profiles — mirroring v1 allProfiles,
+// which is profile-agnostic.)
+func buildSnapshotRules[Req any, T any](
+	deps *TrackingDeps,
+	typ v2TrackingType[Req, T],
+	human *store.HumanLite,
+	profiles []store.Profile,
+	profileNo int,
+	allProfiles, includeDesc bool,
+) ([]json.RawMessage, error) {
+	humanID := human.ID
+
+	emit := func(rows []T, stampProfile *int) ([]json.RawMessage, error) {
+		envs := buildRuleEnvelopes(deps, typ, human, rows, includeDesc)
+		out := make([]json.RawMessage, len(envs))
+		for i := range envs {
+			envs[i].ProfileNo = stampProfile
+			b, err := json.Marshal(envs[i])
+			if err != nil {
+				return nil, err
+			}
+			out[i] = b
+		}
+		return out, nil
+	}
+
+	if !allProfiles {
+		rows, err := typ.scopedRows(deps, humanID, profileNo)
+		if err != nil {
+			return nil, err
+		}
+		return emit(rows, nil)
+	}
+
+	out := []json.RawMessage{}
+	for i := range profiles {
+		pn := profiles[i].ProfileNo
+		rows, err := typ.scopedRows(deps, humanID, pn)
+		if err != nil {
+			return nil, err
+		}
+		stamp := pn
+		marshalled, err := emit(rows, &stamp)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, marshalled...)
+	}
+	return out, nil
 }
 
 // parseUIDList parses a comma-separated uid list into []int64. Any non-int token
