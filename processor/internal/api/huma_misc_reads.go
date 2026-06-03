@@ -288,6 +288,16 @@ func RegisterMasterdataMonsters(api huma.API, gd *gamedata.GameData, translation
 	})
 }
 
+// masterdataGruntsOutput is the typed body for the grunts read: an object keyed
+// by grunt id (string) → *poracle2Grunt. The dynamic keys make huma emit an
+// object-with-additionalProperties schema that documents the VALUE shape
+// (poracle2Grunt) while leaving keys arbitrary. buildGruntsResponse always
+// returns a (possibly empty) map, so the wire JSON is byte-identical to the
+// legacy c.Data(json.Marshal(map)) output.
+type masterdataGruntsOutput struct {
+	Body map[string]*poracle2Grunt
+}
+
 // RegisterMasterdataGrunts registers GET /api/masterdata/grunts, building the
 // poracle-v2 grunts map from classic.json grunt data. Replaces the legacy gin
 // HandleMasterdataGrunts. The map is re-marshalled by huma to the same JSON the
@@ -299,11 +309,12 @@ func RegisterMasterdataGrunts(api huma.API, gd *gamedata.GameData) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-masterdata-grunts", Method: "GET", Path: "/masterdata/grunts",
 		Summary:     "Grunt types",
-		Description: "Returns the poracle-v2 grunts map keyed by grunt id. The response body is left open (freeform): it is an object with arbitrary id-keyed entries, so it has no fixed schema.",
-		Tags:        []string{"masterdata"},
-		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
-		return &anyBodyOutput{Body: result}, nil
+		Description: "Returns the poracle-v2 grunts map keyed by grunt id (an empty object when game data is unavailable). Keys are " +
+			"arbitrary grunt ids; each value is a poracle2Grunt (type, gender, grunt category, per-slot reward flags, encounters).",
+		Tags:     []string{"masterdata"},
+		Security: []map[string][]string{{"poracleSecret": {}}},
+	}, func(_ context.Context, _ *struct{}) (*masterdataGruntsOutput, error) {
+		return &masterdataGruntsOutput{Body: result}, nil
 	})
 }
 

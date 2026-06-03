@@ -19,7 +19,7 @@ func TestHumaReload_OK(t *testing.T) {
 	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
 
 	called := false
-	RegisterReload(humaAPI, "test-reload-ok", http.MethodGet, "/reload", func() error {
+	RegisterReload(humaAPI, "test-reload-ok", http.MethodGet, "/reload", "Test reload", "Test reload op.", func() error {
 		called = true
 		return nil
 	})
@@ -51,7 +51,7 @@ func TestHumaReload_Error(t *testing.T) {
 	r := gin.New()
 	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
 
-	RegisterReload(humaAPI, "test-reload-err", http.MethodGet, "/reload", func() error {
+	RegisterReload(humaAPI, "test-reload-err", http.MethodGet, "/reload", "Test reload", "Test reload op.", func() error {
 		return errors.New("boom")
 	})
 

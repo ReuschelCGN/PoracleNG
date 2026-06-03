@@ -6,6 +6,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/pokemon/poracleng/processor/internal/db"
+	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
 // v2_profiles.go is the strict /api/v2 profiles surface (a sub-resource of
@@ -98,19 +101,89 @@ func marshalV2ActiveHours(entries []v2ActiveHourEntry) (string, error) {
 
 // --- list -------------------------------------------------------------------
 
-// v2ProfilesOutput is the GET list response: {profiles:[...]} (legacy DTO).
+// v2ProfileResponse is the STRICT v2 representation of a single profile. Unlike
+// the legacy ProfileResponse (which returns active_hours as the raw JSON STRING
+// stored in the DB), the v2 shape exposes active_hours as a proper typed JSON
+// ARRAY of v2ActiveHourEntry — symmetric with the strict v2 active_hours INPUT
+// on PATCH/add. An absent / empty schedule serialises to [] (never a string,
+// never null).
+//
+// area is kept as the JSON-encoded string the store persists, matching the
+// existing v2 wire shape; only active_hours changes from string → array here.
+type v2ProfileResponse struct {
+	UID         int                 `json:"uid"`
+	ID          string              `json:"id"`
+	ProfileNo   int                 `json:"profile_no"`
+	Name        string              `json:"name"`
+	Area        string              `json:"area"`
+	Latitude    float64             `json:"latitude"`
+	Longitude   float64             `json:"longitude"`
+	ActiveHours []v2ActiveHourEntry `json:"active_hours"`
+}
+
+// v2ProfilesOutput is the GET list response: {profiles:[...]} with active_hours
+// as a typed array.
 type v2ProfilesOutput struct {
 	Body struct {
-		Profiles []ProfileResponse `json:"profiles"`
+		Profiles []v2ProfileResponse `json:"profiles"`
 	}
+}
+
+// profileToV2Response adapts a store.Profile into the strict v2 wire shape,
+// parsing the stored active_hours JSON string into a typed []v2ActiveHourEntry.
+// A missing / unparseable schedule yields an empty (non-nil) slice so the field
+// always marshals to [] rather than null.
+func profileToV2Response(p store.Profile) v2ProfileResponse {
+	return v2ProfileResponse{
+		UID:         p.UID,
+		ID:          p.ID,
+		ProfileNo:   p.ProfileNo,
+		Name:        p.Name,
+		Area:        stringSliceToJSON(p.Area),
+		Latitude:    p.Latitude,
+		Longitude:   p.Longitude,
+		ActiveHours: parseV2ActiveHours(p.ActiveHours),
+	}
+}
+
+// parseV2ActiveHours decodes the stored active_hours JSON string into typed v2
+// entries. Empty / placeholder / malformed schedules return an empty slice (not
+// nil) so the JSON field is always [] rather than null. A parse error is logged
+// and treated as "no schedule".
+func parseV2ActiveHours(raw string) []v2ActiveHourEntry {
+	out := []v2ActiveHourEntry{}
+	entries, err := db.ParseActiveHours(raw)
+	if err != nil {
+		log.Warnf("v2 profiles: active_hours parse %q: %s", raw, err)
+		return out
+	}
+	for _, e := range entries {
+		v := v2ActiveHourEntry{
+			Day:   e.Day,
+			Hours: e.Hours,
+			Mins:  e.Mins,
+			Step:  e.Step,
+		}
+		// end_hours/end_mins are only meaningful for range entries (step>0);
+		// surface them via pointers so single-fire entries omit them, mirroring
+		// the strict v2 input shape.
+		if e.Step > 0 {
+			eh, em := e.EndHours, e.EndMins
+			v.EndHours = &eh
+			v.EndMins = &em
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 func registerV2ProfilesList(api huma.API, deps *TrackingDeps, tag []string, sec []map[string][]string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-list-human-profiles", Method: "GET", Path: "/v2/humans/{id}/profiles",
 		Summary:     "List a human's profiles",
-		Description: "Returns every profile for the human (profile_no, name, area, location, active_hours). 404 if the human does not exist.",
-		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
+		Description: "Returns every profile for the human (profile_no, name, area, location, active_hours). active_hours is a typed JSON " +
+			"array of schedule entries ([] when no schedule is set). 404 if the human does not exist.",
+		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2HumanIDInput) (*v2ProfilesOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
@@ -121,7 +194,10 @@ func registerV2ProfilesList(api huma.API, deps *TrackingDeps, tag []string, sec 
 			return nil, huma.Error500InternalServerError("database error")
 		}
 		out := &v2ProfilesOutput{}
-		out.Body.Profiles = profilesToResponse(profiles)
+		out.Body.Profiles = make([]v2ProfileResponse, len(profiles))
+		for i, p := range profiles {
+			out.Body.Profiles[i] = profileToV2Response(p)
+		}
 		return out, nil
 	})
 }

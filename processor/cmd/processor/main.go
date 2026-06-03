@@ -355,10 +355,28 @@ func main() {
 	//   UPDATE_GOLDEN=1 go test ./cmd/processor/ -run TestAutocreateOpenAPIGolden
 
 	// Reload (migrated to huma, in place — same paths, same {"status":"ok"} body).
-	api.RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
-	api.RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
-	api.RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
-	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
+	// Each variant carries a distinct summary/description so /docs documents
+	// exactly what it reloads. GET and POST share the same text per path.
+	const (
+		stateReloadSummary = "Reload tracking state from the database"
+		stateReloadDesc    = "Reloads tracking state (all registered humans plus every tracking rule across all types) from MySQL into the " +
+			"in-memory state snapshot, then atomically swaps it in. Existing geofence data (GeoJSON files / Koji) is preserved and NOT " +
+			"re-fetched — use /geofence/reload for that. Returns {\"status\":\"ok\"} once the swap completes."
+
+		geofenceReloadSummary = "Full reload including geofences from disk + Koji"
+		geofenceReloadDesc    = "Performs a FULL reload: re-reads geofence GeoJSON files from disk and re-fetches Koji geofences, rebuilds the " +
+			"spatial index, then reloads tracking state (humans + all tracking rules) from MySQL and atomically swaps the new snapshot in. " +
+			"Heavier than /reload (which skips the geofence step). Returns {\"status\":\"ok\"} on success."
+
+		dtsReloadSummary = "Reload DTS templates and partials from disk"
+		dtsReloadDesc    = "Reloads DTS message templates and Handlebars partials from config/dts.json and config/dts/ (falling back to the " +
+			"bundled fallbacks/ defaults), rebuilding the in-memory template set. Does NOT touch tracking state or geofences. " +
+			"Returns {\"status\":\"ok\"} once templates are reloaded."
+	)
+	api.RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", stateReloadSummary, stateReloadDesc, func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
+	api.RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", stateReloadSummary, stateReloadDesc, func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
+	api.RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
+	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 
 	// Weather, stats, geocode (migrated to huma, in place — same paths, same
 	// success JSON, problem+json errors). test stays on gin below.
@@ -585,8 +603,8 @@ func main() {
 	// DTS template endpoints
 	if proc.dtsRenderer != nil {
 		dtsConfigDir := filepath.Join(cfg.BaseDir, "config")
-		api.RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", func() error { _, err := reloadDTS(); return err })
-		api.RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", func() error { _, err := reloadDTS(); return err })
+		api.RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", dtsReloadSummary, dtsReloadDesc, func() error { _, err := reloadDTS(); return err })
+		api.RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", dtsReloadSummary, dtsReloadDesc, func() error { _, err := reloadDTS(); return err })
 
 		// DTS render/save/enrich/sendtest + config/templates (migrated to huma,
 		// in place — same paths, same freeform success JSON, problem+json

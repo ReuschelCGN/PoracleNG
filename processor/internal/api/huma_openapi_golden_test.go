@@ -78,11 +78,28 @@ func shouldUpdateGolden() bool {
 func registerAllHumaOpsForTest(humaAPI huma.API) {
 	noop := func() error { return nil }
 
-	// Reload (in-place).
-	RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", noop)
-	RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", noop)
-	RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", noop)
-	RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", noop)
+	// Reload (in-place). Summary/description strings MUST mirror the per-call-site
+	// text in cmd/processor/main.go so the golden reflects production /docs.
+	const (
+		stateReloadSummary = "Reload tracking state from the database"
+		stateReloadDesc    = "Reloads tracking state (all registered humans plus every tracking rule across all types) from MySQL into the " +
+			"in-memory state snapshot, then atomically swaps it in. Existing geofence data (GeoJSON files / Koji) is preserved and NOT " +
+			"re-fetched — use /geofence/reload for that. Returns {\"status\":\"ok\"} once the swap completes."
+
+		geofenceReloadSummary = "Full reload including geofences from disk + Koji"
+		geofenceReloadDesc    = "Performs a FULL reload: re-reads geofence GeoJSON files from disk and re-fetches Koji geofences, rebuilds the " +
+			"spatial index, then reloads tracking state (humans + all tracking rules) from MySQL and atomically swaps the new snapshot in. " +
+			"Heavier than /reload (which skips the geofence step). Returns {\"status\":\"ok\"} on success."
+
+		dtsReloadSummary = "Reload DTS templates and partials from disk"
+		dtsReloadDesc    = "Reloads DTS message templates and Handlebars partials from config/dts.json and config/dts/ (falling back to the " +
+			"bundled fallbacks/ defaults), rebuilding the in-memory template set. Does NOT touch tracking state or geofences. " +
+			"Returns {\"status\":\"ok\"} once templates are reloaded."
+	)
+	RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", stateReloadSummary, stateReloadDesc, noop)
+	RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", stateReloadSummary, stateReloadDesc, noop)
+	RegisterReload(humaAPI, "post-geofence-reload", http.MethodPost, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, noop)
+	RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, noop)
 
 	// Weather, stats, geocode.
 	RegisterWeather(humaAPI, nil)
@@ -133,8 +150,8 @@ func registerAllHumaOpsForTest(humaAPI huma.API) {
 	// proc.dtsRenderer != nil; the golden spec captures the full surface so we
 	// register them unconditionally with nil deps (registration builds closures
 	// only).
-	RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", noop)
-	RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", noop)
+	RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", dtsReloadSummary, dtsReloadDesc, noop)
+	RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", dtsReloadSummary, dtsReloadDesc, noop)
 	RegisterDTSWrites(humaAPI, nil, nil, nil, nil)
 	RegisterDTSReads(humaAPI, nil, nil, "", "")
 

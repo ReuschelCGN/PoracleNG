@@ -76,6 +76,66 @@ func TestV2Profiles_List_OK(t *testing.T) {
 	if p["name"] != "Default" {
 		t.Fatalf("expected Default profile, got %v", p)
 	}
+	// active_hours must be a JSON ARRAY (the strict v2 shape), never a string.
+	// A profile with no schedule serialises to [].
+	ah, ok := p["active_hours"].([]any)
+	if !ok {
+		t.Fatalf("active_hours should be a JSON array, got %T (%v)", p["active_hours"], p["active_hours"])
+	}
+	if len(ah) != 0 {
+		t.Fatalf("expected empty active_hours array for unscheduled profile, got %v", ah)
+	}
+}
+
+// TestV2Profiles_List_ActiveHoursArray_RoundTrip sets a schedule via PATCH and
+// reads it back via the list endpoint, asserting active_hours comes back as a
+// typed JSON ARRAY (not the legacy raw JSON string) with the entry fields
+// intact — covering both a single-fire and a range (step>0) entry.
+func TestV2Profiles_List_ActiveHoursArray_RoundTrip(t *testing.T) {
+	r, _, _ := newV2ProfilesTestAPI(t)
+
+	// PATCH a schedule onto profile_no 1: one single-fire + one range entry.
+	patch := `{"active_hours":[` +
+		`{"day":3,"hours":12,"mins":15},` +
+		`{"day":5,"hours":8,"mins":0,"step":2,"end_hours":18,"end_mins":30}` +
+		`]}`
+	wp := v2DoReq(t, r, http.MethodPatch, "/api/v2/humans/u1/profiles/1", patch)
+	if wp.Code != http.StatusOK {
+		t.Fatalf("PATCH expected 200, got %d: %s", wp.Code, wp.Body.String())
+	}
+
+	// Read it back through the list endpoint.
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/profiles", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := v2DecodeBody(t, w)
+	profiles := body["profiles"].([]any)
+	p := profiles[0].(map[string]any)
+
+	ah, ok := p["active_hours"].([]any)
+	if !ok {
+		t.Fatalf("active_hours should be a JSON array, got %T (%v)", p["active_hours"], p["active_hours"])
+	}
+	if len(ah) != 2 {
+		t.Fatalf("expected 2 active_hours entries, got %d: %v", len(ah), ah)
+	}
+
+	// Single-fire entry: no end_hours/end_mins.
+	e0 := ah[0].(map[string]any)
+	if e0["day"] != float64(3) || e0["hours"] != float64(12) || e0["mins"] != float64(15) {
+		t.Fatalf("entry 0 mismatch: %v", e0)
+	}
+	if _, present := e0["end_hours"]; present {
+		t.Fatalf("single-fire entry should omit end_hours, got %v", e0)
+	}
+
+	// Range entry: end_hours/end_mins present.
+	e1 := ah[1].(map[string]any)
+	if e1["day"] != float64(5) || e1["step"] != float64(2) ||
+		e1["end_hours"] != float64(18) || e1["end_mins"] != float64(30) {
+		t.Fatalf("entry 1 (range) mismatch: %v", e1)
+	}
 }
 
 func TestV2Profiles_List_UnknownHuman(t *testing.T) {

@@ -151,6 +151,41 @@ type resolveInput struct {
 	Body openJSON
 }
 
+// resolveResult is the typed top-level resolve response.
+//
+// Only the STABLE top-level structure is typed: status plus the three optional
+// sections. The sections are modelled as dynamically-keyed maps because their
+// keys are the caller-supplied entity ids and their leaf values are free-form
+// resolved-entity objects whose fields vary by entity kind (a resolved channel
+// carries {name,type,guild,…}; a resolved guild only {name}; etc.). huma emits
+// an object-with-additionalProperties schema for each.
+//
+// Presence is byte-identical to the legacy map[string]any response:
+//   - `discord`/`telegram`/`destinations` are pointers so a nil ⇒ key absent
+//     (legacy only set them when the request included that platform/section AND,
+//     for discord/telegram, the relevant bot was configured). A NON-nil but
+//     EMPTY section still serialises ({} / inner {}) — matching the legacy
+//     "request list present but nothing resolved" case (`make`d then assigned).
+//   - inner per-entity maps (users/roles/…/chats) are added to the section only
+//     when their request list was non-empty, again matching legacy.
+//
+// The leaf entity object is map[string]any (a free-form resolved-entity record).
+//
+// Field order is deliberately alphabetical (destinations, discord, status,
+// telegram) to match Go's map-key sort order from the legacy map[string]any
+// response, keeping the serialised bytes identical.
+type resolveResult struct {
+	Destinations *map[string]any            `json:"destinations,omitempty" doc:"id → resolved destination object (unknown-type lookup across platforms)"`
+	Discord      *map[string]map[string]any `json:"discord,omitempty" doc:"section → (id → resolved Discord entity). Sections: users, roles, channels, guilds"`
+	Status       string                     `json:"status"`
+	Telegram     *map[string]map[string]any `json:"telegram,omitempty" doc:"section → (id → resolved Telegram entity). Section: chats"`
+}
+
+// resolveOutput is the typed huma output for POST /api/resolve.
+type resolveOutput struct {
+	Body resolveResult
+}
+
 // RegisterResolve registers POST /api/resolve, batch-resolving Discord/Telegram
 // IDs (and unknown-type destinations) to names. Replaces gin HandleResolve. The
 // request body is open and unmarshalled into the same shape the legacy handler
@@ -162,13 +197,13 @@ func RegisterResolve(api huma.API, deps ResolveDeps) {
 		Description: "Batch-resolves Discord/Telegram IDs (and unknown-type destinations) to display names. Request body is open: optional {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}. Response is a freeform map of resolved entities.",
 		Tags:        []string{"resolve"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(ctx context.Context, in *resolveInput) (*anyBodyOutput, error) {
+	}, func(ctx context.Context, in *resolveInput) (*resolveOutput, error) {
 		var req resolveRequest
 		if err := json.Unmarshal(in.Body, &req); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 
-		result := map[string]any{"status": "ok"}
+		result := resolveResult{Status: "ok"}
 
 		// Resolve unknown-type destinations by trying every category in turn.
 		if len(req.Destinations) > 0 {
@@ -178,12 +213,12 @@ func RegisterResolve(api huma.API, deps ResolveDeps) {
 					destinations[id] = resolved
 				}
 			}
-			result["destinations"] = destinations
+			result.Destinations = &destinations
 		}
 
 		// Discord resolution.
 		if req.Discord != nil && deps.DiscordSession != nil {
-			discord := make(map[string]any)
+			discord := make(map[string]map[string]any)
 
 			if len(req.Discord.Users) > 0 {
 				users := make(map[string]any)
@@ -225,12 +260,12 @@ func RegisterResolve(api huma.API, deps ResolveDeps) {
 				discord["guilds"] = guilds
 			}
 
-			result["discord"] = discord
+			result.Discord = &discord
 		}
 
 		// Telegram resolution.
 		if req.Telegram != nil && deps.TelegramAPI != nil {
-			telegram := make(map[string]any)
+			telegram := make(map[string]map[string]any)
 
 			if len(req.Telegram.Chats) > 0 {
 				chats := make(map[string]any)
@@ -242,10 +277,10 @@ func RegisterResolve(api huma.API, deps ResolveDeps) {
 				telegram["chats"] = chats
 			}
 
-			result["telegram"] = telegram
+			result.Telegram = &telegram
 		}
 
-		return &anyBodyOutput{Body: result}, nil
+		return &resolveOutput{Body: result}, nil
 	})
 }
 

@@ -1307,6 +1307,99 @@
         ],
         "type": "object"
       },
+      "Poracle2Encounters": {
+        "additionalProperties": false,
+        "properties": {
+          "first": {
+            "items": {
+              "$ref": "#/components/schemas/Poracle2GruntPokemon"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "second": {
+            "items": {
+              "$ref": "#/components/schemas/Poracle2GruntPokemon"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "third": {
+            "items": {
+              "$ref": "#/components/schemas/Poracle2GruntPokemon"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "first",
+          "second",
+          "third"
+        ],
+        "type": "object"
+      },
+      "Poracle2Grunt": {
+        "additionalProperties": false,
+        "properties": {
+          "encounters": {
+            "$ref": "#/components/schemas/Poracle2Encounters"
+          },
+          "firstReward": {
+            "type": "boolean"
+          },
+          "gender": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "grunt": {
+            "type": "string"
+          },
+          "secondReward": {
+            "type": "boolean"
+          },
+          "thirdReward": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "gender",
+          "grunt",
+          "firstReward",
+          "secondReward",
+          "thirdReward",
+          "encounters"
+        ],
+        "type": "object"
+      },
+      "Poracle2GruntPokemon": {
+        "additionalProperties": false,
+        "properties": {
+          "form": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "form"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1371,6 +1464,39 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ResolveResult": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "additionalProperties": {},
+            "description": "id → resolved destination object (unknown-type lookup across platforms)",
+            "type": "object"
+          },
+          "discord": {
+            "additionalProperties": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "description": "section → (id → resolved Discord entity). Sections: users, roles, channels, guilds",
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "telegram": {
+            "additionalProperties": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "description": "section → (id → resolved Telegram entity). Section: chats",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status"
+        ],
         "type": "object"
       },
       "RoleInfo": {
@@ -10252,12 +10378,62 @@
         ],
         "type": "object"
       },
+      "V2ProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_hours": {
+            "items": {
+              "$ref": "#/components/schemas/V2ActiveHourEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "area": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "latitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile_no": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uid": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "uid",
+          "id",
+          "profile_no",
+          "name",
+          "area",
+          "latitude",
+          "longitude",
+          "active_hours"
+        ],
+        "type": "object"
+      },
       "V2ProfilesOutputBody": {
         "additionalProperties": false,
         "properties": {
           "profiles": {
             "items": {
-              "$ref": "#/components/schemas/ProfileResponse"
+              "$ref": "#/components/schemas/V2ProfileResponse"
             },
             "type": [
               "array",
@@ -11270,6 +11446,7 @@
     },
     "/dts/reload": {
       "get": {
+        "description": "Reloads DTS message templates and Handlebars partials from config/dts.json and config/dts/ (falling back to the bundled fallbacks/ defaults), rebuilding the in-memory template set. Does NOT touch tracking state or geofences. Returns {\"status\":\"ok\"} once templates are reloaded.",
         "operationId": "get-dts-reload",
         "responses": {
           "200": {
@@ -11298,12 +11475,13 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Reload DTS templates and partials from disk",
         "tags": [
           "reload"
         ]
       },
       "post": {
+        "description": "Reloads DTS message templates and Handlebars partials from config/dts.json and config/dts/ (falling back to the bundled fallbacks/ defaults), rebuilding the in-memory template set. Does NOT touch tracking state or geofences. Returns {\"status\":\"ok\"} once templates are reloaded.",
         "operationId": "post-dts-reload",
         "responses": {
           "200": {
@@ -11332,7 +11510,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Reload DTS templates and partials from disk",
         "tags": [
           "reload"
         ]
@@ -12063,6 +12241,7 @@
     },
     "/geofence/reload": {
       "get": {
+        "description": "Performs a FULL reload: re-reads geofence GeoJSON files from disk and re-fetches Koji geofences, rebuilds the spatial index, then reloads tracking state (humans + all tracking rules) from MySQL and atomically swaps the new snapshot in. Heavier than /reload (which skips the geofence step). Returns {\"status\":\"ok\"} on success.",
         "operationId": "get-geofence-reload",
         "responses": {
           "200": {
@@ -12091,12 +12270,13 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Full reload including geofences from disk + Koji",
         "tags": [
           "reload"
         ]
       },
       "post": {
+        "description": "Performs a FULL reload: re-reads geofence GeoJSON files from disk and re-fetches Koji geofences, rebuilds the spatial index, then reloads tracking state (humans + all tracking rules) from MySQL and atomically swaps the new snapshot in. Heavier than /reload (which skips the geofence step). Returns {\"status\":\"ok\"} on success.",
         "operationId": "post-geofence-reload",
         "responses": {
           "200": {
@@ -12125,7 +12305,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Full reload including geofences from disk + Koji",
         "tags": [
           "reload"
         ]
@@ -12243,13 +12423,18 @@
     },
     "/masterdata/grunts": {
       "get": {
-        "description": "Returns the poracle-v2 grunts map keyed by grunt id. The response body is left open (freeform): it is an object with arbitrary id-keyed entries, so it has no fixed schema.",
+        "description": "Returns the poracle-v2 grunts map keyed by grunt id (an empty object when game data is unavailable). Keys are arbitrary grunt ids; each value is a poracle2Grunt (type, gender, grunt category, per-slot reward flags, encounters).",
         "operationId": "get-masterdata-grunts",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/Poracle2Grunt"
+                  },
+                  "type": "object"
+                }
               }
             },
             "description": "OK"
@@ -12368,6 +12553,7 @@
     },
     "/reload": {
       "get": {
+        "description": "Reloads tracking state (all registered humans plus every tracking rule across all types) from MySQL into the in-memory state snapshot, then atomically swaps it in. Existing geofence data (GeoJSON files / Koji) is preserved and NOT re-fetched — use /geofence/reload for that. Returns {\"status\":\"ok\"} once the swap completes.",
         "operationId": "get-reload",
         "responses": {
           "200": {
@@ -12396,12 +12582,13 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Reload tracking state from the database",
         "tags": [
           "reload"
         ]
       },
       "post": {
+        "description": "Reloads tracking state (all registered humans plus every tracking rule across all types) from MySQL into the in-memory state snapshot, then atomically swaps it in. Existing geofence data (GeoJSON files / Koji) is preserved and NOT re-fetched — use /geofence/reload for that. Returns {\"status\":\"ok\"} once the swap completes.",
         "operationId": "post-reload",
         "responses": {
           "200": {
@@ -12430,7 +12617,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Trigger a reload",
+        "summary": "Reload tracking state from the database",
         "tags": [
           "reload"
         ]
@@ -12452,7 +12639,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveResult"
+                }
               }
             },
             "description": "OK"
@@ -13912,7 +14101,7 @@
     },
     "/v2/humans/{id}/profiles": {
       "get": {
-        "description": "Returns every profile for the human (profile_no, name, area, location, active_hours). 404 if the human does not exist.",
+        "description": "Returns every profile for the human (profile_no, name, area, location, active_hours). active_hours is a typed JSON array of schedule entries ([] when no schedule is set). 404 if the human does not exist.",
         "operationId": "v2-list-human-profiles",
         "parameters": [
           {
