@@ -411,6 +411,7 @@ func main() {
 	api.RegisterV2TrackingEgg(humaAPI, trackingDeps)
 	api.RegisterV2TrackingQuest(humaAPI, trackingDeps)
 	api.RegisterV2TrackingInvasion(humaAPI, trackingDeps)
+	api.RegisterV2TrackingIncident(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
