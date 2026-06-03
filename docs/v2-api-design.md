@@ -12,7 +12,7 @@
 
 The existing `/api/*` surface is undocumented, accreted, and tolerant of malformed input by necessity (the `flexBool`/`flexInt` coercion exists because real clients send wrong types). An attempt to retrofit OpenAPI docs onto it in place meant paying two costs on every endpoint — faithfully reproducing v1's quirks **and** cleaning up the representation — while still mutating v1's contract.
 
-Decision: build a **clean, strict, documented v2** surface and **freeze v1** untouched for existing clients. v1 keeps working exactly as today; clients migrate to v2 on their own schedule. PoracleWeb will move to v2; v1 is deprecated-but-supported.
+Decision: build a **clean, strict, documented v2** surface and **freeze v1** untouched for existing clients. v1 keeps working exactly as today; clients migrate to v2 on their own schedule. We will encourage all users of the v1 API to move to v2 so they can access new tracking types; v1 is deprecated-but-supported.
 
 v2 is a **clean HTTP facade over the same store/matcher/business logic** — no domain rewrite. Where v2 exposes richer or cleaner inputs than the engine stores natively, the v2 handler translates them down to the existing stored representation (see Invasion/Incident).
 
@@ -98,7 +98,7 @@ No `{ "status": "ok" }` envelope on success — success responses are the typed 
 
 ### Per-type fields
 
-**pokemon** — `pokemon_id`* (int), `form` (int), `min_iv`/`max_iv` (int), `min_cp`/`max_cp` (int), `min_level`/`max_level` (int), `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta` (int, 0–15), `gender` (enum `any|male|female|genderless`), `min_weight`/`max_weight` (int), `rarity`/`max_rarity` (int), `size`/`max_size` (int), `pvp_ranking_league` (int — the CP cap: `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst` (int), `pvp_ranking_min_cp` (int), `pvp_ranking_cap` (int).
+**pokemon** — `pokemon_id`* (int), `form` (int), `min_iv`/`max_iv` (int), `min_cp`/`max_cp` (int), `min_level`/`max_level` (int), `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta` (int, 0–15), `gender` (enum `any|male|female|genderless`), `rarity`/`max_rarity` (int), `size`/`max_size` (int), `pvp_ranking_league` (int — the CP cap: `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst` (int), `pvp_ranking_min_cp` (int), `pvp_ranking_cap` (int).
 
 **raid** — `pokemon_id` (int, `0` = any), `form` (int), `level` (int), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `move` (int), `evolution` (int), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
 
@@ -185,7 +185,7 @@ Done on this branch for the (now-superseded) in-place approach; triage:
 **Decided (no longer open):**
 - **Update verb** — `PUT` full-replace only; no `PATCH` in v2 scope.
 - **Strictness** — strict throughout: unknown body and query params both rejected (`422`).
-- **v1 deprecation** — v1 stays fully supported with no sunset date yet; add a `Deprecation` marker + link to v2 on v1 responses once PoracleWeb has moved; set a hard sunset date later.
+- **v1 deprecation** — v1 stays fully supported with no sunset date yet; add a `Deprecation` marker + link to v2 on v1 responses once v2 is established; set a hard sunset date later.
 - **quest / nest / invasion fields** — quest (`reward_type`,`reward`,`amount`,`form`,`shiny`), nest `min_spawn_avg` = int, invasion exactly-one-mode (`type_id`|`grunt_id`|`everything`|`boss`).
 
 ## 6. Remaining design walkthrough

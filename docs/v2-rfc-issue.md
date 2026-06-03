@@ -9,7 +9,7 @@ We're adding a **clean, strict, documented v2 API** (`/api/v2`) alongside the ex
 
 ### Why
 
-The current API is undocumented and, by necessity, tolerant of malformed input (it silently coerces wrong types). v2 is the opposite: an OpenAPI 3.1 contract generated from the server, strict validation with clear errors, and one honest representation per field. PoracleWeb will move to v2; v1 stays supported (deprecation only later, with notice).
+The current API is undocumented and, by necessity, tolerant of malformed input (it silently coerces wrong types). v2 is the opposite: an OpenAPI 3.1 contract generated from the server, strict validation with clear errors, and one honest representation per field. We'll be encouraging all v1 API users to move to v2 so they can access new tracking types; v1 stays supported (deprecation only later, with notice).
 
 ### Conventions
 
@@ -46,7 +46,7 @@ A tracking rule's `uid` is unique per type across all users, so rules are addres
 
 ### Per-type fields (`*` = required)
 
-- **pokemon** — `pokemon_id`* , `form`, `min_iv`/`max_iv`, `min_cp`/`max_cp`, `min_level`/`max_level`, `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta`, `min_weight`/`max_weight`, `rarity`/`max_rarity`, `size`/`max_size` (all int), `gender` (enum `any|male|female|genderless`), `pvp_ranking_league` (int — CP cap `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst`/`pvp_ranking_min_cp`/`pvp_ranking_cap` (int).
+- **pokemon** — `pokemon_id`* , `form`, `min_iv`/`max_iv`, `min_cp`/`max_cp`, `min_level`/`max_level`, `atk`/`def`/`sta` & `max_atk`/`max_def`/`max_sta`, `rarity`/`max_rarity`, `size`/`max_size` (all int), `gender` (enum `any|male|female|genderless`), `pvp_ranking_league` (int — CP cap `0|500|1500|2500`), `pvp_ranking_best`/`pvp_ranking_worst`/`pvp_ranking_min_cp`/`pvp_ranking_cap` (int).
 - **raid** — `pokemon_id` (int, `0`=any), `form`, `level`, `move`, `evolution` (int), `team` (enum `harmony|mystic|valor|instinct|any`), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum `none|rsvp|rsvp_only`).
 - **egg** — `level` (int), `team` (enum), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum).
 - **quest** — `reward_type`* (int: `2`=item,`3`=stardust,`4`=candy,`7`=pokemon,`12`=mega_energy), `reward` (int), `amount` (int), `form` (int), `shiny` (bool).
