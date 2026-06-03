@@ -533,14 +533,21 @@ func main() {
 
 	// DTS template endpoints
 	if proc.dtsRenderer != nil {
-		apiGroup.GET("/config/templates", api.HandleTemplateConfig(proc.dtsRenderer.Templates()))
-		apiGroup.POST("/dts/render", api.HandleDTSRender(proc.dtsRenderer.Templates()))
 		dtsConfigDir := filepath.Join(cfg.BaseDir, "config")
-		apiGroup.POST("/dts/templates", api.HandleDTSSaveTemplates(proc.dtsRenderer.Templates()))
-		apiGroup.POST("/dts/enrich", api.HandleDTSEnrich(proc))
-		apiGroup.POST("/dts/sendtest", api.HandleDTSSendTest(proc.dispatcher, proc.dtsRenderer.Templates(), proc.dtsRenderer))
 		api.RegisterReload(humaAPI, "post-dts-reload", http.MethodPost, "/dts/reload", func() error { _, err := reloadDTS(); return err })
 		api.RegisterReload(humaAPI, "get-dts-reload", http.MethodGet, "/dts/reload", func() error { _, err := reloadDTS(); return err })
+
+		// DTS render/save/enrich/sendtest + config/templates (migrated to huma,
+		// in place — same paths, same freeform success JSON, problem+json
+		// errors). Open request bodies (view map, polymorphic template,
+		// arbitrary webhook). Stay gated behind dtsRenderer != nil.
+		api.RegisterDTSWrites(
+			humaAPI,
+			proc.dtsRenderer.Templates(),
+			proc,
+			proc.dispatcher,
+			proc.dtsRenderer,
+		)
 
 		// DTS editor read endpoints (migrated to huma, in place — same paths,
 		// same success JSON, problem+json errors). Stay gated behind
