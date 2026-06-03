@@ -425,6 +425,11 @@ func main() {
 	// plus a new PUT (update coords); v1 gin location routes stay frozen.
 	api.RegisterV2Locations(humaAPI, trackingDeps)
 
+	// Strict v2 profiles surface (huma, sub-resource of human). Re-exposes v1's
+	// profile actions with a strict typed active_hours schema; v1 gin profile
+	// routes stay frozen.
+	api.RegisterV2Profiles(humaAPI, trackingDeps)
+
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
