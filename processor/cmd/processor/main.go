@@ -409,6 +409,7 @@ func main() {
 	api.RegisterV2TrackingFort(humaAPI, trackingDeps)
 	api.RegisterV2TrackingRaid(humaAPI, trackingDeps)
 	api.RegisterV2TrackingEgg(humaAPI, trackingDeps)
+	api.RegisterV2TrackingQuest(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
