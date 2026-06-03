@@ -68,7 +68,7 @@ Open schemas for freeform fields. Each: typed input for path/query, `Body json.R
 | `POST /dts/templates` | `[]DTSEntry` (polymorphic `template`) | save handler |
 | `POST /deliverMessages` + `POST /postMessage` | `[]delivery.Job` (`Message` RawMessage) | deliver handler |
 | `POST /resolve` | nested optional + per-entity `any` | resolve handler |
-| `POST /summaries/{id}/{alertType}` | `active_hours` any | upsert handler |
+| `POST /summaries/{id}/{alertType}` | **typed** `active_hours` (`[]ActiveHourEntry`, see design §2b) — NOT freeform; v1 already validates this shape via `ParseActiveHours` | upsert handler |
 | `GET/POST /autocreate/templates`, `POST …/validate` | raw-JSON templates | autocreate template handlers |
 | `GET /config/templates`, `GET /config/poracleWeb` | dynamic-keyed map → `Body any` | config handlers |
 | `GET/POST /config/values`, `POST /config/validate` | reflection `map[string]any` → open body/resp | config handlers |
@@ -108,15 +108,15 @@ Strict, per `docs/v2-api-design.md` + the field audit. Resource model: `/v2/trac
 | `POST /v2/humans/{id}/location` | setLocation/{lat}/{lon} | `{lat,lon}` floats body |
 | `GET /v2/humans/{id}/check-location` | checkLocation | `?lat=&lon=` |
 | `POST /v2/humans/{id}/areas` | setAreas | `{areas: []string}` |
-| `GET/POST /v2/humans/{id}/locations`, `DELETE …/{label}` | locations CRUD | typed |
+| `GET/POST /v2/humans/{id}/locations`, **`PUT …/{label}`** (NEW — update coords), `DELETE …/{label}` | locations CRUD | typed `{label,lat,lon}` |
 | `GET /v2/humans/{id}/roles`, `POST/DELETE …/{roleId}` | roles | typed |
 | `GET /v2/humans/{id}/admin-roles` | getAdministrationRoles | typed |
 | `POST /v2/humans/{id}/profile` | switchProfile/{n} | `{profile_no: int}` |
 | `GET /v2/profiles/{id}`, `POST` (add), `PATCH …/{profile_no}` (update active_hours), `DELETE …/{profile_no}`, `POST …/{profile_no}/copy` | profiles | typed |
 
-- [ ] Field modeling: `enabled`/admin-disable → bool; `areas` → `[]string`; `location` → `{lat,lon}` floats; `language` → string (validate against locales); `blocked_alerts` → `[]string` of alert-type enum; profile `active_hours` → typed schedule (confirm shape against the profiles handler).
-- [ ] Per cluster (status, location/areas, locations, roles, profiles): TDD, reuse handlers, commit.
-- [ ] **Open confirm:** `active_hours` schedule shape and `blocked_alerts` enum values — finalize against the handlers during P4.
+- [ ] Field modeling (all DEFINED — see `docs/v2-api-design.md` §2b): `enabled`/admin-disable → bool; `areas` → `[]string`; `location` → `{lat,lon}` floats; `language` → string (validate against locales); `blocked_alerts` → read-only `[]string` enum (`monster|pvp|raid|egg|quest|invasion|lure|nest|gym|fort|maxbattle|specificgym|specificstation`); `active_hours` → typed `[]ActiveHourEntry` (`day 0-6, hours 0-23, mins 0-59, optional step/end_hours/end_mins`, strict ints, no cross-midnight) shared by profile-schedule update **and** `POST /v2/summaries/{id}/{alertType}` (replaces the freeform passthrough).
+- [ ] **NEW capability:** `PUT /v2/humans/{id}/locations/{label}` to update a saved location's coords (v1 has no update — only add/delete). Completes locations CRUD.
+- [ ] Per cluster (status, location/areas, locations, roles, profiles, schedules): TDD, reuse handlers (add a small store method for the new locations PUT), commit.
 
 ## Phase 5 — Finalize
 

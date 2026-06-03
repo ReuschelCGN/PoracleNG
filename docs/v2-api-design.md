@@ -158,6 +158,45 @@ DELETE /api/v2/tracking/raid/80921
 
 ---
 
+## 2b. Humans, profiles & shared schemas (v2)
+
+humans/profiles v2 uses **discrete, typed action endpoints** under `/api/v2` (not PATCH-consolidated), mirroring v1's actions with proper types + strict bodies + `problem+json`. Endpoint list is in the master plan (P4). The schemas that previously had no real definition are pinned here.
+
+### `active_hours` (profile schedules **and** summary posting) — proper typed schema
+
+Today this is stored as freeform JSON and the API dumps whatever the client sends into the column. v2 defines and **validates** it. It is an **array of schedule entries** (`[]` or absent = no schedule). Each entry (derived from `db.ActiveHourEntry`):
+
+| field | type | required | bounds |
+|---|---|---|---|
+| `day` | int | yes | `0`–`6` (0 = Sunday) |
+| `hours` | int | yes | `0`–`23` |
+| `mins` | int | yes | `0`–`59` |
+| `step` | int | no | `≥ 0` hours; `> 0` ⇒ this is a **range** entry, else **single-fire** |
+| `end_hours` | int | required iff `step > 0` | `0`–`23` |
+| `end_mins` | int | required iff `step > 0` | `0`–`59` |
+
+- **Single-fire**: `{day, hours, mins}` → fires once that day at `HH:MM`.
+- **Range**: adds `{step, end_hours, end_mins}` → fires at `HH:MM`, `+step h`, … up to and including `end`. **No cross-midnight** — `end` must be ≥ start (reject otherwise, `422`).
+- v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /v2/summaries/{id}/{alertType}` and the profile-schedule update endpoint. (Confirm `day` indexing against the scheduler at build: comment indicates `0 = Sunday`, matching Go `time.Weekday`.)
+
+### `blocked_alerts` (read-only on the human resource)
+
+`[]string`, **derived from `command_security` during reconciliation — not settable via the API**. Appears in `GET /v2/humans/{id}`. Enum values: `monster` (= pokemon alerts), `pvp`, `raid`, `egg`, `quest`, `invasion`, `lure`, `nest`, `gym`, `fort`, `maxbattle`, `specificgym`, `specificstation`. (Note the `monster`↔pokemon token mismatch is a v1 carry-over; documented, not "fixed," since it's an internal-derived read field.)
+
+### Saved locations — full CRUD (one **new** capability)
+
+A saved-locations API already exists (`user_locations`: `label` → `lat`/`lon`), but only **C/R/D** — there is no update. v2 completes CRUD:
+
+| method | path | body | note |
+|---|---|---|---|
+| GET | `/v2/humans/{id}/locations` | — | list |
+| GET | `/v2/humans/{id}/locations/{label}` | — | one |
+| POST | `/v2/humans/{id}/locations` | `{label, lat, lon}` | create (was `…/locations/add`) |
+| **PUT** | `/v2/humans/{id}/locations/{label}` | `{lat, lon}` | **NEW** — update a saved location's coordinates |
+| DELETE | `/v2/humans/{id}/locations/{label}` | — | delete (`409` if referenced by a rule's `override_location_label`) |
+
+The **PUT** is net-new functionality (v1 forces delete+re-add to move a saved location).
+
 ## 3. Internal: mapping to the engine (facade)
 
 v2 handlers translate clean inputs to the existing stored representation; the matcher and DB schema are unchanged:
