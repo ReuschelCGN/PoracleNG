@@ -398,6 +398,11 @@ func main() {
 		Dispatcher:   proc.dispatcher,
 		ReloadFunc:   proc.triggerReload,
 	}
+	// Strict v2 tracking surface (huma). v1 gin routes below are left untouched
+	// (frozen). The v2 pokemon endpoints are the worked example the other 10
+	// tracking types fan out from.
+	api.RegisterV2TrackingPokemon(humaAPI, trackingDeps)
+
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
