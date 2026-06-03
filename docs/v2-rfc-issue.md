@@ -40,9 +40,8 @@ Tracking rules are **sub-resources of the human** (the human is the user). `uid`
 
 - `{id}` (the human) is always in the path; `profile` is `?profile={n}` (defaults to active).
 - List → `{ "rules": [ … ] }`. **Snapshot** (`…/tracking`, no type) → `{ "human": {…}, "tracking": { "<type>": [...] }, "profiles": [...], "locations": [...], "summaries": [...] }` (`?all_profiles=true` spans all profiles; replaces v1 `all/{id}` + `allProfiles/{id}`).
-- Create → `{ "created": [...], "updated": [...], "unchanged": [...], "message": "<summary>" }` (each rule carries its `uid`; POST keeps v1's diff/upsert).
-- **Mutation responses return a `message`** — the assembled, human-readable added/updated/removed summary (in the human's language) — always, regardless of `?silent` (which only stops the Discord/Telegram push). Rule objects come back with their `uid`s/fields; the rowtext lives once, in `message`. Applies to POST/PUT/DELETE/bulk.
-- `?include_descriptions=true` (list + snapshot reads only) adds a per-rule `description` for structured rendering.
+- Create → `{ "created": [...], "updated": [...], "unchanged": [...] }`; Delete → `{ "deleted": [...] }` (each rule carries its `uid`; POST keeps v1's diff/upsert).
+- **`?include_descriptions=true`** works on **every** tracking endpoint (reads **and** mutations): when set, each rule in the response (`rules` / `created` / `updated` / `unchanged` / `deleted`) gets a `description` (human-readable rowtext, in the human's language). Status is conveyed by which array the rule's in — no separate `message` field. (The assembled confirmation message stays the Discord/Telegram push, gated by `?silent`.)
 - `PUT` is a full replace; omitted fields reset to defaults.
 - Mutations accept `?silent=true` to apply without notifying the user (single param; replaces v1's `silent`+`suppressMessage`).
 
