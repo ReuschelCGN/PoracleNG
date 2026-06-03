@@ -620,3 +620,122 @@ func TestTrack_RejectsAreaWithDistance(t *testing.T) {
 		t.Fatalf("expected a+d rejection, got %+v", replies)
 	}
 }
+
+// trackCtxWithMega builds a CommandContext that includes Venusaur (ID 3, single
+// Mega only) and Charizard (ID 6, Mega X + Mega Y) for mega-warning tests.
+func trackCtxWithMega(t *testing.T) *bot.CommandContext {
+	t.Helper()
+	ctx, _ := testCtx(t)
+	ctx.Config = &config.Config{
+		PVP: config.PVPConfig{
+			PVPFilterMaxRank:     100,
+			PVPFilterGreatMinCP:  1400,
+			PVPFilterUltraMinCP:  2350,
+			PVPFilterLittleMinCP: 450,
+			LevelCaps:            []int{50},
+			DisplayMaxRank:       10,
+			DisplayGreatMinCP:    1400,
+			DisplayUltraMinCP:    2350,
+			DisplayLittleMinCP:   450,
+		},
+	}
+
+	monsters := store.NewMockTrackingStore[db.MonsterTrackingAPI](
+		store.MonsterGetUID, store.MonsterSetUID,
+	)
+	ctx.Tracking = &store.TrackingStores{
+		Monsters: monsters,
+	}
+
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 1, Form: 0}:  {PokemonID: 1, FormID: 0},
+			{ID: 25, Form: 0}: {PokemonID: 25, FormID: 0},
+			// Venusaur: only Mega (tempEvoID=1), no X/Y
+			{ID: 3, Form: 0}: {
+				PokemonID: 3,
+				FormID:    0,
+				TempEvolutions: []gamedata.TempEvolution{
+					{TempEvoID: 1},
+				},
+			},
+			// Charizard: Mega X (2) and Mega Y (3)
+			{ID: 6, Form: 0}: {
+				PokemonID: 6,
+				FormID:    0,
+				TempEvolutions: []gamedata.TempEvolution{
+					{TempEvoID: 2},
+					{TempEvoID: 3},
+				},
+			},
+		},
+		Moves: map[int]*gamedata.Move{},
+		Types: map[int]*gamedata.TypeInfo{},
+	}
+
+	resolver := bot.NewPokemonResolver(gd, ctx.Translations, []string{"en"}, nil)
+	ctx.Resolver = resolver
+	ctx.ArgMatcher = bot.NewArgMatcher(ctx.Translations, gd, resolver, []string{"en"})
+	ctx.GameData = gd
+	ctx.RowText = &rowtext.Generator{
+		GD:                  gd,
+		Translations:        ctx.Translations,
+		DefaultTemplateName: "1",
+	}
+	ctx.HasArea = true
+
+	return ctx
+}
+
+func TestExecute_WarnsNoMegaForm(t *testing.T) {
+	// Pokemon 3 (Venusaur) has only Mega (tempEvoID=1), NOT Mega X (2) or Mega Y (3).
+	// Tracking with mega:x should succeed but include a warning.
+	ctx := trackCtxWithMega(t)
+	replies := runTrack(t, ctx, "3 great5 mega:x") // 3 = Venusaur
+
+	require.NotEmpty(t, replies)
+	// Rule is still created — non-blocking warning
+	assert.Equal(t, "✅", replies[0].React, "pokemon 3 mega:x should still be tracked: %s", replies[0].Text)
+
+	joined := replies[0].Text
+	if !strings.Contains(joined, "no Mega X") {
+		t.Fatalf("expected a no-Mega-X warning for pokemon 3, got: %q", joined)
+	}
+}
+
+func TestExecute_NoWarnMegaFormExists(t *testing.T) {
+	// Pokemon 6 (Charizard) has both Mega X and Mega Y — no warning expected.
+	ctx := trackCtxWithMega(t)
+	replies := runTrack(t, ctx, "6 great5 mega:x") // 6 = Charizard
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "pokemon 6 mega:x should be tracked cleanly: %s", replies[0].Text)
+
+	if strings.Contains(replies[0].Text, "no Mega") {
+		t.Fatalf("unexpected no-Mega warning for pokemon 6 (which has Mega X): %q", replies[0].Text)
+	}
+}
+
+func TestParsePVP_MegaKeywords(t *testing.T) {
+	cases := []struct {
+		args string
+		want int
+	}{
+		{"great5", 0},
+		{"great5 mega", 1},
+		{"great5 mega:x", 2},
+		{"great5 mega:y", 3},
+	}
+	for _, tc := range cases {
+		ctx := trackCtx(t)
+		params := trackParams(ctx)
+		parsed := ctx.ArgMatcher.Match(strings.Fields(tc.args), params, "en")
+		entries := (&TrackCommand{}).parsePVP(ctx, parsed)
+		if len(entries) != 1 {
+			t.Fatalf("%q: expected 1 pvp entry, got %d", tc.args, len(entries))
+		}
+		if entries[0].Evolution != tc.want {
+			t.Errorf("%q: Evolution = %d, want %d", tc.args, entries[0].Evolution, tc.want)
+		}
+	}
+}

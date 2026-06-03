@@ -6,12 +6,13 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
-// LeagueRank represents the best rank info for a league.
+// LeagueRank represents the best rank info for a league, for one evolution slot.
 type LeagueRank struct {
-	Rank int   `json:"rank"`
-	CP   int   `json:"cp"`
-	Caps []int `json:"caps,omitempty"`
-	Form int   `json:"form,omitempty"`
+	Rank      int   `json:"rank"`
+	CP        int   `json:"cp"`
+	Caps      []int `json:"caps,omitempty"`
+	Form      int   `json:"form,omitempty"`
+	Evolution int   `json:"evolution,omitempty"` // 0=base, 1=Mega, 2=Mega X, 3=Mega Y
 }
 
 // PVPResult holds processed PVP data for a pokemon.
@@ -25,7 +26,6 @@ type Config struct {
 	LevelCaps                  []int
 	PVPFilterMaxRank           int
 	PVPEvolutionDirectTracking bool
-	IncludeMegaEvolution       bool
 	PVPFilterGreatMinCP        int
 	PVPFilterUltraMinCP        int
 	PVPFilterLittleMinCP       int
@@ -61,23 +61,19 @@ func Calculate(pokemon *webhook.PokemonWebhook, cfg *Config) *PVPResult {
 			default:
 				continue
 			}
-			filtered := filterMega(entries, cfg.IncludeMegaEvolution)
-			leagueMap[leagueCP] = append(leagueMap[leagueCP], filtered...)
+			leagueMap[leagueCP] = append(leagueMap[leagueCP], entries...)
 		}
 	}
 
 	// From legacy fields
 	if pokemon.PVPRankingsGreatLeague != nil {
-		filtered := filterMega(pokemon.PVPRankingsGreatLeague, cfg.IncludeMegaEvolution)
-		leagueMap[1500] = append(leagueMap[1500], filtered...)
+		leagueMap[1500] = append(leagueMap[1500], pokemon.PVPRankingsGreatLeague...)
 	}
 	if pokemon.PVPRankingsUltraLeague != nil {
-		filtered := filterMega(pokemon.PVPRankingsUltraLeague, cfg.IncludeMegaEvolution)
-		leagueMap[2500] = append(leagueMap[2500], filtered...)
+		leagueMap[2500] = append(leagueMap[2500], pokemon.PVPRankingsUltraLeague...)
 	}
 	if pokemon.PVPRankingsLittleLeague != nil {
-		filtered := filterMega(pokemon.PVPRankingsLittleLeague, cfg.IncludeMegaEvolution)
-		leagueMap[500] = append(leagueMap[500], filtered...)
+		leagueMap[500] = append(leagueMap[500], pokemon.PVPRankingsLittleLeague...)
 	}
 
 	minCPMap := map[int]int{
@@ -99,15 +95,22 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 		rank int
 		cp   int
 	}
-	best := make(map[int]*capBest)
-	for _, cap := range capsConsidered {
-		best[cap] = &capBest{rank: 4096, cp: 0}
+	best := make(map[int]map[int]*capBest) // evolution -> cap -> best
+	ensure := func(evo int) map[int]*capBest {
+		if best[evo] == nil {
+			m := make(map[int]*capBest, len(capsConsidered))
+			for _, c := range capsConsidered {
+				m[c] = &capBest{rank: 4096, cp: 0}
+			}
+			best[evo] = m
+		}
+		return best[evo]
 	}
 
 	for _, stats := range leagueData {
 		var caps []int
 		if stats.Cap == 0 && !stats.Capped {
-			// Not ohbem
+			// Golbat non-ohbem format (cap=0, not capped) — treat as cap 50
 			caps = append(caps, 50)
 		} else if stats.Capped {
 			for _, c := range capsConsidered {
@@ -119,8 +122,9 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 			caps = append(caps, stats.Cap)
 		}
 
+		capMap := ensure(stats.Evolution)
 		for _, cap := range caps {
-			b, ok := best[cap]
+			b, ok := capMap[cap]
 			if !ok {
 				continue
 			}
@@ -132,12 +136,10 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 			}
 		}
 
-		// Evolution tracking
+		// Cross-species evolution direct tracking — unchanged (base entries only)
 		if stats.Evolution == 0 && cfg.PVPEvolutionDirectTracking && stats.Rank > 0 && stats.CP > 0 &&
 			stats.Pokemon != pokemonID && stats.Rank <= cfg.PVPFilterMaxRank && stats.CP >= minCP {
 			var evoCaps []int
-			// Cap assignment mirrors JS: capped → all caps >= cap, explicit cap → [cap],
-			// neither (not ohbem) → nil (matches any cap in matcher, same as JS null)
 			if stats.Capped {
 				for _, c := range capsConsidered {
 					if c >= stats.Cap {
@@ -151,14 +153,7 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 					}
 				}
 			}
-
-			evoRank := LeagueRank{
-				Rank: stats.Rank,
-				CP:   stats.CP,
-				Caps: evoCaps,
-				Form: stats.Form,
-			}
-
+			evoRank := LeagueRank{Rank: stats.Rank, CP: stats.CP, Caps: evoCaps, Form: stats.Form}
 			if _, ok := evoData[stats.Pokemon]; !ok {
 				evoData[stats.Pokemon] = make(map[int][]LeagueRank)
 			}
@@ -166,43 +161,28 @@ func calculateLeague(league int, leagueData []webhook.PVPRankEntry, capsConsider
 		}
 	}
 
-	// Consolidate best ranks (skip sentinel 4096 entries — no matching PVP data for that cap)
 	var bestRanks []LeagueRank
-	for cap, details := range best {
-		if details.rank >= 4096 {
-			continue
-		}
-		found := false
-		for i := range bestRanks {
-			if bestRanks[i].CP == details.cp && bestRanks[i].Rank == details.rank {
-				bestRanks[i].Caps = append(bestRanks[i].Caps, cap)
-				found = true
-				break
+	for evo, capMap := range best {
+		var evoRanks []LeagueRank
+		for cap, details := range capMap {
+			if details.rank >= 4096 {
+				continue
+			}
+			merged := false
+			for i := range evoRanks {
+				if evoRanks[i].CP == details.cp && evoRanks[i].Rank == details.rank {
+					evoRanks[i].Caps = append(evoRanks[i].Caps, cap)
+					merged = true
+					break
+				}
+			}
+			if !merged {
+				evoRanks = append(evoRanks, LeagueRank{Rank: details.rank, CP: details.cp, Caps: []int{cap}, Evolution: evo})
 			}
 		}
-		if !found {
-			bestRanks = append(bestRanks, LeagueRank{
-				Rank: details.rank,
-				CP:   details.cp,
-				Caps: []int{cap},
-			})
-		}
+		bestRanks = append(bestRanks, evoRanks...)
 	}
-
 	return bestRanks
-}
-
-func filterMega(entries []webhook.PVPRankEntry, includeMega bool) []webhook.PVPRankEntry {
-	if includeMega {
-		return entries
-	}
-	var filtered []webhook.PVPRankEntry
-	for _, e := range entries {
-		if e.Evolution == 0 {
-			filtered = append(filtered, e)
-		}
-	}
-	return filtered
 }
 
 // CapsContain checks if the caps list contains a specific cap value.

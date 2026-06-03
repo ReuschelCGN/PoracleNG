@@ -371,6 +371,8 @@ Per-user enrichment (varies based on user's tracking filters):
 Each PVP display entry has: `{pokemon, pokemonName, fullName, formName, rank, cp, percentage, level, evolution, cap, pokemon_id, form}`
 Each "best" object has the same fields as a display entry.
 
+`evolution` is the game's temporary/mega-evolution id: `0`=base form, `1`=Mega, `2`=Mega X, `3`=Mega Y. `fullName` already incorporates the mega form name (e.g. "Mega Charizard X"). Users can match specific mega ranks with the `mega` / `mega:x` / `mega:y` keywords on `!track` (stored as the `pvp_ranking_evolution` tracking field).
+
 ### Timing
 
 | Poracle Field | Webhook Field | Type | Description |

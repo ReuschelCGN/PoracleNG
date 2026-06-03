@@ -35,6 +35,9 @@ func (e *Enricher) Pokemon(pokemon *webhook.PokemonWebhook, processed *matching.
 			bestRank := 4096
 			bestCP := 0
 			for _, r := range ranks {
+				if r.Evolution != 0 {
+					continue // headline best-rank is the base form; megas are matched/displayed separately
+				}
 				if r.Rank < bestRank {
 					bestRank = r.Rank
 					bestCP = r.CP

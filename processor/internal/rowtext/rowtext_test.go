@@ -640,6 +640,19 @@ func TestRowText_AllTypesShowOverrides(t *testing.T) {
 	}
 }
 
+func TestMonsterRowText_MegaMode(t *testing.T) {
+	g := testGenerator(t)
+	tr := g.Translations.For("en")
+	m := &db.MonsterTracking{
+		PokemonID: 6, PVPRankingLeague: 1500, PVPRankingBest: 1, PVPRankingWorst: 5,
+		PVPRankingEvolution: 2,
+	}
+	got := g.MonsterRowText(tr, m)
+	if !strings.Contains(got, "mega x") {
+		t.Fatalf("expected rowtext to mention 'mega x', got: %q", got)
+	}
+}
+
 func TestUcFirst(t *testing.T) {
 	tests := []struct {
 		input, want string

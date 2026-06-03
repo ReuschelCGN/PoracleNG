@@ -9,6 +9,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/db"
+	"github.com/pokemon/poracleng/processor/internal/gamedata"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -187,6 +188,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				PVPRankingWorst:       pe.Worst,
 				PVPRankingMinCP:       pe.MinCP,
 				PVPRankingCap:         pe.Cap,
+				PVPRankingEvolution:   pe.Evolution,
 				OverrideLocationLabel: override.LocationLabel,
 				OverrideAreas:         override.Areas,
 			})
@@ -227,6 +229,24 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		message += "\n⚠️ " + templateWarn
 	}
 
+	// Warn if a specific mega form (mega:x / mega:y) targets a species that
+	// has no such temporary evolution — the rule could never match.
+	if specificEvo := specificMegaEvo(pvpEntries); specificEvo != 0 && ctx.GameData != nil {
+		formLabel := tr.T("tracking.mega_x_label")
+		if specificEvo == 3 {
+			formLabel = tr.T("tracking.mega_y_label")
+		}
+		for _, mon := range monsterList {
+			if mon.PokemonID == 0 {
+				continue // "everything" catch-all — skip
+			}
+			if !speciesHasTempEvo(ctx.GameData, mon.PokemonID, specificEvo) {
+				name := gamedata.PokemonName(tr, mon.PokemonID)
+				message += "\n" + tr.Tf("msg.track.no_mega_form", name, formLabel)
+			}
+		}
+	}
+
 	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 {
 		return []bot.Reply{{React: "👌", Text: message}}
 	}
@@ -264,6 +284,8 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.t"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.gen"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.cap"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
+		{Type: bot.ParamKeyword, Key: "arg.mega"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.form"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.template"},
 		{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
@@ -475,11 +497,12 @@ func (c *TrackCommand) parseFilters(ctx *bot.CommandContext, parsed *bot.ParsedA
 
 // pvpEntry holds resolved PVP parameters for a single league.
 type pvpEntry struct {
-	League int // CP cap: 500, 1500, 2500
-	Best   int
-	Worst  int
-	MinCP  int
-	Cap    int
+	League    int // CP cap: 500, 1500, 2500
+	Best      int
+	Worst     int
+	MinCP     int
+	Cap       int
+	Evolution int // 0 base, 1 any mega, 2 Mega X, 3 Mega Y
 }
 
 // parsePVP resolves all PVP league parameters from parsed args.
@@ -499,6 +522,21 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 	cap := 0
 	if v, ok := parsed.Singles["cap"]; ok {
 		cap = v
+	}
+
+	megaEvo := 0
+	if v, ok := parsed.Strings["mega"]; ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "", "1":
+			megaEvo = 1
+		case "x":
+			megaEvo = 2
+		case "y":
+			megaEvo = 3
+		}
+	}
+	if megaEvo == 0 && parsed.HasKeyword("arg.mega") {
+		megaEvo = 1
 	}
 
 	var entries []pvpEntry
@@ -535,11 +573,12 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 		}
 
 		entries = append(entries, pvpEntry{
-			League: l.cp,
-			Best:   best,
-			Worst:  worst,
-			MinCP:  minCP,
-			Cap:    cap,
+			League:    l.cp,
+			Best:      best,
+			Worst:     worst,
+			MinCP:     minCP,
+			Cap:       cap,
+			Evolution: megaEvo,
 		})
 	}
 
@@ -579,4 +618,31 @@ func (c *TrackCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.Pars
 		return nil, reply
 	}
 	return filterByGenAndType(ctx, monsters, parsed), nil
+}
+
+// specificMegaEvo returns the Evolution ID (2=Mega X, 3=Mega Y) if ALL pvp
+// entries request the same specific mega variant, or 0 otherwise (includes
+// bare mega=1 and mixed variants).
+func specificMegaEvo(entries []pvpEntry) int {
+	for _, e := range entries {
+		if e.Evolution == 2 || e.Evolution == 3 {
+			return e.Evolution
+		}
+	}
+	return 0
+}
+
+// speciesHasTempEvo reports whether a species (form 0) has a temporary
+// evolution with the given tempEvoID in the game master data.
+func speciesHasTempEvo(gd *gamedata.GameData, pokemonID, tempEvoID int) bool {
+	mon := gd.GetMonster(pokemonID, 0)
+	if mon == nil {
+		return false
+	}
+	for _, te := range mon.TempEvolutions {
+		if te.TempEvoID == tempEvoID {
+			return true
+		}
+	}
+	return false
 }

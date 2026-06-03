@@ -240,6 +240,7 @@ Force a state reload (same as POST /api/reload).
 | `pvp_ranking_best` / `pvp_ranking_worst` | int | | PVP rank range |
 | `pvp_ranking_min_cp` | int | 0 | Minimum CP for PVP |
 | `pvp_ranking_cap` | int | 0 | Level cap for PVP |
+| `pvp_ranking_evolution` | int | 0 | Mega/temporary-evolution discriminator: `0`=base only (or base+mega when `[pvp] include_mega_evolution=true`), `1`=any mega, `2`=Mega X, `3`=Mega Y. Set via the `mega` / `mega:x` / `mega:y` keywords on `!track`. |
 | `distance` | int | 0 | Distance in metres (0 = use area) |
 | `template` | string | config default | DTS template name |
 | `clean` | bool | false | Auto-delete message after TTH |
