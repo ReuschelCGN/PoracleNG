@@ -81,21 +81,21 @@ func typeNameToID(gd *gamedata.GameData) map[string]int {
 // (Pokestop-event rows live in the SAME table but are addressed via the separate
 // /incident endpoint; see v2_incident.go.)
 type v2InvasionRule struct {
-	TypeID     *int    `json:"type_id,omitempty" doc:"Pokemon type id (1-18); grunt_type resolves to that type's lowercased name. EXACTLY ONE mode field required — set this OR grunt_id OR everything OR boss (not omitted-to-wildcard; use everything for the catch-all). Mutually exclusive with grunt_id/everything/boss."`
-	GruntID    *int    `json:"grunt_id,omitempty" doc:"Game-master grunt id; resolves to its type name and implies its own gender. One-of mode field. Mutually exclusive with type_id/everything/boss; gender not allowed."`
+	TypeID     *int    `json:"type_id,omitempty" doc:"Pokemon type id (1-18); grunt_type resolves to that type's lowercased name. EXACTLY ONE mode field required — set this OR grunt_id OR everything OR boss (not omitted-to-wildcard; use everything for the catch-all). Mutually exclusive with grunt_id/everything/boss. In responses, the active mode field is always present; the other mode fields are omitted/null."`
+	GruntID    *int    `json:"grunt_id,omitempty" doc:"Game-master grunt id; resolves to its type name and implies its own gender. One-of mode field. Mutually exclusive with type_id/everything/boss; gender not allowed. (On read-back a grunt_id rule is reported as type_id+gender, faithful to what is stored.)"`
 	Everything *bool   `json:"everything,omitempty" doc:"Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). This is the 'any invasion' selector — there is no omit-to-wildcard on invasion (exactly one mode field must be set). Mutually exclusive with the others; gender not allowed."`
 	Boss       *bool   `json:"boss,omitempty" doc:"Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed."`
-	Gender     *string `json:"gender,omitempty" enum:"any,male,female" doc:"Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id."`
+	Gender     *string `json:"gender,omitempty" nullable:"true" enum:"any,male,female" doc:"Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode)."`
 
 	// Common fields. invasion HAS a clean column ⇒ clean/edit/summary apply.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Invasion converts a strict v2 invasion rule into the stored
@@ -230,20 +230,19 @@ func gruntTypeName(gd *gamedata.GameData, grunt *gamedata.Grunt) string {
 // mode resolved to a type name on write, so it is read back as type_id+gender —
 // faithful to what is stored.)
 func v2InvasionToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2InvasionRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
-
 	rule := v2InvasionRule{
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 
+	// The active mode field is ALWAYS present (it defines the rule); the inactive
+	// mode fields stay nil (omitempty drops them). gender only applies to type_id
+	// mode and is nulled at its 'any' wildcard there.
 	switch strings.ToLower(row.GruntType) {
 	case "everything":
 		rule.Everything = ptr(true)
@@ -253,7 +252,7 @@ func v2InvasionToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2Inva
 		if id, ok := typeNameToID(gd)[strings.ToLower(row.GruntType)]; ok {
 			rule.TypeID = ptr(id)
 		}
-		rule.Gender = ptr(invasionGenderEnum.fromStored(row.Gender))
+		rule.Gender = ptrUnless(invasionGenderEnum.fromStored(row.Gender), "any")
 	}
 	return rule
 }

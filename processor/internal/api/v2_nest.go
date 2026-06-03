@@ -14,19 +14,19 @@ import (
 // valueOr); there is no required field. No enums. Defaults come from the field
 // audit nest table. ping is server-managed (not a caller input).
 type v2NestRule struct {
-	PokemonID   *int `json:"pokemon_id,omitempty" doc:"Pokédex id of the nesting species. Omit to match any species (stored as 0 = any)."`
-	Form        *int `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
-	MinSpawnAvg *int `json:"min_spawn_avg,omitempty" doc:"Minimum hourly spawn average to alert on. Omit to impose no minimum (stored as 0 = any)."`
+	PokemonID   *int `json:"pokemon_id,omitempty" nullable:"true" doc:"Pokédex id of the nesting species. Omit to match any species (stored as 0 = any). Returned as null when at its wildcard."`
+	Form        *int `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
+	MinSpawnAvg *int `json:"min_spawn_avg,omitempty" nullable:"true" doc:"Minimum hourly spawn average to alert on. Omit to impose no minimum (stored as 0 = any). Returned as null when at its wildcard."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Nest converts a strict v2 nest rule into the stored NestTrackingAPI,
@@ -63,20 +63,17 @@ func translateV2Nest(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // nestRowToRule converts a stored NestTrackingAPI back into the strict v2 rule
 // shape for responses.
 func nestRowToRule(row *db.NestTrackingAPI) v2NestRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
 	return v2NestRule{
-		PokemonID:             ptr(row.PokemonID),
-		Form:                  ptr(row.Form),
-		MinSpawnAvg:           ptr(row.MinSpawnAvg),
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		PokemonID:             ptrUnless(row.PokemonID, 0),
+		Form:                  ptrUnless(row.Form, 0),
+		MinSpawnAvg:           ptrUnless(row.MinSpawnAvg, 0),
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

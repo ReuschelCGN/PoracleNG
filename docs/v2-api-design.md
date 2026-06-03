@@ -106,7 +106,16 @@ The sentinels (verified against the matcher's "match any" semantics):
 - **fort** `fort_type` defaults to the catch-all string `"everything"` (matches all fort types) on omission — this one IS omit-to-wildcard, mirroring the DB column default. `change_types` empty/omitted = match any change type.
 - **lure** `lure_id` is required, but the in-set value `0` is the "any lure type" wildcard — send `0` explicitly (a required field has no omit-to-wildcard).
 
-(Symmetric **response-side** behaviour — emitting `null` for a stored wildcard so reads don't echo the magic number — is handled separately; see the response conventions added in Part B.)
+**Response rule: a field at its wildcard/default is emitted as `null`.** Symmetrically, tracking responses emit `null` for any filter at its wildcard/default — a rule shows only its meaningful filters; `uid`, required fields, and the active invasion/incident mode are always present. Responses round-trip: GET a rule, PUT it back unchanged.
+
+Concretely, the projection rules are:
+
+- **`uid`** — always present.
+- **Required fields** (`pokemon.pokemon_id`, `quest.reward_type`, `incident.display_type`, `gym.team`, `lure.lure_id`, `egg.level`) — always present with their value; never nulled.
+- **Active invasion/incident mode** — exactly one of `type_id` (+ `gender` when meaningful) / `grunt_id` / `everything` / `boss` is reconstructed and stays present; the inactive mode fields are omitted. Invasion `gender` is `null` at its `any` default (shown only as male/female in `type_id` mode).
+- **Every other optional filter** — `null` when the stored value equals its documented wildcard/default (the same sentinels listed above; enums null at their default — `team`/`gender` `any`, `rsvp_changes` `none`, `fort_type` `everything`; bools null when `false`; `include_empty` null at its `true` default; `change_types`/`override_areas` null when empty; `gym_id`/`station_id`/`override_location_label` null when unset). Otherwise the meaningful value is emitted.
+
+The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted key, so a client can tell a filter is explicitly "unset/any". Because `null` (or an omitted key) on the request side materialises to the same documented default, a GET → PUT of the returned body leaves the stored rule unchanged. Implementation: the per-type `ToRule` projects wildcards to nil via the `ptrUnless`/`ptrUnlessSlice` helpers; the request structs keep `omitempty` (so request strictness — optional, not required — is preserved) plus `nullable:"true"` (so the response/OpenAPI schema models the field as nullable, `type: [X, "null"]`), and the rule-envelope marshaller re-emits the nilled optional fields as explicit `null`.
 
 ### Common fields (most tracking types)
 

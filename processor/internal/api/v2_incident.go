@@ -43,14 +43,14 @@ type v2IncidentRule struct {
 	DisplayType int `json:"display_type" required:"true" doc:"Pokestop-event id (game-master, e.g. a Showcase/Kecleon event; no wildcard — required). Resolves to the event's lowercased name as the stored grunt_type. (required)"`
 
 	// Common fields. invasion (shared table) HAS a clean column.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Incident converts a strict v2 incident rule into the stored
@@ -97,19 +97,16 @@ func translateV2Incident(deps *TrackingDeps, humanID string, profileNo int, oc o
 // v2IncidentToRule converts a stored (event) InvasionTrackingAPI back into the
 // strict v2 incident rule shape, recovering display_type from the event name.
 func v2IncidentToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2IncidentRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
-
 	rule := v2IncidentRule{
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
+	// display_type is required (the mode-defining field) and always present.
 	if dt, ok := eventNameToDisplayType(gd)[strings.ToLower(row.GruntType)]; ok {
 		rule.DisplayType = dt
 	}

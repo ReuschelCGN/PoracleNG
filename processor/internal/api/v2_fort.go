@@ -35,16 +35,16 @@ var v2FortChangeTypes = map[string]bool{
 // v1's gin handler (which defaulted false) to honour the DB column default
 // (COALESCE(include_empty, true)). Signed-off decision #2; flagged for CHANGELOG.
 type v2FortRule struct {
-	FortType     *string  `json:"fort_type,omitempty" enum:"pokestop,gym,everything" doc:"Fort type: pokestop|gym|everything. Omit to match all fort types (defaults to the catch-all 'everything', the stored DB column default). The bot also accepts 'station'; the API does not."`
-	IncludeEmpty *bool    `json:"include_empty,omitempty" doc:"Include forts with no active subject. Omit to include them (defaults to TRUE, honouring the DB column default; differs from the v1 gin handler which defaulted false)."`
-	ChangeTypes  []string `json:"change_types,omitempty" doc:"Edit kinds to alert on; subset of: location|new|removal|image_url|name|description. Omit (or empty) to match ANY change type (stored as the empty array [] = any)."`
+	FortType     *string  `json:"fort_type,omitempty" nullable:"true" enum:"pokestop,gym,everything" doc:"Fort type: pokestop|gym|everything. Omit to match all fort types (defaults to the catch-all 'everything', the stored DB column default). The bot also accepts 'station'; the API does not. Returned as null when 'everything' (the wildcard)."`
+	IncludeEmpty *bool    `json:"include_empty,omitempty" nullable:"true" doc:"Include forts with no active subject. Omit to include them (defaults to TRUE, honouring the DB column default; differs from the v1 gin handler which defaulted false). Returned as null when at its default (true)."`
+	ChangeTypes  []string `json:"change_types,omitempty" doc:"Edit kinds to alert on; subset of: location|new|removal|image_url|name|description. Omit (or empty) to match ANY change type (stored as the empty array [] = any). Returned as null when unset (any)."`
 
 	// Common fields. fort has NO clean column ⇒ no clean/edit/summary here.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Fort converts a strict v2 fort rule into the stored FortTrackingAPI.
@@ -118,19 +118,20 @@ func translateV2Fort(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // shape for responses. The stored change_types JSON array is decoded back to a
 // []string; a malformed/empty value yields an empty slice.
 func fortRowToRule(row *db.FortTrackingAPI) v2FortRule {
-	includeEmpty := bool(row.IncludeEmpty)
 	var changeTypes []string
 	if row.ChangeTypes != "" {
 		_ = json.Unmarshal([]byte(row.ChangeTypes), &changeTypes)
 	}
 	return v2FortRule{
-		FortType:              ptr(row.FortType),
-		IncludeEmpty:          ptr(includeEmpty),
-		ChangeTypes:           changeTypes,
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		// fort_type wildcard is the catch-all "everything" (its documented default);
+		// include_empty defaults TRUE (DB column default) so true is hidden as null.
+		FortType:              ptrUnless(row.FortType, fortTypeEnum.defValue),
+		IncludeEmpty:          ptrUnless(bool(row.IncludeEmpty), true),
+		ChangeTypes:           ptrUnlessSlice(changeTypes),
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

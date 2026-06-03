@@ -192,9 +192,15 @@ func TestV2Egg_TeamRoundTrip(t *testing.T) {
 		}
 		w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/egg", "")
 		out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
-		if out[0]["team"] != name {
+		// "any" is the wildcard: Part B hides it as null. Other teams are
+		// meaningful and read back as their string.
+		wantBack := any(name)
+		if name == "any" {
+			wantBack = nil
+		}
+		if out[0]["team"] != wantBack {
 			restore()
-			t.Fatalf("team %s read-back mismatch: got %v", name, out[0]["team"])
+			t.Fatalf("team %s read-back mismatch: got %v want %v", name, out[0]["team"], wantBack)
 		}
 		restore()
 	}
@@ -224,9 +230,14 @@ func TestV2Egg_RSVPChangesRoundTrip(t *testing.T) {
 		}
 		w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/egg", "")
 		out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
-		if out[0]["rsvp_changes"] != name {
+		// "none" is the wildcard: Part B hides it as null.
+		wantBack := any(name)
+		if name == "none" {
+			wantBack = nil
+		}
+		if out[0]["rsvp_changes"] != wantBack {
 			restore()
-			t.Fatalf("rsvp %s read-back mismatch: got %v", name, out[0]["rsvp_changes"])
+			t.Fatalf("rsvp %s read-back mismatch: got %v want %v", name, out[0]["rsvp_changes"], wantBack)
 		}
 		restore()
 	}

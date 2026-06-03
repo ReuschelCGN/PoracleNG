@@ -20,14 +20,14 @@ type v2LureRule struct {
 	LureID int `json:"lure_id" required:"true" doc:"Lure module id (game-master item id); one of 0 | 501 | 502 | 503 | 504 | 505 | 506 (required). Use the in-set value 0 to match ANY lure type — it is the wildcard, but unlike optional filters this required field has no omit-to-wildcard; send 0 explicitly."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Lure converts a strict v2 lure rule into the stored LureTrackingAPI,
@@ -68,18 +68,15 @@ func translateV2Lure(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // lureRowToRule converts a stored LureTrackingAPI back into the strict v2 rule
 // shape for responses.
 func lureRowToRule(row *db.LureTrackingAPI) v2LureRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
 	return v2LureRule{
-		LureID:                row.LureID,
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		LureID:                row.LureID, // required, always present
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

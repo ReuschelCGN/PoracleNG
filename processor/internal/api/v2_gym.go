@@ -20,19 +20,19 @@ import (
 type v2GymRule struct {
 	Team string `json:"team" required:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Required controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4; no wildcard — required). Use 'any' to match regardless of team (stored as 4)."`
 
-	SlotChanges   *bool   `json:"slot_changes,omitempty" doc:"Alert on slot (defender count) changes. Omit to disable (default false)."`
-	BattleChanges *bool   `json:"battle_changes,omitempty" doc:"Alert on battle (in-progress) changes. Omit to disable (default false)."`
-	GymID         *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null)."`
+	SlotChanges   *bool   `json:"slot_changes,omitempty" nullable:"true" doc:"Alert on slot (defender count) changes. Omit to disable (default false). Returned as null when false."`
+	BattleChanges *bool   `json:"battle_changes,omitempty" nullable:"true" doc:"Alert on battle (in-progress) changes. Omit to disable (default false). Returned as null when false."`
+	GymID         *string `json:"gym_id,omitempty" nullable:"true" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null). Returned as null when unset."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Gym converts a strict v2 gym rule into the stored GymTrackingAPI,
@@ -82,23 +82,22 @@ func translateV2Gym(deps *TrackingDeps, humanID string, profileNo int, oc overri
 // gymRowToRule converts a stored GymTrackingAPI back into the strict v2 rule
 // shape for responses.
 func gymRowToRule(row *db.GymTrackingAPI) v2GymRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
-	slot := bool(row.SlotChanges)
-	battle := bool(row.BattleChanges)
+	var gymID *string
+	if row.GymID != nil && *row.GymID != "" {
+		gymID = row.GymID
+	}
 	return v2GymRule{
-		Team:                  teamEnum.fromStored(row.Team),
-		SlotChanges:           ptr(slot),
-		BattleChanges:         ptr(battle),
-		GymID:                 row.GymID,
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		Team:                  teamEnum.fromStored(row.Team), // required, always present
+		SlotChanges:           ptrUnless(bool(row.SlotChanges), false),
+		BattleChanges:         ptrUnless(bool(row.BattleChanges), false),
+		GymID:                 gymID,
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

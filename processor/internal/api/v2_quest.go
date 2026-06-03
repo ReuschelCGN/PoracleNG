@@ -23,20 +23,20 @@ import (
 // lifecycle bits, all packed into the clean column.
 type v2QuestRule struct {
 	RewardType int   `json:"reward_type" required:"true" doc:"Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required)."`
-	Reward     *int  `json:"reward,omitempty" doc:"Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any)."`
-	Form       *int  `json:"form,omitempty" doc:"Form id (game-master), meaningful when reward_type=7 (pokemon). Omit to match any form (stored as 0 = any)."`
-	Shiny      *bool `json:"shiny,omitempty" doc:"Match shiny-possible quest rewards only. Omit to match regardless (default false)."`
-	Amount     *int  `json:"amount,omitempty" doc:"Minimum reward amount, meaningful for reward_type 2/4/12. Omit to impose no minimum (stored as 0 = any)."`
+	Reward     *int  `json:"reward,omitempty" nullable:"true" doc:"Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard."`
+	Form       *int  `json:"form,omitempty" nullable:"true" doc:"Form id (game-master), meaningful when reward_type=7 (pokemon). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
+	Shiny      *bool `json:"shiny,omitempty" nullable:"true" doc:"Match shiny-possible quest rewards only. Omit to match regardless (default false). Returned as null when false."`
+	Amount     *int  `json:"amount,omitempty" nullable:"true" doc:"Minimum reward amount, meaningful for reward_type 2/4/12. Omit to impose no minimum (stored as 0 = any). Returned as null when at its wildcard."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Quest converts a strict v2 quest rule into the stored
@@ -81,22 +81,19 @@ func translateV2Quest(deps *TrackingDeps, humanID string, profileNo int, oc over
 // questRowToRule converts a stored QuestTrackingAPI back into the strict v2 rule
 // shape for responses.
 func questRowToRule(row *db.QuestTrackingAPI) v2QuestRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
 	return v2QuestRule{
-		RewardType:            row.RewardType,
-		Reward:                ptr(row.Reward),
-		Form:                  ptr(row.Form),
-		Shiny:                 ptr(bool(row.Shiny)),
-		Amount:                ptr(row.Amount),
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		RewardType:            row.RewardType, // required, always present
+		Reward:                ptrUnless(row.Reward, 0),
+		Form:                  ptrUnless(row.Form, 0),
+		Shiny:                 ptrUnless(bool(row.Shiny), false),
+		Amount:                ptrUnless(row.Amount, 0),
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

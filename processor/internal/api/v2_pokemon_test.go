@@ -484,6 +484,153 @@ func TestV2Pokemon_PutFullReplace_NewUID(t *testing.T) {
 	}
 }
 
+// roundTripRule is the shared GET→PUT→GET fixed-point check for Part B (#138):
+// a client GETs a rule (wildcards projected to null), PUTs that exact body back
+// (PUT is full-replace: null/omitted → documented default), and GETs again. The
+// returned rule object must be byte-identical after the round-trip — proving null
+// in the response ⇔ omit in the request ⇔ engine wildcard. uid lives in the path,
+// not the body, so it is stripped before the PUT and excluded from the compare
+// (PUT mints a new uid by design).
+// It returns the rule object as GET first reported it (wildcards as null), so
+// callers can additionally assert the response shape.
+func roundTripRule(t *testing.T, r http.Handler, basePath, createBody string) map[string]any {
+	t.Helper()
+
+	// Create.
+	w := v2DoReq(t, r, http.MethodPost, basePath, createBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	uid := singleCreatedUID(t, v2DecodeBody(t, w))
+
+	// GET the rule back.
+	got1 := getOneRule(t, r, basePath, uid)
+
+	// PUT the exact returned body back (strip uid; it is the path param).
+	putBody := cloneWithoutUID(got1)
+	pb, _ := json.Marshal(putBody)
+	w = v2DoReq(t, r, http.MethodPut, basePath+"/"+itoa(uid), string(pb))
+	if w.Code != http.StatusOK {
+		t.Fatalf("put: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "updated")[0]["uid"].(float64))
+
+	// GET again and compare (minus uid).
+	got2 := getOneRule(t, r, basePath, newUID)
+	a := cloneWithoutUID(got1)
+	b := cloneWithoutUID(got2)
+	ab, _ := json.Marshal(a)
+	bb, _ := json.Marshal(b)
+	if string(ab) != string(bb) {
+		t.Fatalf("round-trip changed the rule:\n  before: %s\n  after:  %s", ab, bb)
+	}
+	return got1
+}
+
+// singleCreatedUID extracts the uid of the one created/updated rule from a
+// create/put response (the rule may land in created or updated depending on the
+// type's diff semantics).
+func singleCreatedUID(t *testing.T, body map[string]any) int64 {
+	t.Helper()
+	for _, key := range []string{"created", "updated"} {
+		if rules := tryRules(body, key); len(rules) == 1 {
+			return int64(rules[0]["uid"].(float64))
+		}
+	}
+	t.Fatalf("expected exactly one created/updated rule, got: %v", body)
+	return 0
+}
+
+// getOneRule lists the type's rules and returns the one with the given uid.
+func getOneRule(t *testing.T, r http.Handler, basePath string, uid int64) map[string]any {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodGet, basePath, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("get list: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for _, rule := range v2RulesArray(t, v2DecodeBody(t, w), "rules") {
+		if int64(rule["uid"].(float64)) == uid {
+			return rule
+		}
+	}
+	t.Fatalf("rule uid %d not found in list", uid)
+	return nil
+}
+
+func cloneWithoutUID(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if k == "uid" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func tryRules(body map[string]any, key string) []map[string]any {
+	raw, ok := body[key]
+	if !ok {
+		return nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, len(arr))
+	for i, e := range arr {
+		out[i] = e.(map[string]any)
+	}
+	return out
+}
+
+// TestV2Pokemon_RoundTrip is the Part B fixed-point check: a rule with a mix of
+// set + default fields GETs back with the defaults as null, and PUTting that body
+// back leaves the stored rule unchanged.
+func TestV2Pokemon_RoundTrip(t *testing.T) {
+	r, ms, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	roundTripRule(t, r, "/api/v2/humans/u1/tracking/pokemon",
+		`[{"pokemon_id":149,"min_iv":95,"gender":"female","clean":true,"distance":500}]`)
+
+	rows := ms.AllRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly 1 row after round-trip, got %d", len(rows))
+	}
+	row := rows[0]
+	// Meaningful fields survived; defaults stayed at their wildcard.
+	if row.PokemonID != 149 || row.MinIV != 95 || row.Gender != 2 || row.Distance != 500 || !db.IsClean(row.Clean) {
+		t.Fatalf("set fields not preserved across round-trip: %+v", row)
+	}
+	if row.MaxIV != 100 || row.MaxCP != 9000 || row.PVPRankingWorst != 4096 {
+		t.Fatalf("default fields drifted across round-trip: %+v", row)
+	}
+}
+
+// TestV2Pokemon_DefaultRuleResponseIsNull asserts the wildcard fields are emitted
+// as JSON null (present, not dropped) and the required field carries its value.
+func TestV2Pokemon_DefaultRuleResponseIsNull(t *testing.T) {
+	r, _, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+	v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon", `[{"pokemon_id":149}]`)
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/pokemon", "")
+	rule := v2RulesArray(t, v2DecodeBody(t, w), "rules")[0]
+
+	if rule["pokemon_id"] != float64(149) {
+		t.Fatalf("required pokemon_id must carry its value, got %v", rule["pokemon_id"])
+	}
+	for _, k := range []string{"min_iv", "max_iv", "max_cp", "pvp_ranking_worst", "max_weight", "gender", "clean", "distance", "template", "override_areas"} {
+		v, present := rule[k]
+		if !present {
+			t.Errorf("%s must be PRESENT (as null), but key is absent", k)
+		}
+		if v != nil {
+			t.Errorf("%s must be null at its wildcard, got %v", k, v)
+		}
+	}
+}
+
 func TestV2Pokemon_PutCrossHuman404(t *testing.T) {
 	r, _, _, restore := newV2PokemonTestAPI(t)
 	defer restore()

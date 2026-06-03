@@ -28,26 +28,26 @@ import (
 // specific pokemon" (consistent with the shipped maxbattle type). level/move/
 // evolution also default to 9000 ("any"), per the field audit raid table.
 type v2RaidRule struct {
-	PokemonID *int    `json:"pokemon_id,omitempty" doc:"Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored."`
-	Form      *int    `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
-	Level     *int    `json:"level,omitempty" doc:"Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers."`
-	Team      *string `json:"team,omitempty" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4)."`
-	Exclusive *bool   `json:"exclusive,omitempty" doc:"Match EX-raids only. Omit to match regardless (default false)."`
-	Move      *int    `json:"move,omitempty" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel)."`
-	Evolution *int    `json:"evolution,omitempty" doc:"Mega evolution id (game-master). Omit to match any evolution (stored as 9000 = the project-wide 'any' sentinel)."`
-	GymID     *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null)."`
+	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored. Returned as null when at its wildcard."`
+	Form      *int    `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
+	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers. Returned as null when at its wildcard."`
+	Team      *string `json:"team,omitempty" nullable:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4). Returned as null when 'any'."`
+	Exclusive *bool   `json:"exclusive,omitempty" nullable:"true" doc:"Match EX-raids only. Omit to match regardless (default false). Returned as null when false."`
+	Move      *int    `json:"move,omitempty" nullable:"true" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel). Returned as null when at its wildcard."`
+	Evolution *int    `json:"evolution,omitempty" nullable:"true" doc:"Mega evolution id (game-master). Omit to match any evolution (stored as 9000 = the project-wide 'any' sentinel). Returned as null when at its wildcard."`
+	GymID     *string `json:"gym_id,omitempty" nullable:"true" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null). Returned as null when unset."`
 
-	RSVPChanges *string `json:"rsvp_changes,omitempty" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2). Omit to disable RSVP updates (defaults to 'none', stored as 0)."`
+	RSVPChanges *string `json:"rsvp_changes,omitempty" nullable:"true" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2). Omit to disable RSVP updates (defaults to 'none', stored as 0). Returned as null when 'none'."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
-	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
+	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
+	Template *string `json:"template,omitempty" nullable:"true" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\"). Returned as null when at its wildcard."`
+	Clean    *bool   `json:"clean,omitempty" nullable:"true" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false."`
+	Edit     *bool   `json:"edit,omitempty" nullable:"true" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false). Returned as null when false."`
+	Summary  *bool   `json:"summary,omitempty" nullable:"true" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false). Returned as null when false."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" nullable:"true" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none. Returned as null when unset."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none. Returned as null when unset."`
 }
 
 // translateV2Raid converts a strict v2 raid rule into the stored
@@ -101,10 +101,6 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // raidRowToRule converts a stored RaidTrackingAPI back into the strict v2 rule
 // shape for responses.
 func raidRowToRule(row *db.RaidTrackingAPI) v2RaidRule {
-	clean := db.IsClean(row.Clean)
-	edit := db.IsEdit(row.Clean)
-	summary := db.IsSummary(row.Clean)
-	exclusive := bool(row.Exclusive)
 	team := teamEnum.fromStored(row.Team)
 	rsvp := rsvpChangesEnum.fromStored(row.RSVPChanges)
 	var gymID *string
@@ -113,22 +109,22 @@ func raidRowToRule(row *db.RaidTrackingAPI) v2RaidRule {
 		gymID = &s
 	}
 	return v2RaidRule{
-		PokemonID:             ptr(row.PokemonID),
-		Form:                  ptr(row.Form),
-		Level:                 ptr(row.Level),
-		Team:                  ptr(team),
-		Exclusive:             ptr(exclusive),
-		Move:                  ptr(row.Move),
-		Evolution:             ptr(row.Evolution),
+		PokemonID:             ptrUnless(row.PokemonID, 9000),
+		Form:                  ptrUnless(row.Form, 0),
+		Level:                 ptrUnless(row.Level, 9000),
+		Team:                  ptrUnless(team, "any"),
+		Exclusive:             ptrUnless(bool(row.Exclusive), false),
+		Move:                  ptrUnless(row.Move, 9000),
+		Evolution:             ptrUnless(row.Evolution, 9000),
 		GymID:                 gymID,
-		RSVPChanges:           ptr(rsvp),
-		Distance:              ptr(row.Distance),
-		Template:              ptr(row.Template),
-		Clean:                 ptr(clean),
-		Edit:                  ptr(edit),
-		Summary:               ptr(summary),
-		OverrideLocationLabel: ptr(row.OverrideLocationLabel),
-		OverrideAreas:         row.OverrideAreas,
+		RSVPChanges:           ptrUnless(rsvp, "none"),
+		Distance:              ptrUnless(row.Distance, 0),
+		Template:              ptrUnless(row.Template, ""),
+		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
+		Edit:                  ptrUnless(db.IsEdit(row.Clean), false),
+		Summary:               ptrUnless(db.IsSummary(row.Clean), false),
+		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),
+		OverrideAreas:         ptrUnlessSlice(row.OverrideAreas),
 	}
 }
 

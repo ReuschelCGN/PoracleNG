@@ -175,9 +175,14 @@ func TestV2Raid_TeamRoundTrip(t *testing.T) {
 		}
 		w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/raid", "")
 		out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
-		if out[0]["team"] != name {
+		// "any" is the wildcard: Part B hides it as null.
+		wantBack := any(name)
+		if name == "any" {
+			wantBack = nil
+		}
+		if out[0]["team"] != wantBack {
 			restore()
-			t.Fatalf("team %s read-back mismatch: got %v", name, out[0]["team"])
+			t.Fatalf("team %s read-back mismatch: got %v want %v", name, out[0]["team"], wantBack)
 		}
 		restore()
 	}
@@ -207,9 +212,14 @@ func TestV2Raid_RSVPChangesRoundTrip(t *testing.T) {
 		}
 		w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/raid", "")
 		out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
-		if out[0]["rsvp_changes"] != name {
+		// "none" is the wildcard: Part B hides it as null.
+		wantBack := any(name)
+		if name == "none" {
+			wantBack = nil
+		}
+		if out[0]["rsvp_changes"] != wantBack {
 			restore()
-			t.Fatalf("rsvp %s read-back mismatch: got %v", name, out[0]["rsvp_changes"])
+			t.Fatalf("rsvp %s read-back mismatch: got %v want %v", name, out[0]["rsvp_changes"], wantBack)
 		}
 		restore()
 	}
@@ -512,5 +522,30 @@ func TestV2Raid_UnknownHuman404(t *testing.T) {
 	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/nope/tracking/raid", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown human, got %d", w.Code)
+	}
+}
+
+// TestV2Raid_RoundTrip is the Part B fixed-point check for raid: a rule with a
+// specific boss + a set move + default team/rsvp/etc GETs back with the defaults
+// as null and survives a PUT of that body unchanged.
+func TestV2Raid_RoundTrip(t *testing.T) {
+	r, rs, _, restore := newV2RaidTestAPI(t)
+	defer restore()
+
+	roundTripRule(t, r, "/api/v2/humans/u1/tracking/raid",
+		`[{"pokemon_id":150,"distance":750,"clean":true}]`)
+
+	rows := rs.AllRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly 1 row after round-trip, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.PokemonID != 150 || row.Distance != 750 || !db.IsClean(row.Clean) {
+		t.Fatalf("set fields not preserved across round-trip: %+v", row)
+	}
+	// With a specific pokemon_id, level is forced to the 9000 sentinel; move and
+	// team stay at their wildcards.
+	if row.Level != 9000 || row.Move != 9000 || row.Team != 4 {
+		t.Fatalf("default/forced fields drifted across round-trip: %+v", row)
 	}
 }

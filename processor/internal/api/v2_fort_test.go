@@ -144,9 +144,14 @@ func TestV2Fort_FortTypeRoundTrip(t *testing.T) {
 		}
 		w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/fort", "")
 		out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
-		if out[0]["fort_type"] != ft {
+		// "everything" is the wildcard/default: Part B hides it as null.
+		wantBack := any(ft)
+		if ft == "everything" {
+			wantBack = nil
+		}
+		if out[0]["fort_type"] != wantBack {
 			restore()
-			t.Fatalf("fort_type %s read-back mismatch: got %v", ft, out[0]["fort_type"])
+			t.Fatalf("fort_type %s read-back mismatch: got %v want %v", ft, out[0]["fort_type"], wantBack)
 		}
 		restore()
 	}
@@ -475,5 +480,40 @@ func TestV2Fort_UnknownHuman404(t *testing.T) {
 	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/nope/tracking/fort", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown human, got %d", w.Code)
+	}
+}
+
+// TestV2Fort_RoundTrip is the Part B fixed-point check for the ENUM-DEFAULT case:
+// a fort rule with fort_type=gym (meaningful) + change_types set + include_empty
+// at its default (true, hidden as null) + default common fields GETs back with
+// the defaults as null and survives a PUT of that body unchanged.
+func TestV2Fort_RoundTrip(t *testing.T) {
+	r, fs, _, restore := newV2FortTestAPI(t)
+	defer restore()
+
+	basePath := "/api/v2/humans/u1/tracking/fort"
+	got := roundTripRule(t, r, basePath, `[{"fort_type":"gym","change_types":["name","description"],"distance":250}]`)
+
+	if got["fort_type"] != "gym" {
+		t.Fatalf("meaningful fort_type must be shown, got %v", got["fort_type"])
+	}
+	// include_empty defaults TRUE → hidden as null in the response.
+	if v, present := got["include_empty"]; !present || v != nil {
+		t.Fatalf("include_empty at default (true) must be present-but-null, got present=%v value=%v", present, v)
+	}
+	if got["change_types"] == nil {
+		t.Fatalf("set change_types must be shown, got nil")
+	}
+
+	rows := fs.AllRows()
+	if len(rows) != 1 || rows[0].FortType != "gym" || rows[0].Distance != 250 {
+		t.Fatalf("round-trip drifted the rule: %+v", rows)
+	}
+	// include_empty round-trips as TRUE (null in body → default true on PUT).
+	if !bool(rows[0].IncludeEmpty) {
+		t.Fatalf("include_empty must remain TRUE across round-trip (null→default), got false")
+	}
+	if rows[0].ChangeTypes != `["name","description"]` {
+		t.Fatalf("change_types drifted across round-trip: %q", rows[0].ChangeTypes)
 	}
 }

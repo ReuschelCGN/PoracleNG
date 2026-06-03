@@ -427,3 +427,61 @@ func TestV2Invasion_UnknownHuman404(t *testing.T) {
 		t.Fatalf("expected 404 for unknown human, got %d", w.Code)
 	}
 }
+
+// TestV2Invasion_RoundTrip_TypeIDMode is the Part B fixed-point check for the
+// invasion MODE case: a type_id rule (with male gender + default common fields)
+// GETs back with the active mode present (type_id), gender shown (male is not the
+// wildcard), and the inactive modes (everything/boss/grunt_id) absent; PUTting
+// that body back leaves the stored rule unchanged.
+func TestV2Invasion_RoundTrip_TypeIDMode(t *testing.T) {
+	r, is, _, restore := newV2InvasionTestAPI(t)
+	defer restore()
+
+	// type_id 11 = grass; male gender is meaningful (not the 'any' wildcard).
+	basePath := "/api/v2/humans/u1/tracking/invasion"
+	got := roundTripRule(t, r, basePath, `[{"type_id":11,"gender":"male","distance":300}]`)
+
+	// Active mode present; gender shown; inactive modes absent.
+	if got["type_id"] == nil {
+		t.Fatalf("active mode type_id must be present, got %v", got)
+	}
+	if got["gender"] != "male" {
+		t.Fatalf("meaningful gender must be shown, got %v", got["gender"])
+	}
+	for _, k := range []string{"everything", "boss", "grunt_id"} {
+		if v, present := got[k]; present && v != nil {
+			t.Fatalf("inactive mode %s must be absent/null, got %v", k, v)
+		}
+	}
+
+	rows := is.AllRows()
+	if len(rows) != 1 || rows[0].GruntType != "grass" || rows[0].Gender != 1 || rows[0].Distance != 300 {
+		t.Fatalf("round-trip drifted the rule: %+v", rows)
+	}
+}
+
+// TestV2Invasion_RoundTrip_EverythingMode checks the catch-all mode: everything
+// stays present, gender is null (not type_id mode), other modes absent, and the
+// rule round-trips unchanged.
+func TestV2Invasion_RoundTrip_EverythingMode(t *testing.T) {
+	r, is, _, restore := newV2InvasionTestAPI(t)
+	defer restore()
+
+	basePath := "/api/v2/humans/u1/tracking/invasion"
+	got := roundTripRule(t, r, basePath, `[{"everything":true,"clean":true}]`)
+
+	if got["everything"] != true {
+		t.Fatalf("active mode everything must be present (true), got %v", got["everything"])
+	}
+	if v, present := got["type_id"]; present && v != nil {
+		t.Fatalf("type_id must be absent in everything mode, got %v", v)
+	}
+	if got["gender"] != nil {
+		t.Fatalf("gender must be null outside type_id mode, got %v", got["gender"])
+	}
+
+	rows := is.AllRows()
+	if len(rows) != 1 || rows[0].GruntType != "everything" || !db.IsClean(rows[0].Clean) {
+		t.Fatalf("round-trip drifted the everything-mode rule: %+v", rows)
+	}
+}
