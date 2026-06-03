@@ -140,6 +140,15 @@ var genderEnum = newStringEnum("gender", map[int]string{
 	3: "genderless",
 }, "any")
 
+// invasionGenderEnum is the invasion grunt gender filter: any(0) | male(1) |
+// female(2). It DELIBERATELY omits genderless (which the pokemon genderEnum
+// carries) — a grunt is always gendered, so 3 is not a valid stored value here.
+var invasionGenderEnum = newStringEnum("gender", map[int]string{
+	0: "any",
+	1: "male",
+	2: "female",
+}, "any")
+
 // teamEnum (raid/egg/gym): harmony(0) | mystic(1) | valor(2) | instinct(3) | any(4).
 // Slotted in here for the fan-out; pokemon doesn't use it.
 var teamEnum = newStringEnum("team", map[int]string{
