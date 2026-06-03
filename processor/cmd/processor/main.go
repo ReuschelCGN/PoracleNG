@@ -417,6 +417,10 @@ func main() {
 	// registry is fully populated before the snapshot endpoint reads it.
 	api.RegisterV2TrackingSnapshot(humaAPI, trackingDeps)
 
+	// Strict v2 humans surface (huma). Re-exposes v1's human actions with typed
+	// inputs + problem+json; v1 gin human routes below stay frozen.
+	api.RegisterV2Humans(humaAPI, trackingDeps)
+
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
