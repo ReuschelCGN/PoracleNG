@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 )
 
@@ -22,11 +24,91 @@ type summaryAlertInput struct {
 	AlertType string `path:"alertType"`
 }
 
+// summarySetInput carries the {id} / {alertType} path parameters plus the open
+// JSON body for the schedule upsert. The body is captured raw (openJSON) so the
+// handler can unmarshal it into summarySetRequest with the exact lenient logic
+// the legacy gin handler used — accepting active_hours as a JSON string OR an
+// array/object, with db.ParseActiveHours tolerating zero-padded ("00") ints.
+type summarySetInput struct {
+	ID        string   `path:"id"`
+	AlertType string   `path:"alertType"`
+	Body      openJSON `contentType:"application/json"`
+}
+
+// RegisterSummarySet registers POST /api/summaries/{id}/{alertType} (the
+// schedule upsert) on the shared huma instance, replacing the legacy gin
+// HandleSummarySet. It preserves the lenient active_hours acceptance in place
+// (string-or-array body, flex "00" ints) by routing the raw body through the
+// existing summarySetRequest type and db.ParseActiveHours; the strict typed
+// schema is a separate v2 concern. Success body is the same {"status":"ok"};
+// error paths surface as problem+json.
+func RegisterSummarySet(api huma.API, deps *SummaryDeps) {
+	huma.Register(api, huma.Operation{
+		OperationID: "set-summary", Method: "POST", Path: "/summaries/{id}/{alertType}",
+		Summary: "Upsert a summary schedule", Tags: []string{"summaries"},
+		Description: "Upsert the active-hours schedule for (id, alertType). The " +
+			"`active_hours` field is an array of entries " +
+			"`{day 0-6, hours 0-23, mins 0-59, optional step, end_hours, end_mins}`. " +
+			"For backward compatibility with existing clients this in-place endpoint " +
+			"also accepts the legacy lenient forms: `active_hours` may be a " +
+			"JSON-string-encoded array, and integer fields may be zero-padded strings " +
+			"(e.g. \"00\"). An empty array (or \"\"/\"[]\"/\"{}\") clears the schedule.",
+		Security: []map[string][]string{{"poracleSecret": {}}},
+	}, func(_ context.Context, in *summarySetInput) (*statusOKOutput, error) {
+		if deps.Schedules == nil {
+			return nil, huma.Error503ServiceUnavailable(summaryDisabledMsg)
+		}
+		if in.ID == "" || in.AlertType == "" {
+			return nil, huma.Error400BadRequest("missing path parameter")
+		}
+		if !isKnownSummaryAlertType(in.AlertType) {
+			return nil, huma.Error400BadRequest(unknownAlertTypeMsg)
+		}
+
+		var req summarySetRequest
+		if err := json.Unmarshal(in.Body, &req); err != nil {
+			return nil, huma.Error400BadRequest("invalid request body")
+		}
+		if req.ActiveHours == nil {
+			return nil, huma.Error400BadRequest("active_hours must be specified")
+		}
+
+		var hoursJSON string
+		switch v := req.ActiveHours.(type) {
+		case string:
+			hoursJSON = v
+		default:
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil, huma.Error400BadRequest("active_hours could not be serialised")
+			}
+			hoursJSON = string(b)
+		}
+
+		// Validate through the same parser the scheduler uses; empty
+		// ""/"[]"/"{}" are allowed (clears the schedule).
+		if _, perr := db.ParseActiveHours(hoursJSON); perr != nil {
+			return nil, huma.Error400BadRequest("active_hours is not valid JSON for an ActiveHourEntry array")
+		}
+
+		if err := deps.Schedules.Set(in.ID, in.AlertType, hoursJSON); err != nil {
+			log.Errorf("Summary API: set %s/%s: %v", in.ID, in.AlertType, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		if deps.ReloadFunc != nil {
+			deps.ReloadFunc()
+		}
+		out := &statusOKOutput{}
+		out.Body.Status = "ok"
+		return out, nil
+	})
+}
+
 // RegisterSummaries registers the read/delete/trigger summary ops on the shared
 // huma instance. It mirrors the legacy gin handlers (HandleSummaryListForUser,
 // HandleSummaryGet, HandleSummaryDelete, HandleSummaryTrigger) byte-for-byte on
-// success; error paths now surface as problem+json. The POST upsert
-// (HandleSummarySet) intentionally stays on gin and is NOT registered here.
+// success; error paths now surface as problem+json. The POST upsert is
+// registered separately by RegisterSummarySet.
 func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 	// GET /api/summaries/{id} — list every known alert type's schedule.
 	huma.Register(api, huma.Operation{

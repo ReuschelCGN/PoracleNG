@@ -170,6 +170,132 @@ func TestHumaSummaryGet_FeatureDisabled503(t *testing.T) {
 	}
 }
 
+// --- summary upsert (POST set) ---
+
+// postSummarySet is a small helper that issues the upsert request and returns
+// the recorder.
+func postSummarySet(t *testing.T, r *gin.Engine, id, alertType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/summaries/"+id+"/"+alertType, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestHumaSummarySet_ArrayOK(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, mock, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":[{"day":1,"hours":7,"mins":30}]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, w.Body.String())
+	}
+	if body["status"] != "ok" {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+	// Stored as the marshaled JSON array.
+	got, err := mock.Get("u1", "quest")
+	if err != nil || got == nil {
+		t.Fatalf("Get after Set: got=%v err=%v", got, err)
+	}
+	if got.ActiveHours != `[{"day":1,"hours":7,"mins":30}]` {
+		t.Fatalf("stored active_hours = %q", got.ActiveHours)
+	}
+}
+
+func TestHumaSummarySet_StringEncodedOK(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, mock, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	// active_hours is a JSON STRING containing a JSON-encoded array.
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":"[{\"day\":2,\"hours\":9,\"mins\":0}]"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (string-encoded leniency), got %d body=%s", w.Code, w.Body.String())
+	}
+	got, err := mock.Get("u1", "quest")
+	if err != nil || got == nil {
+		t.Fatalf("Get after Set: got=%v err=%v", got, err)
+	}
+	// Stored verbatim (the string branch passes the value through).
+	if got.ActiveHours != `[{"day":2,"hours":9,"mins":0}]` {
+		t.Fatalf("stored active_hours = %q", got.ActiveHours)
+	}
+}
+
+func TestHumaSummarySet_ZeroPaddedIntsOK(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, _, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	// Zero-padded "00" ints must still parse via flexToInt.
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":[{"day":"00","hours":"07","mins":"00"}]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (flex int leniency), got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHumaSummarySet_EmptyArrayClearsOK(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, _, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":[]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (empty array clears), got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHumaSummarySet_MissingActiveHours400(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, _, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "quest", `{}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHumaSummarySet_InvalidActiveHours400(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, _, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":"not-json"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHumaSummarySet_UnknownAlertType400(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps, _, _ := summaryHumaDeps()
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "raid", `{"active_hours":[]}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHumaSummarySet_FeatureDisabled503(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	deps := &SummaryDeps{} // Schedules nil
+	RegisterSummarySet(api, deps)
+
+	w := postSummarySet(t, r, "u1", "quest", `{"active_hours":[]}`)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 // --- command endpoint ---
 
 func TestHumaCommand_MissingFields400(t *testing.T) {

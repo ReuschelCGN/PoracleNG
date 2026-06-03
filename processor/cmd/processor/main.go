@@ -510,11 +510,10 @@ func main() {
 		Dispatch:   proc.DispatchQuestSummary,
 		ReloadFunc: proc.triggerReload,
 	}
-	// Summary reads/delete/trigger run on the shared huma instance; the POST
-	// upsert (active_hours body) stays on gin for now.
+	// All summary ops (reads/delete/trigger + the active_hours upsert) run on
+	// the shared huma instance.
 	api.RegisterSummaries(humaAPI, summaryDeps)
-	summaries := apiGroup.Group("/summaries")
-	summaries.POST("/:id/:alertType", api.HandleSummarySet(summaryDeps))
+	api.RegisterSummarySet(humaAPI, summaryDeps)
 
 	// reloadDTS reloads DTS templates and returns the number of loaded entries.
 	// It is used by both the HTTP /api/dts/reload handlers and the BotDeps closure
