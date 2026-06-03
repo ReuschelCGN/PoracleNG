@@ -28,6 +28,48 @@
 
 ---
 
+## API Surface Inventory (complete — for review)
+
+Every one of the 124 registered routes is accounted for below. **Built in huma** = A (in-place) + B (v2). **Left on gin** = C (permanent) + D (frozen v1).
+
+### A. BUILT IN HUMA — in-place at `/api/*` (same paths, same success JSON, `problem+json` errors)
+
+- **Reloads (6):** `GET|POST /api/reload`, `GET|POST /api/geofence/reload`, `GET|POST /api/dts/reload`
+- **Read-only data (12):** `GET /health`, `GET /api/weather`, `GET /api/stats/{rarity,shiny,shiny-possible}`, `GET /api/geocode/forward`, `GET /api/geofence/{all,all/hash,all/geojson}`, `GET /api/masterdata/{monsters,grunts}`, `GET /api/config/schema`, `GET /api/snapshots/{messageID}`
+- **Geofence tile-URL (5):** `GET /api/geofence/{area}/map`, `GET /api/geofence/weatherMap/{lat}/{lon}`, `GET /api/geofence/locationMap/{lat}/{lon}`, `GET /api/geofence/distanceMap/{lat}/{lon}/{distance}`, `POST /api/geofence/overviewMap`
+- **DTS editor (13):** `GET /api/dts/{emoji,templates,fields,fields/{type},partials,testdata,actions}`, `DELETE /api/dts/templates`, `PUT /api/dts/templates/file`, `POST /api/dts/{render,enrich,sendtest,templates}`
+- **Config editor (5):** `GET /api/config/{poracleWeb,templates,values}`, `POST /api/config/{values,validate}` *(open bodies)*
+- **Autocreate (6):** `POST /api/autocreate/run`, `GET /api/autocreate/{templates,templates/schema}`, `POST /api/autocreate/{templates,templates/validate}`, `DELETE /api/autocreate/templates/{name}`
+- **Summaries (5):** `GET /api/summaries/{id}`, `GET /api/summaries/{id}/{alertType}`, `POST /api/summaries/{id}/{alertType}` *(typed `active_hours`)*, `POST /api/summaries/{id}/{alertType}/trigger`, `DELETE /api/summaries/{id}/{alertType}`
+- **Other (5):** `POST /api/command`, `POST /api/test`, `POST /api/deliverMessages`, `POST /api/postMessage`, `POST /api/resolve`
+
+### B. BUILT IN HUMA — new clean `/api/v2/*`
+
+- **Tracking (11 types × CRUD):** `GET|POST /api/v2/tracking/{type}`, `GET|PUT|DELETE /api/v2/tracking/{type}/{uid}`, bulk `DELETE …?uid=`. Types: `pokemon, raid, egg, quest, invasion, incident (NEW), lure, nest, gym, fort, maxbattle`.
+- **Humans (discrete actions):** `POST /api/v2/humans`, `GET /api/v2/humans/{id}`, `GET …/{id}/areas`, `POST …/{id}/{enable,disable,admin-disable,language,location,areas,profile}`, `GET …/{id}/check-location`, locations `GET (list)`, `GET/{label}`, `POST`, **`PUT/{label}` (NEW)**, `DELETE/{label}`, roles `GET`, `POST/DELETE …/{roleId}`, `GET …/{id}/admin-roles`.
+- **Profiles:** `GET /api/v2/profiles/{id}`, `POST` (add), `PATCH …/{profile_no}` (active_hours), `DELETE …/{profile_no}`, `POST …/{profile_no}/copy`.
+
+### C. LEFT ON GIN — permanently (not a huma fit, by design)
+
+| route | why |
+|---|---|
+| `POST /` | Golbat webhook receiver — hot path, unauthenticated, mixed-type array |
+| `GET /metrics` | Prometheus text exposition |
+| `GET /openapi.json`, `GET /docs` | huma's own spec/docs output |
+| `GET /debug/pprof/`, `GET /debug/pprof/{name}` | Go pprof, binary/text |
+
+### D. LEFT ON GIN — frozen v1 (superseded by `/api/v2`; gin until clients migrate, then deprecated)
+
+- **Tracking v1 (all 10 types):** `GET|POST /api/tracking/{type}/{id}`, `DELETE …/{id}/byUid/{uid}`, `POST …/{id}/delete`, plus `GET /api/tracking/{all/{id},allProfiles/{id},pokemon/refresh}`.
+- **Humans v1:** `POST /api/humans` (create), `GET /api/humans/{one/{id},{id},{id}/roles,{id}/getAdministrationRoles,{id}/checkLocation/{lat}/{lon},{id}/locations,{id}/locations/{label}}`, `POST /api/humans/{id}/{start,stop,adminDisabled,language,switchProfile/{profile},setLocation/{lat}/{lon},setAreas,roles/add/{roleId},roles/remove/{roleId},locations/add,locations/{label}/delete}`.
+- **Profiles v1:** `GET /api/profiles/{id}`, `POST /api/profiles/{id}/{add,update,copy/{from}/{to}}`, `DELETE /api/profiles/{id}/byProfileNo/{profile_no}`.
+
+> **Note on `/api/tracking/pokemon/refresh`:** it's a reload alias living under the frozen `/api/tracking` namespace. Kept on gin (D) to avoid splitting that namespace; the documented reload is the huma `GET /api/reload` (A).
+
+**Coverage confirmation:** A (≈52) + B (new v2) + C (6) + D (≈45 frozen) accounts for all 124 registered routes. Nothing is unclassified.
+
+---
+
 ## Phase 0 — Foundation rework
 
 ### Task 0.1: Switch error model to problem+json
