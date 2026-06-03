@@ -9,13 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// humaNewError is a thin pass-through to huma.NewError, kept as a named package
-// func so existing call sites compile unchanged. The huma surface now emits
-// huma's default RFC 9457 problem+json error model — no legacy override.
-func humaNewError(status int, msg string, errs ...error) huma.StatusError {
-	return huma.NewError(status, msg, errs...)
-}
-
 // NewHumaAPI builds a huma API bound to the authenticated /api group, declares
 // the X-Poracle-Secret security scheme, and serves the OpenAPI spec + docs UI
 // at PUBLIC top-level paths (no secret). Errors use huma's default RFC 9457

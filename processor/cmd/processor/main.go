@@ -397,17 +397,20 @@ func main() {
 		Dispatcher:   proc.dispatcher,
 		ReloadFunc:   proc.triggerReload,
 	}
-	// Wire the huma API: serves /openapi.json and /docs publicly, and registers
-	// huma-migrated endpoints under the /api authenticated group.
-	humaAPI := api.NewHumaAPI(r, apiGroup, buildVersion)
-	api.RegisterTrackingMonster(humaAPI, trackingDeps)
+	// Wire the huma API: serves /openapi.json and /docs publicly. No endpoints are
+	// registered on it yet (v1 frozen); a later phase will bind the returned API to
+	// a named var and register huma ops on it.
+	_ = api.NewHumaAPI(r, apiGroup, buildVersion)
 
 	tracking := apiGroup.Group("/tracking")
-	// Pokemon GET, POST, DELETE byUid, and bulk-delete are now served by huma
-	// (see RegisterTrackingMonster above).
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {
 		return state.Load(stateMgr, database, summaryScheduleStore)
 	}))
+	// Pokemon tracking
+	tracking.GET("/pokemon/:id", api.HandleGetMonster(trackingDeps))
+	tracking.POST("/pokemon/:id", api.HandleCreateMonster(trackingDeps))
+	tracking.DELETE("/pokemon/:id/byUid/:uid", api.HandleDeleteMonster(trackingDeps))
+	tracking.POST("/pokemon/:id/delete", api.HandleBulkDeleteMonster(trackingDeps))
 	// Raid tracking
 	tracking.GET("/raid/:id", api.HandleGetRaid(trackingDeps))
 	tracking.POST("/raid/:id", api.HandleCreateRaid(trackingDeps))

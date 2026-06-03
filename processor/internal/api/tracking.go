@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -232,61 +230,6 @@ func (f flexInt) isSet() bool {
 	return f.value != nil
 }
 
-// Schema implements huma.SchemaProvider so huma's JSON-schema validator allows
-// the legacy wire formats that flexInt.UnmarshalJSON handles: native integers,
-// quoted numeric strings ("90"), and boolean-as-int (true/false). Without this,
-// huma generates `{"type":"object"}` for the unexported struct and rejects
-// everything with a 422 before our handler runs.
-func (flexInt) Schema(huma.Registry) *huma.Schema {
-	return &huma.Schema{
-		OneOf: []*huma.Schema{
-			{Type: "integer"},
-			{Type: "string"},
-			{Type: "boolean"},
-		},
-		Description: "Canonical: integer. Numeric strings and booleans accepted for legacy clients.",
-	}
-}
-
-// Schema implements huma.SchemaProvider so huma's validator permits the legacy
-// boolean/integer/string forms that flexBool.UnmarshalJSON accepts.
-func (flexBool) Schema(huma.Registry) *huma.Schema {
-	return &huma.Schema{
-		OneOf: []*huma.Schema{
-			{Type: "boolean"},
-			{Type: "integer"},
-			{Type: "string"},
-		},
-		Description: "Canonical: boolean. Integers and strings accepted for legacy clients.",
-	}
-}
-
-// lenient[T] wraps a request body so huma allows unknown/extra JSON properties
-// (matching pre-huma json.Unmarshal behaviour) instead of huma's default
-// additionalProperties:false. Access the decoded value via .Value.
-//
-// Approach used: PRIMARY — SchemaProvider wrapper. lenient[T].Schema calls
-// r.Schema with allowRef=false to get the inline schema for T, then sets
-// AdditionalProperties = true before returning. This ensures huma's validator
-// does not reject extra fields before our UnmarshalJSON handler runs.
-type lenient[T any] struct{ Value T }
-
-func (l *lenient[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &l.Value) }
-func (l lenient[T]) MarshalJSON() ([]byte, error)   { return json.Marshal(l.Value) }
-
-func (lenient[T]) Schema(r huma.Registry) *huma.Schema {
-	// allowRef=false returns the registry's STORED *Schema for T. We must not
-	// mutate it in place — that would contaminate every other use of T, including
-	// strict handlers that expect additionalProperties:false. Shallow-copy, then
-	// flip AdditionalProperties on the copy only.
-	orig := r.Schema(reflect.TypeOf(*new(T)), false, "")
-	s := *orig
-	// true (bool) permits any additional properties; nil would also work but
-	// explicit true communicates intent clearly in the generated OpenAPI spec.
-	s.AdditionalProperties = true
-	return &s
-}
-
 // overrideContext holds per-target data pre-fetched once above the per-row
 // validation loop so that batch POSTs of N rules don't issue N×Get queries.
 // Build it with newOverrideContext before the loop, then pass it into
@@ -401,21 +344,4 @@ func normalizeOverrideAreas(in []string) []string {
 // and by external callers that import api.
 func DiffTracking(existing, toInsert any) (noMatch, isDuplicate bool, existingUID int64, isUpdate bool) {
 	return db.DiffTracking(existing, toInsert)
-}
-
-// collapseClean packs the caller-facing booleans (and any legacy integer clean)
-// into the storage bitmask: bit1 auto-delete, bit2 edit, bit4 summary.
-//
-// Legacy callers that send a raw integer clean (e.g. clean=3) are preserved
-// as-is via flexBool.intValue — the integer value is returned directly.
-// New callers that send clean:true + edit:true + summary:true get 7.
-func collapseClean(clean flexBool, edit, summary *bool) int {
-	packed := clean.intValue(0)
-	if edit != nil && *edit {
-		packed |= 2
-	}
-	if summary != nil && *summary {
-		packed |= 4
-	}
-	return packed
 }
