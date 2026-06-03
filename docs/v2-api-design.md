@@ -52,7 +52,13 @@ All errors use a standard problem document:
 }
 ```
 
-**Success responses — no envelope on resources, minimal ack on pure actions.** Endpoints that return a resource (tracking `GET`/`POST`/`PUT`/`DELETE`, the full snapshot, profile/location reads and creates) return the typed body directly — the rule/diff/resource is **not** wrapped in a `{ "status": "ok" }` envelope. Pure **action** endpoints that have no resource to return (humans/profiles/locations actions: enable, disable, admin-disable, language, set-areas, set-location, switch-profile, profile mutations, location PUT/DELETE, etc.) return a minimal `{ "status": "ok" }` acknowledgement, since there is nothing else meaningful to hand back.
+**Success responses — three categories, one shared status schema.** The success shape is consistent *within* each category:
+
+1. **Pure action endpoints** (no resource to return) → a minimal `{ "status": "ok" }` acknowledgement. This covers reloads, summary delete/trigger, `dts/templates` delete, `dts/sendtest`, the deliver-messages-style acks, and all v2 humans/profiles/locations action mutations (enable, disable, admin-disable, language, set-areas, set-location, role add/remove, switch-profile, profile add/update/delete/copy, location PUT/DELETE, etc.). Every one of these is emitted by the **single shared `statusOKOutput` Go type** (`internal/api/huma_system.go`, built via `okStatus()`), so the OpenAPI spec references **one** `StatusOKOutputBody` schema for all of them rather than a per-area duplicate. Responses that carry the status *plus* extra fields (`{status,backup}`, `{status,queued}`, `{status,saved}`, `{status,url}`) are deliberately **not** this type and keep their own typed structs.
+2. **Resource/data reads** → the typed resource/data body directly (e.g. `{human:…}`, `{rules:[…]}`, geofence/dts/summary payloads). Never wrapped in a `{ "status": "ok" }` envelope.
+3. **v2 tracking mutations** → the diff (`{created,updated,unchanged}` for create/update, `{deleted}` for delete). Also never status-wrapped.
+
+So: *is `{"status":"ok"}` the consistent success response?* Yes — it is the consistent shape for the **pure-action** category, and as of the unification all such endpoints reference the one shared `StatusOK` schema. Reads and tracking mutations consistently return their resource/diff instead.
 
 ### Resource model
 

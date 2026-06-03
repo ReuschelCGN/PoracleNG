@@ -146,7 +146,7 @@ func registerV2LocationsAdd(api huma.API, deps *TrackingDeps, tag []string, sec 
 		Summary:     "Create a saved location",
 		Description: "Creates one named saved location. 422 if the label is empty; 409 if the label already exists. Triggers a state reload.",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2AddLocationInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2AddLocationInput) (*statusOKOutput, error) {
 		if in.Body.Label == "" {
 			return nil, huma.Error422UnprocessableEntity("label is required")
 		}
@@ -188,7 +188,7 @@ func registerV2LocationsUpdate(api huma.API, deps *TrackingDeps, tag []string, s
 		Summary:     "Update a saved location's coords",
 		Description: "Overwrites the lat/lon of an existing saved location (matched case-insensitively by label). 404 if the label does not exist. Triggers a state reload. This capability is new in v2 (v1 had add/delete only).",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2UpdateLocationInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2UpdateLocationInput) (*statusOKOutput, error) {
 		// Verify the label exists first so a missing label is a clean 404 rather
 		// than an opaque store error.
 		loc, err := deps.Humans.GetLocation(in.ID, in.Label)
@@ -253,7 +253,7 @@ func registerV2LocationsDelete(api huma.API, deps *TrackingDeps, tag []string, s
 		Summary:     "Delete a saved location",
 		Description: "Deletes the named saved location (case-insensitive). 409 with the referencing rules when a tracking rule's override_location_label still points at it. Triggers a state reload.",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2LocationLabelInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2LocationLabelInput) (*statusOKOutput, error) {
 		refs, err := deps.Humans.CountLocationReferences(in.ID, in.Label)
 		if err != nil {
 			log.Errorf("v2 locations: delete count refs %s/%s: %s", in.ID, in.Label, err)

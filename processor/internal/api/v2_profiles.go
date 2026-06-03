@@ -220,7 +220,7 @@ func registerV2ProfileSwitch(api huma.API, deps *TrackingDeps, tag []string, sec
 		Description: "Makes the given profile_no active (also copies its area/location onto the human). " +
 			"404 if the human does not exist or the profile_no does not exist. Triggers a state reload.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2SwitchProfileInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2SwitchProfileInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -263,7 +263,7 @@ func registerV2ProfileAdd(api huma.API, deps *TrackingDeps, tag []string, sec []
 			"schema (numeric bounds + step/end cross-field, no cross-midnight) and stored as JSON. 422 if the name is empty or " +
 			"active_hours is invalid; 404 if the human does not exist. Triggers a state reload.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2AddProfileInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2AddProfileInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -303,7 +303,7 @@ func registerV2ProfileUpdate(api huma.API, deps *TrackingDeps, tag []string, sec
 			"+ step/end cross-field, no cross-midnight); an empty [] clears the schedule. 422 on an invalid schedule; 404 if the " +
 			"human does not exist. Triggers a state reload.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2UpdateProfileInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2UpdateProfileInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -334,7 +334,7 @@ func registerV2ProfileDelete(api huma.API, deps *TrackingDeps, tag []string, sec
 		Description: "Deletes the profile and its tracking data. The store reassigns the human's active profile when the deleted one " +
 			"was active (mirrors v1). 404 if the human does not exist. Triggers a state reload.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2DeleteProfileInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2DeleteProfileInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -368,7 +368,7 @@ func registerV2ProfileCopy(api huma.API, deps *TrackingDeps, tag []string, sec [
 		Description: "Copies all tracking rules from from_profile (body) into the {profile_no} destination, replacing the destination's " +
 			"existing rules (mirrors v1 CopyProfile). 404 if the human does not exist. Triggers a state reload.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2CopyProfileInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2CopyProfileInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}

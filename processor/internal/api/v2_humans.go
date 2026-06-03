@@ -32,18 +32,8 @@ type v2HumanIDInput struct {
 	ID string `path:"id" doc:"Human id (the owning user)"`
 }
 
-// v2StatusOutput is the simple mutation success shape: {status:"ok"}.
-type v2StatusOutput struct {
-	Body struct {
-		Status string `json:"status" doc:"Always \"ok\" on success"`
-	}
-}
-
-func okStatus() *v2StatusOutput {
-	out := &v2StatusOutput{}
-	out.Body.Status = "ok"
-	return out
-}
+// Pure-action mutations on this surface return the shared statusOKOutput
+// ({"status":"ok"}); see okStatus in huma_system.go.
 
 // v2HumanResource is the GET /v2/humans/{id} response: the legacy human resource
 // (humanToResponse). blocked_alerts is a read-only derived field on this
@@ -263,7 +253,7 @@ func registerV2HumanEnable(api huma.API, deps *TrackingDeps, tag []string, sec [
 		Summary:     "Enable a human",
 		Description: "Sets enabled=true and triggers a state reload. 404 if the human does not exist.",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2HumanIDInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2HumanIDInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -282,7 +272,7 @@ func registerV2HumanDisable(api huma.API, deps *TrackingDeps, tag []string, sec 
 		Summary:     "Disable a human",
 		Description: "Sets enabled=false and triggers a state reload. 404 if the human does not exist.",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2HumanIDInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2HumanIDInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -313,7 +303,7 @@ func registerV2HumanAdminDisable(api huma.API, deps *TrackingDeps, tag []string,
 		Description: "Flag-only toggle of admin_disable (does NOT clear disabled_date or reset enabled/fails, matching v1). " +
 			"Triggers a state reload. 404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2AdminDisableInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2AdminDisableInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -351,7 +341,7 @@ func registerV2HumanLanguage(api huma.API, deps *TrackingDeps, tag []string, sec
 		Description: "Validated against the configured available_languages (case-insensitive) when restricted; otherwise any code is accepted. " +
 			"Triggers a state reload. 404 if the human does not exist; 422 if the language is empty or unavailable.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2LanguageInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2LanguageInput) (*statusOKOutput, error) {
 		if _, err := resolveFullHuman(deps, in.ID); err != nil {
 			return nil, err
 		}
@@ -406,7 +396,7 @@ func registerV2HumanSetLocation(api huma.API, deps *TrackingDeps, tag []string, 
 		Description: "lat/lon are taken from the BODY (v1 took them from the path). When area_security is enabled and the human has an " +
 			"area restriction, the location must fall inside an allowed fence (403 otherwise). Triggers a state reload. 404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2SetLocationInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2SetLocationInput) (*statusOKOutput, error) {
 		human, err := resolveFullHuman(deps, in.ID)
 		if err != nil {
 			return nil, err
@@ -511,7 +501,7 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 			"community-filtered when area_security is enabled), dedups, lowercases, and stores the result. Triggers a state reload. " +
 			"404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2SetAreasInput) (*v2StatusOutput, error) {
+	}, func(_ context.Context, in *v2SetAreasInput) (*statusOKOutput, error) {
 		human, err := resolveFullHuman(deps, in.ID)
 		if err != nil {
 			return nil, err

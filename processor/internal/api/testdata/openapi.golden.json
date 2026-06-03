@@ -1643,6 +1643,7 @@
         "additionalProperties": false,
         "properties": {
           "status": {
+            "description": "Always \"ok\" on success",
             "type": "string"
           }
         },
@@ -10785,19 +10786,6 @@
         ],
         "type": "object"
       },
-      "V2StatusOutputBody": {
-        "additionalProperties": false,
-        "properties": {
-          "status": {
-            "description": "Always \"ok\" on success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "type": "object"
-      },
       "V2SwitchProfileBody": {
         "additionalProperties": false,
         "properties": {
@@ -13267,7 +13255,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13422,7 +13410,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13544,7 +13532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13593,7 +13581,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13652,7 +13640,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13723,7 +13711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13829,7 +13817,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -13888,7 +13876,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14012,7 +14000,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14071,7 +14059,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14177,7 +14165,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14237,7 +14225,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14305,7 +14293,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
@@ -14375,7 +14363,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2StatusOutputBody"
+                  "$ref": "#/components/schemas/StatusOKOutputBody"
                 }
               }
             },
