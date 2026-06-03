@@ -342,6 +342,18 @@ func main() {
 	// instance mounted on the authenticated /api group.
 	humaAPI := api.NewHumaAPI(r, apiGroup, buildVersion)
 
+	// NOTE: every api.RegisterX call below also lives in registerAllHumaOpsForTest
+	// (internal/api/huma_openapi_golden_test.go), which drives the package-api
+	// golden OpenAPI spec test. The six autocreate ops (registerAutocreateHuma /
+	// registerAutocreateTemplatesHuma, registered further down) can't live in
+	// package api — they depend on *discordbot.Bot, and api → discordbot →
+	// bot/commands → api is an import cycle — so they're guarded by a sibling
+	// golden in this package (huma_autocreate_golden_test.go). When you add,
+	// remove, or rename a huma op here, mirror it in the matching golden test and
+	// regenerate:
+	//   UPDATE_GOLDEN=1 go test ./internal/api/ -run TestOpenAPIGolden
+	//   UPDATE_GOLDEN=1 go test ./cmd/processor/ -run TestAutocreateOpenAPIGolden
+
 	// Reload (migrated to huma, in place — same paths, same {"status":"ok"} body).
 	api.RegisterReload(humaAPI, "post-reload", http.MethodPost, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
 	api.RegisterReload(humaAPI, "get-reload", http.MethodGet, "/reload", func() error { return state.Load(stateMgr, database, summaryScheduleStore) })
@@ -1080,7 +1092,9 @@ func main() {
 	// body, open request, problem+json errors).
 	api.RegisterResolve(humaAPI, resolveDeps)
 	// autocreate run / delete-template / templates-schema migrated to huma,
-	// in place — same paths, same success JSON, problem+json errors.
+	// in place — same paths, same success JSON, problem+json errors. These six
+	// autocreate ops are guarded by huma_autocreate_golden_test.go (this package),
+	// not the package-api golden — see the NOTE near the humaAPI setup above.
 	registerAutocreateHuma(humaAPI, cfg, discordBot)
 	// autocreate templates GET/POST + validate migrated to huma, in place —
 	// open (raw-JSON) bodies, same success JSON, problem+json errors.
