@@ -21,23 +21,23 @@ import (
 // SINGLE int — a client wanting multiple levels POSTs multiple rule objects (the
 // create body is already an array). A level array is now a type mismatch (422).
 type v2EggRule struct {
-	Level int `json:"level" required:"true" minimum:"1" doc:"Egg level (required, >= 1). Single int — POST multiple rule objects for multiple levels"`
+	Level int `json:"level" required:"true" minimum:"1" doc:"Egg tier (required, >= 1; no wildcard — eggs are always tracked by tier). Single int — POST multiple rule objects for multiple tiers."`
 
-	Team      *string `json:"team,omitempty" enum:"harmony,mystic,valor,instinct,any" doc:"Team enum: harmony|mystic|valor|instinct|any (0|1|2|3|4) (default any)"`
-	Exclusive *bool   `json:"exclusive,omitempty" doc:"EX-raid egg only (default false)"`
-	GymID     *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id; null/empty = any (default any)"`
+	Team      *string `json:"team,omitempty" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4)."`
+	Exclusive *bool   `json:"exclusive,omitempty" doc:"Match EX-raid eggs only. Omit to match regardless (default false)."`
+	GymID     *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null)."`
 
-	RSVPChanges *string `json:"rsvp_changes,omitempty" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2) (default none)"`
+	RSVPChanges *string `json:"rsvp_changes,omitempty" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2). Omit to disable RSVP updates (defaults to 'none', stored as 0)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Egg converts a strict v2 egg rule into the stored EggTrackingAPI,

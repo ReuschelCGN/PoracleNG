@@ -28,26 +28,26 @@ import (
 // specific pokemon" (consistent with the shipped maxbattle type). level/move/
 // evolution also default to 9000 ("any"), per the field audit raid table.
 type v2RaidRule struct {
-	PokemonID *int    `json:"pokemon_id,omitempty" doc:"Pokédex id; 9000 = any (track by level) (default 9000)"`
-	Form      *int    `json:"form,omitempty" doc:"Form id; 0 = any (default 0)"`
-	Level     *int    `json:"level,omitempty" doc:"Raid level; 9000 = any. Single int — POST multiple rule objects for multiple levels (default 9000)"`
-	Team      *string `json:"team,omitempty" enum:"harmony,mystic,valor,instinct,any" doc:"Team enum: harmony|mystic|valor|instinct|any (0|1|2|3|4) (default any)"`
-	Exclusive *bool   `json:"exclusive,omitempty" doc:"EX-raid only (default false)"`
-	Move      *int    `json:"move,omitempty" doc:"Charge move id; 9000 = any (default 9000)"`
-	Evolution *int    `json:"evolution,omitempty" doc:"Mega evolution id; 9000 = any (default 9000)"`
-	GymID     *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id; null/empty = any (default any)"`
+	PokemonID *int    `json:"pokemon_id,omitempty" doc:"Pokédex id of the raid boss. Omit to track by raid level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored."`
+	Form      *int    `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
+	Level     *int    `json:"level,omitempty" doc:"Raid tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (1-6, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused'). Single int — POST multiple rule objects for multiple tiers."`
+	Team      *string `json:"team,omitempty" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4)."`
+	Exclusive *bool   `json:"exclusive,omitempty" doc:"Match EX-raids only. Omit to match regardless (default false)."`
+	Move      *int    `json:"move,omitempty" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel)."`
+	Evolution *int    `json:"evolution,omitempty" doc:"Mega evolution id (game-master). Omit to match any evolution (stored as 9000 = the project-wide 'any' sentinel)."`
+	GymID     *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null)."`
 
-	RSVPChanges *string `json:"rsvp_changes,omitempty" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2) (default none)"`
+	RSVPChanges *string `json:"rsvp_changes,omitempty" enum:"none,rsvp,rsvp_only" doc:"RSVP change handling: none|rsvp|rsvp_only (0|1|2). Omit to disable RSVP updates (defaults to 'none', stored as 0)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Raid converts a strict v2 raid rule into the stored

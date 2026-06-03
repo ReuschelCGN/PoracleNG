@@ -35,16 +35,16 @@ var v2FortChangeTypes = map[string]bool{
 // v1's gin handler (which defaulted false) to honour the DB column default
 // (COALESCE(include_empty, true)). Signed-off decision #2; flagged for CHANGELOG.
 type v2FortRule struct {
-	FortType     *string  `json:"fort_type,omitempty" enum:"pokestop,gym,everything" doc:"Fort type: pokestop|gym|everything (default everything). The bot also accepts 'station'; the API does not."`
-	IncludeEmpty *bool    `json:"include_empty,omitempty" doc:"Include forts with no active subject; defaults to TRUE when omitted (honours the DB column default; differs from the v1 gin handler which defaulted false)"`
-	ChangeTypes  []string `json:"change_types,omitempty" doc:"Edit kinds to alert on; subset of: location|new|removal|image_url|name|description (default none ⇒ stored as [])"`
+	FortType     *string  `json:"fort_type,omitempty" enum:"pokestop,gym,everything" doc:"Fort type: pokestop|gym|everything. Omit to match all fort types (defaults to the catch-all 'everything', the stored DB column default). The bot also accepts 'station'; the API does not."`
+	IncludeEmpty *bool    `json:"include_empty,omitempty" doc:"Include forts with no active subject. Omit to include them (defaults to TRUE, honouring the DB column default; differs from the v1 gin handler which defaulted false)."`
+	ChangeTypes  []string `json:"change_types,omitempty" doc:"Edit kinds to alert on; subset of: location|new|removal|image_url|name|description. Omit (or empty) to match ANY change type (stored as the empty array [] = any)."`
 
 	// Common fields. fort has NO clean column ⇒ no clean/edit/summary here.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Fort converts a strict v2 fort rule into the stored FortTrackingAPI.

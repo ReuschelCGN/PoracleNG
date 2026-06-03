@@ -81,21 +81,21 @@ func typeNameToID(gd *gamedata.GameData) map[string]int {
 // (Pokestop-event rows live in the SAME table but are addressed via the separate
 // /incident endpoint; see v2_incident.go.)
 type v2InvasionRule struct {
-	TypeID     *int    `json:"type_id,omitempty" doc:"Pokemon type id (1-18); grunt_type resolves to that type's lowercased name. Mutually exclusive with grunt_id/everything/boss."`
-	GruntID    *int    `json:"grunt_id,omitempty" doc:"Game-master grunt id; resolves to its type name and implies its own gender. Mutually exclusive with type_id/everything/boss; gender not allowed."`
-	Everything *bool   `json:"everything,omitempty" doc:"Match every invasion (stored grunt_type \"everything\"). Mutually exclusive with the others; gender not allowed."`
-	Boss       *bool   `json:"boss,omitempty" doc:"Match only boss encounters (stored grunt_type \"boss\"). Mutually exclusive with the others; gender not allowed."`
-	Gender     *string `json:"gender,omitempty" enum:"any,male,female" doc:"Grunt gender filter: any|male|female (default any). ONLY valid with type_id."`
+	TypeID     *int    `json:"type_id,omitempty" doc:"Pokemon type id (1-18); grunt_type resolves to that type's lowercased name. EXACTLY ONE mode field required — set this OR grunt_id OR everything OR boss (not omitted-to-wildcard; use everything for the catch-all). Mutually exclusive with grunt_id/everything/boss."`
+	GruntID    *int    `json:"grunt_id,omitempty" doc:"Game-master grunt id; resolves to its type name and implies its own gender. One-of mode field. Mutually exclusive with type_id/everything/boss; gender not allowed."`
+	Everything *bool   `json:"everything,omitempty" doc:"Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). This is the 'any invasion' selector — there is no omit-to-wildcard on invasion (exactly one mode field must be set). Mutually exclusive with the others; gender not allowed."`
+	Boss       *bool   `json:"boss,omitempty" doc:"Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed."`
+	Gender     *string `json:"gender,omitempty" enum:"any,male,female" doc:"Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id."`
 
 	// Common fields. invasion HAS a clean column ⇒ clean/edit/summary apply.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Invasion converts a strict v2 invasion rule into the stored

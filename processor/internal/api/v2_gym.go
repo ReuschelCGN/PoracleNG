@@ -18,21 +18,21 @@ import (
 // valueOr). gym has a clean column, so clean/edit/summary bools pack into the
 // bitmask. ping is server-managed (not a caller input).
 type v2GymRule struct {
-	Team string `json:"team" required:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Required team: harmony|mystic|valor|instinct|any (0|1|2|3|4)"`
+	Team string `json:"team" required:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Required controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4; no wildcard — required). Use 'any' to match regardless of team (stored as 4)."`
 
-	SlotChanges   *bool   `json:"slot_changes,omitempty" doc:"Alert on slot (defender count) changes (default false)"`
-	BattleChanges *bool   `json:"battle_changes,omitempty" doc:"Alert on battle (in-progress) changes (default false)"`
-	GymID         *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id; null/empty = any (default any)"`
+	SlotChanges   *bool   `json:"slot_changes,omitempty" doc:"Alert on slot (defender count) changes. Omit to disable (default false)."`
+	BattleChanges *bool   `json:"battle_changes,omitempty" doc:"Alert on battle (in-progress) changes. Omit to disable (default false)."`
+	GymID         *string `json:"gym_id,omitempty" doc:"Restrict to a specific gym id. Omit (or empty/null) to match any gym (stored as null)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Gym converts a strict v2 gym rule into the stored GymTrackingAPI,

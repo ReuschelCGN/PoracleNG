@@ -20,23 +20,23 @@ import (
 // pokemon_id, level, move, evolution all default to 9000 (the "any / by level"
 // sentinel the engine uses), per the field audit maxbattle table.
 type v2MaxbattleRule struct {
-	PokemonID *int    `json:"pokemon_id,omitempty" doc:"Pokédex id; 9000 = track by level (default 9000)"`
-	Level     *int    `json:"level,omitempty" doc:"Max battle level; 9000 = any. Required (>= 1) when pokemon_id is 9000 (default 9000)"`
-	Form      *int    `json:"form,omitempty" doc:"Form id; 0 = any (default 0)"`
-	Move      *int    `json:"move,omitempty" doc:"Charge move id; 9000 = any (default 9000)"`
-	Gmax      *bool   `json:"gmax,omitempty" doc:"Gigantamax only (default false)"`
-	Evolution *int    `json:"evolution,omitempty" doc:"Evolution id; 9000 = any (default 9000)"`
-	StationID *string `json:"station_id,omitempty" doc:"Restrict to a specific station id (default none)"`
+	PokemonID *int    `json:"pokemon_id,omitempty" doc:"Pokédex id of the max boss. Omit to track by battle level rather than a specific boss (stored as 9000 = the project-wide 'any/track-by-level' sentinel). When set to a specific id, level is ignored (forced to the 9000 sentinel)."`
+	Level     *int    `json:"level,omitempty" doc:"Max battle tier. ONLY consulted when pokemon_id is omitted/9000 (track-by-level mode), where a concrete tier (>= 1, or 90 = all tiers) is required. With a specific pokemon_id, level is ignored and stored as the 9000 sentinel ('level unused')."`
+	Form      *int    `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
+	Move      *int    `json:"move,omitempty" doc:"Charge move id (game-master). Omit to match any move (stored as 9000 = the project-wide 'any' sentinel)."`
+	Gmax      *bool   `json:"gmax,omitempty" doc:"Match Gigantamax only. Omit to match regardless (default false)."`
+	Evolution *int    `json:"evolution,omitempty" doc:"Evolution id (game-master). Omit to match any evolution (stored as 9000 = the project-wide 'any' sentinel)."`
+	StationID *string `json:"station_id,omitempty" doc:"Restrict to a specific power-spot station id. Omit (or empty/null) to match any station (stored as null)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Maxbattle converts a strict v2 maxbattle rule into the stored

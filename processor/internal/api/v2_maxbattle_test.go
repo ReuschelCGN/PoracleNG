@@ -122,6 +122,21 @@ func TestV2Maxbattle_RejectsByLevelWithoutLevel(t *testing.T) {
 	}
 }
 
+// Omitting pokemon_id entirely must store the 9000 track-by-level sentinel
+// (locks the omit-to-wildcard contract for the pokemon_id field).
+func TestV2Maxbattle_OmittedPokemonIDStoresSentinel(t *testing.T) {
+	r, ms, _, restore := newV2MaxbattleTestAPI(t)
+	defer restore()
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/maxbattle", `[{"level":5}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("omitted pokemon_id with a valid level should be accepted, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := ms.AllRows()
+	if len(rows) != 1 || rows[0].PokemonID != 9000 || rows[0].Level != 5 {
+		t.Fatalf("omitted pokemon_id must store 9000 (track-by-level) with level=5, got %+v", rows)
+	}
+}
+
 func TestV2Maxbattle_ByPokemonForcesLevelSentinel(t *testing.T) {
 	r, ms, _, restore := newV2MaxbattleTestAPI(t)
 	defer restore()

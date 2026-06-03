@@ -14,19 +14,19 @@ import (
 // valueOr); there is no required field. No enums. Defaults come from the field
 // audit nest table. ping is server-managed (not a caller input).
 type v2NestRule struct {
-	PokemonID   *int `json:"pokemon_id,omitempty" doc:"Pokédex id; 0 = any (default 0)"`
-	Form        *int `json:"form,omitempty" doc:"Form id; 0 = any (default 0)"`
-	MinSpawnAvg *int `json:"min_spawn_avg,omitempty" doc:"Minimum spawn average to alert on (default 0)"`
+	PokemonID   *int `json:"pokemon_id,omitempty" doc:"Pokédex id of the nesting species. Omit to match any species (stored as 0 = any)."`
+	Form        *int `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
+	MinSpawnAvg *int `json:"min_spawn_avg,omitempty" doc:"Minimum hourly spawn average to alert on. Omit to impose no minimum (stored as 0 = any)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Nest converts a strict v2 nest rule into the stored NestTrackingAPI,

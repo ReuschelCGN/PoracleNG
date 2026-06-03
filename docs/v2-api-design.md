@@ -84,6 +84,30 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 - Integers for game-master IDs and numeric ranges; booleans for flags; string enums for fixed categories; strings for free text/ids.
 - All filter fields are **optional with documented defaults** unless marked **required**. Omitting a range field means "no constraint" at its documented default.
 
+### Wildcard & sentinel conventions
+
+**Request rule: to match "any", OMIT the field — never send the magic number.** A clean v2 client should not have to know the internal sentinel values. Every optional filter field, when omitted, is materialised to the engine's documented wildcard/sentinel by the handler. The OpenAPI `description` of each such field states both the omit-to-wildcard behaviour *and* the stored sentinel + its meaning (so the value is legible if you do read one back). You may still send the sentinel explicitly — it round-trips — but you never need to.
+
+The sentinels (verified against the matcher's "match any" semantics):
+
+| sentinel | meaning | where it appears |
+|---|---|---|
+| `9000` | project-wide "any / track-by-level" — the engine treats this id/level/move/evolution as "match anything" | raid & maxbattle `pokemon_id`, `move`, `evolution`; raid/maxbattle `level` (when a specific `pokemon_id` is set, `level` is ignored and stored as `9000`; in track-by-level mode the "all tiers" value is `90`, not `9000`) |
+| `-1` | "no lower bound / any" | pokemon `min_iv`, `rarity`, `size` |
+| `100` / `55` / `15` / `6` / `5` | the ceiling of the range, i.e. "no upper bound" | pokemon `max_iv` (100), `max_level` (55), `max_atk`/`max_def`/`max_sta` (15), `max_rarity` (6), `max_size` (5) |
+| `4096` | "no upper rank limit" (PVP ranks never exceed it) | pokemon `pvp_ranking_worst` |
+| `9000000` | "no upper weight" | pokemon `max_weight` |
+| `0` | context-dependent "any / none / no floor" — e.g. `form` 0 = any form, `pvp_ranking_league` 0 = IV-mode (no PVP), nest `pokemon_id`/`min_spawn_avg` 0 = any | most types |
+| `0` (distance) | **NOT zero metres** — `distance` 0 means "match by the profile's geofence AREAS instead of a radius". A positive `distance` switches to a haversine radius. | common field, all types |
+
+**Catch-all selectors** (not omit-to-wildcard — set explicitly):
+
+- **invasion** uses an exactly-one-of mode model (`type_id` | `grunt_id` | `everything` | `boss`); there is no omit-to-wildcard. `everything: true` matches **every** invasion; `boss: true` matches only boss encounters.
+- **fort** `fort_type` defaults to the catch-all string `"everything"` (matches all fort types) on omission — this one IS omit-to-wildcard, mirroring the DB column default. `change_types` empty/omitted = match any change type.
+- **lure** `lure_id` is required, but the in-set value `0` is the "any lure type" wildcard — send `0` explicitly (a required field has no omit-to-wildcard).
+
+(Symmetric **response-side** behaviour — emitting `null` for a stored wildcard so reads don't echo the magic number — is handled separately; see the response conventions added in Part B.)
+
 ### Common fields (most tracking types)
 
 | field | type | notes |

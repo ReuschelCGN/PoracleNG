@@ -22,21 +22,21 @@ import (
 // distinguishing behaviour of quest tracking. quest also carries the clean/edit
 // lifecycle bits, all packed into the clean column.
 type v2QuestRule struct {
-	RewardType int   `json:"reward_type" required:"true" doc:"Reward category; one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required)"`
-	Reward     *int  `json:"reward,omitempty" doc:"Reward selector; 0 = any. Meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12) (default 0)"`
-	Form       *int  `json:"form,omitempty" doc:"Form id; 0 = any. Meaningful when reward_type=7 (pokemon) (default 0)"`
-	Shiny      *bool `json:"shiny,omitempty" doc:"Only alert on shiny-possible quest rewards (default false)"`
-	Amount     *int  `json:"amount,omitempty" doc:"Minimum reward amount; 0 = any. Meaningful for reward_type 2/4/12 (default 0)"`
+	RewardType int   `json:"reward_type" required:"true" doc:"Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required)."`
+	Reward     *int  `json:"reward,omitempty" doc:"Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any)."`
+	Form       *int  `json:"form,omitempty" doc:"Form id (game-master), meaningful when reward_type=7 (pokemon). Omit to match any form (stored as 0 = any)."`
+	Shiny      *bool `json:"shiny,omitempty" doc:"Match shiny-possible quest rewards only. Omit to match regardless (default false)."`
+	Amount     *int  `json:"amount,omitempty" doc:"Minimum reward amount, meaningful for reward_type 2/4/12. Omit to impose no minimum (stored as 0 = any)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // translateV2Quest converts a strict v2 quest rule into the stored

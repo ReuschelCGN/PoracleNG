@@ -272,22 +272,37 @@ func TestV2Pokemon_DefaultsOnOmission(t *testing.T) {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
 	row := rows[0]
+	// Every wildcard/sentinel field is asserted here so the omit-to-wildcard
+	// contract (requirement #1: omitting a filter matches "any") is locked.
 	checks := map[string]struct{ got, want int }{
-		"min_iv":    {row.MinIV, -1},
-		"max_iv":    {row.MaxIV, 100},
-		"max_cp":    {row.MaxCP, 9000},
-		"max_level": {row.MaxLevel, 55},
-		"max_atk":   {row.MaxATK, 15},
-		"max_weight": {row.MaxWeight, 9000000},
-		"rarity":    {row.Rarity, -1},
-		"max_rarity": {row.MaxRarity, 6},
-		"size":      {row.Size, -1},
-		"max_size":  {row.MaxSize, 5},
-		"pvp_best":  {row.PVPRankingBest, 1},
-		"pvp_worst": {row.PVPRankingWorst, 4096},
-		"gender":    {row.Gender, 0},
-		"clean":     {row.Clean, 0},
-		"distance":  {row.Distance, 0},
+		"form":             {row.Form, 0},
+		"min_iv":           {row.MinIV, -1},   // -1 = no lower bound
+		"max_iv":           {row.MaxIV, 100},  // 100 = the IV ceiling
+		"min_cp":           {row.MinCP, 0},
+		"max_cp":           {row.MaxCP, 9000}, // 9000 = CP cap sentinel
+		"min_level":        {row.MinLevel, 0},
+		"max_level":        {row.MaxLevel, 55}, // 55 = level ceiling
+		"atk":              {row.ATK, 0},
+		"def":              {row.DEF, 0},
+		"sta":              {row.STA, 0},
+		"max_atk":          {row.MaxATK, 15}, // 15 = IV ceiling
+		"max_def":          {row.MaxDEF, 15},
+		"max_sta":          {row.MaxSTA, 15},
+		"min_weight":       {row.MinWeight, 0},
+		"max_weight":       {row.MaxWeight, 9000000}, // 9000000 = no upper weight
+		"min_time":         {row.MinTime, 0},
+		"rarity":           {row.Rarity, -1}, // -1 = any
+		"max_rarity":       {row.MaxRarity, 6},
+		"size":             {row.Size, -1}, // -1 = any
+		"max_size":         {row.MaxSize, 5},
+		"pvp_league":       {row.PVPRankingLeague, 0}, // 0 = none/IV mode
+		"pvp_best":         {row.PVPRankingBest, 1},
+		"pvp_worst":        {row.PVPRankingWorst, 4096}, // 4096 = no upper rank limit
+		"pvp_min_cp":       {row.PVPRankingMinCP, 0},
+		"pvp_cap":          {row.PVPRankingCap, 0}, // 0 = league default
+		"gender":           {row.Gender, 0},
+		"clean":            {row.Clean, 0},
+		"distance":         {row.Distance, 0},
 	}
 	for name, c := range checks {
 		if c.got != c.want {

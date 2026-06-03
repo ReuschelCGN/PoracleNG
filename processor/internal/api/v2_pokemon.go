@@ -22,53 +22,53 @@ import (
 type v2PokemonRule struct {
 	PokemonID int `json:"pokemon_id" required:"true" doc:"Pokédex id (required)"`
 
-	Form *int `json:"form,omitempty" doc:"Form id; 0 = any (default 0)"`
+	Form *int `json:"form,omitempty" doc:"Form id (game-master). Omit to match any form (stored as 0 = any)."`
 
-	MinIV *int `json:"min_iv,omitempty" doc:"Minimum IV %; -1 = no lower bound (default -1)"`
-	MaxIV *int `json:"max_iv,omitempty" doc:"Maximum IV % (default 100)"`
+	MinIV *int `json:"min_iv,omitempty" doc:"Minimum IV %. Omit to impose no lower bound (stored as -1 = no lower bound)."`
+	MaxIV *int `json:"max_iv,omitempty" doc:"Maximum IV %. Omit to impose no upper bound (stored as 100 = the IV ceiling, i.e. no upper bound)."`
 
-	MinCP *int `json:"min_cp,omitempty" doc:"Minimum CP (default 0)"`
-	MaxCP *int `json:"max_cp,omitempty" doc:"Maximum CP (default 9000)"`
+	MinCP *int `json:"min_cp,omitempty" doc:"Minimum CP. Omit to impose no lower bound (stored as 0 = no lower bound)."`
+	MaxCP *int `json:"max_cp,omitempty" doc:"Maximum CP. Omit to impose no upper bound (stored as 9000 = the CP cap sentinel, i.e. no upper bound)."`
 
-	MinLevel *int `json:"min_level,omitempty" doc:"Minimum level (default 0)"`
-	MaxLevel *int `json:"max_level,omitempty" doc:"Maximum level (default 55)"`
+	MinLevel *int `json:"min_level,omitempty" doc:"Minimum encounter level. Omit to impose no lower bound (stored as 0 = no lower bound)."`
+	MaxLevel *int `json:"max_level,omitempty" doc:"Maximum encounter level. Omit to impose no upper bound (stored as 55 = the level ceiling, i.e. no upper bound)."`
 
-	ATK *int `json:"atk,omitempty" doc:"Minimum ATK IV 0-15 (default 0)"`
-	DEF *int `json:"def,omitempty" doc:"Minimum DEF IV 0-15 (default 0)"`
-	STA *int `json:"sta,omitempty" doc:"Minimum STA IV 0-15 (default 0)"`
+	ATK *int `json:"atk,omitempty" doc:"Minimum ATK IV (0-15). Omit to impose no floor (stored as 0 = no floor)."`
+	DEF *int `json:"def,omitempty" doc:"Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor)."`
+	STA *int `json:"sta,omitempty" doc:"Minimum STA IV (0-15). Omit to impose no floor (stored as 0 = no floor)."`
 
-	MaxATK *int `json:"max_atk,omitempty" doc:"Maximum ATK IV 0-15 (default 15)"`
-	MaxDEF *int `json:"max_def,omitempty" doc:"Maximum DEF IV 0-15 (default 15)"`
-	MaxSTA *int `json:"max_sta,omitempty" doc:"Maximum STA IV 0-15 (default 15)"`
+	MaxATK *int `json:"max_atk,omitempty" doc:"Maximum ATK IV (0-15). Omit to impose no ceiling (stored as 15 = the IV ceiling, i.e. no upper bound)."`
+	MaxDEF *int `json:"max_def,omitempty" doc:"Maximum DEF IV (0-15). Omit to impose no ceiling (stored as 15 = the IV ceiling, i.e. no upper bound)."`
+	MaxSTA *int `json:"max_sta,omitempty" doc:"Maximum STA IV (0-15). Omit to impose no ceiling (stored as 15 = the IV ceiling, i.e. no upper bound)."`
 
-	Gender *string `json:"gender,omitempty" enum:"any,male,female,genderless" doc:"Gender filter: any|male|female|genderless (default any)"`
+	Gender *string `json:"gender,omitempty" enum:"any,male,female,genderless" doc:"Gender filter: any|male|female|genderless. Omit to match any gender (defaults to 'any', stored as 0)."`
 
-	MinWeight *int `json:"min_weight,omitempty" doc:"Minimum weight in grams (default 0)"`
-	MaxWeight *int `json:"max_weight,omitempty" doc:"Maximum weight in grams (default 9000000)"`
+	MinWeight *int `json:"min_weight,omitempty" doc:"Minimum weight in grams. Omit to impose no lower bound (stored as 0 = no lower bound)."`
+	MaxWeight *int `json:"max_weight,omitempty" doc:"Maximum weight in grams. Omit to impose no upper bound (stored as 9000000 = no upper weight sentinel)."`
 
-	MinTime *int `json:"min_time,omitempty" doc:"Minimum seconds remaining (default 0)"`
+	MinTime *int `json:"min_time,omitempty" doc:"Minimum seconds remaining on the spawn. Omit to impose no minimum (stored as 0 = no minimum)."`
 
-	Rarity    *int `json:"rarity,omitempty" doc:"Minimum rarity; -1 = any (default -1)"`
-	MaxRarity *int `json:"max_rarity,omitempty" doc:"Maximum rarity 1-6 (default 6)"`
+	Rarity    *int `json:"rarity,omitempty" doc:"Minimum rarity tier. Omit to match any rarity (stored as -1 = any)."`
+	MaxRarity *int `json:"max_rarity,omitempty" doc:"Maximum rarity tier (1-6). Omit to impose no upper bound (stored as 6 = the top tier, i.e. no upper bound)."`
 
-	Size    *int `json:"size,omitempty" doc:"Minimum size; -1 = any (default -1)"`
-	MaxSize *int `json:"max_size,omitempty" doc:"Maximum size 1-5 (default 5)"`
+	Size    *int `json:"size,omitempty" doc:"Minimum size tier. Omit to match any size (stored as -1 = any)."`
+	MaxSize *int `json:"max_size,omitempty" doc:"Maximum size tier (1-5). Omit to impose no upper bound (stored as 5 = the top tier, i.e. no upper bound)."`
 
-	PVPRankingLeague *int `json:"pvp_ranking_league,omitempty" doc:"PVP league CP cap: 0 (none/IV mode) | 500 | 1500 | 2500 (default 0)"`
-	PVPRankingBest   *int `json:"pvp_ranking_best,omitempty" doc:"Best (lowest) PVP rank to alert on (default 1)"`
-	PVPRankingWorst  *int `json:"pvp_ranking_worst,omitempty" doc:"Worst (highest) PVP rank to alert on (default 4096)"`
-	PVPRankingMinCP  *int `json:"pvp_ranking_min_cp,omitempty" doc:"PVP CP floor (default 0)"`
-	PVPRankingCap    *int `json:"pvp_ranking_cap,omitempty" doc:"PVP level cap; 0 = league default (default 0)"`
+	PVPRankingLeague *int `json:"pvp_ranking_league,omitempty" doc:"PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode)."`
+	PVPRankingBest   *int `json:"pvp_ranking_best,omitempty" doc:"Best (lowest, 1-based) PVP rank to alert on. Omit to start from rank 1 (stored as 1 = best possible rank)."`
+	PVPRankingWorst  *int `json:"pvp_ranking_worst,omitempty" doc:"Worst (highest) PVP rank to alert on. Omit to impose no upper rank limit (stored as 4096 = no upper rank limit sentinel; PVP ranks never exceed it)."`
+	PVPRankingMinCP  *int `json:"pvp_ranking_min_cp,omitempty" doc:"PVP CP floor. Omit to impose no floor (stored as 0 = no floor)."`
+	PVPRankingCap    *int `json:"pvp_ranking_cap,omitempty" doc:"PVP level cap. Omit to use the league default cap (stored as 0 = league default)."`
 
 	// Common fields.
-	Distance *int    `json:"distance,omitempty" doc:"Radius in metres; 0 = use the profile's areas (default 0)"`
-	Template *string `json:"template,omitempty" doc:"Template name; empty = server default"`
-	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (default false)"`
-	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (default false)"`
-	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (default false)"`
+	Distance *int    `json:"distance,omitempty" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0)."`
+	Template *string `json:"template,omitempty" doc:"DTS template name. Omit (or empty) to use the server's configured default template (stored as \"\")."`
+	Clean    *bool   `json:"clean,omitempty" doc:"Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false)."`
+	Edit     *bool   `json:"edit,omitempty" doc:"Keep the message updated in place (clean bitmask bit 2). Omit to disable (default false)."`
+	Summary  *bool   `json:"summary,omitempty" doc:"Route into the summary digest (clean bitmask bit 4). Omit to disable (default false)."`
 
-	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas)"`
-	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label)"`
+	OverrideLocationLabel *string  `json:"override_location_label,omitempty" doc:"Saved-location label to use instead of the profile location (requires distance > 0; mutually exclusive with override_areas). Omit for none."`
+	OverrideAreas         []string `json:"override_areas,omitempty" doc:"Restrict this rule to these geofence areas (mutually exclusive with distance > 0 and override_location_label). Omit for none."`
 }
 
 // valueOr returns *p when p is non-nil, else def. The strict-default helper.
