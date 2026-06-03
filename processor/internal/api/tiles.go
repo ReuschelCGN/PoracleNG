@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -303,103 +301,6 @@ func HandleWeatherMap(deps TileDeps) gin.HandlerFunc {
 
 		tileURL := deps.StaticMap.GetPregeneratedTileURL("weather", data, "staticMap")
 		tileJSONOK(c, tileURL)
-	}
-}
-
-// HandleGeofenceAll returns all geofence data.
-// GET /api/geofence/all
-func HandleGeofenceAll(stateMgr *state.Manager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		st := stateMgr.Get()
-		c.JSON(http.StatusOK, gin.H{
-			"status":   "ok",
-			"geofence": st.Fences,
-		})
-	}
-}
-
-// HandleGeofenceHash returns MD5 hashes of each geofence path.
-// GET /api/geofence/all/hash
-func HandleGeofenceHash(stateMgr *state.Manager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		st := stateMgr.Get()
-		areas := make(map[string]string, len(st.Fences))
-		for _, f := range st.Fences {
-			pathJSON, _ := json.Marshal(f.Path)
-			areas[f.Name] = fmt.Sprintf("%x", md5.Sum(pathJSON))
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"areas":  areas,
-		})
-	}
-}
-
-// HandleGeofenceGeoJSON returns geofences as a GeoJSON FeatureCollection.
-// GET /api/geofence/all/geojson
-func HandleGeofenceGeoJSON(stateMgr *state.Manager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		st := stateMgr.Get()
-
-		features := make([]map[string]any, 0, len(st.Fences))
-		for _, f := range st.Fences {
-			properties := map[string]any{
-				"name":             f.Name,
-				"color":            f.Color,
-				"id":               f.ID,
-				"group":            f.Group,
-				"description":      f.Description,
-				"userSelectable":   f.UserSelectable,
-				"displayInMatches": f.DisplayInMatches,
-			}
-
-			var geomType string
-			var coordinates any
-
-			if len(f.Multipath) > 0 {
-				geomType = "MultiPolygon"
-				// GeoJSON MultiPolygon: [ [ [ring] ], [ [ring] ], ... ]
-				multiCoords := make([][][][2]float64, len(f.Multipath))
-				for i, subpath := range f.Multipath {
-					ring := make([][2]float64, len(subpath))
-					for j, coord := range subpath {
-						ring[j] = [2]float64{coord[1], coord[0]} // GeoJSON is [lon, lat]
-					}
-					if len(ring) > 0 && ring[len(ring)-1] != ring[0] {
-						ring = append(ring, ring[0])
-					}
-					multiCoords[i] = [][][2]float64{ring}
-				}
-				coordinates = multiCoords
-			} else {
-				geomType = "Polygon"
-				ring := make([][2]float64, len(f.Path))
-				for i, coord := range f.Path {
-					ring[i] = [2]float64{coord[1], coord[0]} // GeoJSON is [lon, lat]
-				}
-				if len(ring) > 0 && ring[len(ring)-1] != ring[0] {
-					ring = append(ring, ring[0])
-				}
-				coordinates = [][][2]float64{ring}
-			}
-
-			features = append(features, map[string]any{
-				"type":       "Feature",
-				"properties": properties,
-				"geometry": map[string]any{
-					"type":        geomType,
-					"coordinates": coordinates,
-				},
-			})
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"geoJSON": map[string]any{
-				"type":     "FeatureCollection",
-				"features": features,
-			},
-		})
 	}
 }
 

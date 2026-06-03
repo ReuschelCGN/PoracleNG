@@ -365,10 +365,13 @@ func main() {
 		ImgUicons: proc.enricher.ImgUicons,
 		Weather:   proc.weather,
 	}
+	// Geofence data reads (migrated to huma, in place — same paths, same
+	// {status, X} bodies, problem+json errors). Registered at full paths
+	// relative to /api. The tile routes below stay on gin.
+	api.RegisterGeofenceHash(humaAPI, stateMgr)
+	api.RegisterGeofenceGeoJSON(humaAPI, stateMgr)
+	api.RegisterGeofenceAll(humaAPI, stateMgr)
 	geofence := apiGroup.Group("/geofence")
-	geofence.GET("/all/hash", api.HandleGeofenceHash(stateMgr))
-	geofence.GET("/all/geojson", api.HandleGeofenceGeoJSON(stateMgr))
-	geofence.GET("/all", api.HandleGeofenceAll(stateMgr))
 	geofence.GET("/weatherMap/:lat/:lon", api.HandleWeatherMap(tileDeps))
 	geofence.GET("/locationMap/:lat/:lon", api.HandleLocationMap(tileDeps))
 	geofence.GET("/distanceMap/:lat/:lon/:distance", api.HandleDistanceMap(tileDeps))
@@ -566,16 +569,20 @@ func main() {
 			proc.triggerReload()
 		},
 	}
-	apiGroup.GET("/config/schema", api.HandleConfigSchema())
+	// Config schema (migrated to huma, in place — same {status, sections} body).
+	api.RegisterConfigSchema(humaAPI)
 	apiGroup.GET("/config/values", api.HandleConfigValues(configDeps))
 	apiGroup.POST("/config/values", api.HandleConfigSave(configDeps))
 	apiGroup.POST("/config/validate", api.HandleConfigValidate(configDeps))
-	apiGroup.GET("/masterdata/monsters", api.HandleMasterdataMonsters(proc.enricher.GameData, proc.enricher.Translations))
-	apiGroup.GET("/masterdata/grunts", api.HandleMasterdataGrunts(proc.enricher.GameData))
+	// Masterdata reads (migrated to huma, in place — typed maps re-marshalled to
+	// the same JSON the gin handlers produced).
+	api.RegisterMasterdataMonsters(humaAPI, proc.enricher.GameData, proc.enricher.Translations)
+	api.RegisterMasterdataGrunts(humaAPI, proc.enricher.GameData)
 
-	// Snapshot inspection — admin-only via the api_secret middleware. Returns
-	// 503 if [snapshots] enabled = false. See docs/buttons-and-snapshots/.
-	apiGroup.GET("/snapshots/:messageID", api.HandleSnapshotGet(proc.snapshotStore))
+	// Snapshot inspection (migrated to huma, in place) — admin-only via the
+	// api_secret middleware. Returns 503 if [snapshots] enabled = false; 404 on
+	// a miss. See docs/buttons-and-snapshots/.
+	api.RegisterSnapshotGet(humaAPI, proc.snapshotStore)
 
 	// Button action registry — config editor reads this to surface the
 	// dropdown of action choices + their accepted scopes/params.
