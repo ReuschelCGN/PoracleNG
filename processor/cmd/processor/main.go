@@ -1026,12 +1026,13 @@ func main() {
 		resolveDeps.TelegramAPI = telegramBot.API()
 	}
 	apiGroup.POST("/resolve", api.HandleResolve(resolveDeps))
-	apiGroup.POST("/autocreate/run", handleAutocreateRun(cfg, discordBot))
+	// autocreate run / delete-template / templates-schema migrated to huma,
+	// in place — same paths, same success JSON, problem+json errors. The
+	// templates GET/POST + validate endpoints stay on gin (raw-JSON bodies).
+	registerAutocreateHuma(humaAPI, cfg, discordBot)
 	apiGroup.GET("/autocreate/templates", handleGetChannelTemplates(cfg))
 	apiGroup.POST("/autocreate/templates", handlePostChannelTemplates(cfg))
 	apiGroup.POST("/autocreate/templates/validate", handleValidateChannelTemplates())
-	apiGroup.DELETE("/autocreate/templates/:name", handleDeleteChannelTemplate(cfg))
-	apiGroup.GET("/autocreate/templates/schema", handleGetChannelTemplatesSchema())
 
 	// Backup-cleanup sweeper: walks config/backups/ on startup and every
 	// 24h, removes files older than the retention window.

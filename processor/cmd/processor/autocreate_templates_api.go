@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 
@@ -93,46 +91,6 @@ func handleValidateChannelTemplates() gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "warnings": nonBlocking(errs)})
-	}
-}
-
-// handleDeleteChannelTemplate implements DELETE /api/autocreate/templates/:name.
-func handleDeleteChannelTemplate(cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		name := c.Param("name")
-		if name == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "template name is required"})
-			return
-		}
-		backup, err := discordbot.DeleteChannelTemplate(cfg.BaseDir, name)
-		if errors.Is(err, os.ErrNotExist) {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "template not found"})
-			return
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "backup": backup})
-	}
-}
-
-// handleGetChannelTemplatesSchema implements GET /api/autocreate/templates/schema.
-// Static metadata the editor uses to render dropdowns + permission flags.
-func handleGetChannelTemplatesSchema() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		out := channelTemplatesEnums{
-			ChannelTypes:    []string{"text", "voice"},
-			ControlTypes:    []string{"", "bot", "webhook"},
-			ButtonStyles:    []string{"primary", "secondary", "success", "danger"},
-			PermissionFlags: discordbot.PermissionFlagsList(),
-			PlaceholderHelp: map[string]string{
-				"interactive": "{N} indexes args[N+1] from !autocreate <template> <args...> — note the off-by-one (args[0] is the template name itself).",
-				"bulk":        "[[autocreate.rules]] params[] elements render per-fence then become positional args in order. Whitespace inside a rendered element splits it into multiple args; \"quoted segments\" stay as one.",
-			},
-			BackupNamePrefix: "channelTemplate.json.bak.",
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "schema": out})
 	}
 }
 
