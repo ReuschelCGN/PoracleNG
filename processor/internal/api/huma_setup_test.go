@@ -12,26 +12,44 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestLegacyErrorModelSerialises(t *testing.T) {
-	InstallLegacyErrorModel()
-	err := humaNewError(http.StatusNotFound, "human not found")
-	if err.GetStatus() != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", err.GetStatus())
+// TestProblemJSONErrorModelSerialises asserts that the huma surface now uses
+// huma's default RFC 9457 problem+json error model: a numeric "status", a
+// "title", an "errors" array, and NOT the legacy {"status":"error"} envelope.
+func TestProblemJSONErrorModelSerialises(t *testing.T) {
+	r, _ := buildSchemaTestAPI(t)
+
+	// Send a string where an integer is expected; huma produces a 422.
+	req := httptest.NewRequest(http.MethodPost, "/api/schema-test",
+		strings.NewReader(`{"value":"not-an-int"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
 	}
-	b, e := json.Marshal(err)
-	if e != nil {
-		t.Fatalf("marshal: %v", e)
-	}
+
 	var got map[string]any
-	_ = json.Unmarshal(b, &got)
-	if got["status"] != "error" {
-		t.Errorf("status field = %v, want \"error\"", got["status"])
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error body: %v", err)
 	}
-	if got["message"] != "human not found" {
-		t.Errorf("message field = %v, want \"human not found\"", got["message"])
+
+	// status must be a JSON number (422), not the legacy string "error".
+	statusNum, ok := got["status"].(float64)
+	if !ok {
+		t.Fatalf("status field = %v (%T), want JSON number 422", got["status"], got["status"])
 	}
-	if _, hasTitle := got["title"]; hasTitle {
-		t.Errorf("legacy body must not contain RFC9457 \"title\" field: %s", b)
+	if statusNum != float64(http.StatusUnprocessableEntity) {
+		t.Errorf("status = %v, want %d", statusNum, http.StatusUnprocessableEntity)
+	}
+	if got["status"] == "error" {
+		t.Errorf("body must not use legacy {status:\"error\"} envelope: %v", got)
+	}
+	if _, hasTitle := got["title"]; !hasTitle {
+		t.Errorf("problem+json body must contain a \"title\" field: %v", got)
+	}
+	if _, hasErrors := got["errors"]; !hasErrors {
+		t.Errorf("problem+json body must contain an \"errors\" array: %v", got)
 	}
 }
 
@@ -118,7 +136,8 @@ func TestNoSchemaLeakInSuccessBody(t *testing.T) {
 }
 
 // TestNoSchemaLeakInErrorBody triggers a 422 (invalid body type) and asserts
-// that the error envelope has ONLY "status" and "message" keys — no "$schema".
+// that the problem+json error body carries no "$schema" field while still
+// presenting the RFC 9457 shape (numeric "status", "title", "errors").
 func TestNoSchemaLeakInErrorBody(t *testing.T) {
 	r, _ := buildSchemaTestAPI(t)
 
@@ -140,23 +159,25 @@ func TestNoSchemaLeakInErrorBody(t *testing.T) {
 	if _, hasSchema := got["$schema"]; hasSchema {
 		t.Errorf("error body must not contain $schema field; full body: %v", got)
 	}
-	if got["status"] != "error" {
-		t.Errorf("status = %v, want \"error\"", got["status"])
+	// problem+json shape: numeric status (not legacy "error"), title, errors.
+	if _, ok := got["status"].(float64); !ok {
+		t.Errorf("status = %v (%T), want JSON number; full body: %v", got["status"], got["status"], got)
 	}
-	if _, hasMsg := got["message"]; !hasMsg {
-		t.Errorf("error body must contain message field; full body: %v", got)
+	if got["status"] == "error" {
+		t.Errorf("error body must not use legacy {status:\"error\"} envelope: %v", got)
 	}
-	// Exact two-key shape: only "status" and "message".
-	for k := range got {
-		if k != "status" && k != "message" {
-			t.Errorf("unexpected key %q in error body; full body: %v", k, got)
-		}
+	if _, hasTitle := got["title"]; !hasTitle {
+		t.Errorf("error body must contain title field; full body: %v", got)
+	}
+	if _, hasErrors := got["errors"]; !hasErrors {
+		t.Errorf("error body must contain errors field; full body: %v", got)
 	}
 }
 
-// TestValidationMessageIncludesFieldDetail asserts that a 422 error message
-// is not the bare "validation failed" string — it must contain per-field
-// detail so that API clients can understand which field was invalid.
+// TestValidationMessageIncludesFieldDetail asserts that a 422 problem+json body
+// carries per-field detail in errors[], so API clients can understand which
+// field was invalid. Per RFC 9457, that lives in errors[].location /
+// errors[].message rather than a flat message string.
 func TestValidationMessageIncludesFieldDetail(t *testing.T) {
 	r, _ := buildSchemaTestAPI(t)
 
@@ -171,17 +192,27 @@ func TestValidationMessageIncludesFieldDetail(t *testing.T) {
 	}
 
 	var got struct {
-		Message string `json:"message"`
+		Detail string `json:"detail"`
+		Errors []struct {
+			Message  string `json:"message"`
+			Location string `json:"location"`
+		} `json:"errors"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode error body: %v", err)
 	}
-	if got.Message == "validation failed" {
-		t.Errorf("message is bare %q — must include field-level detail", got.Message)
+	if len(got.Errors) == 0 {
+		t.Fatalf("problem+json body must include errors[]; full body: %s", w.Body.String())
 	}
-	// The offending field name ("value") or its location ("body.value") must
-	// appear somewhere in the message.
-	if !strings.Contains(got.Message, "value") {
-		t.Errorf("message %q does not mention the offending field \"value\"", got.Message)
+	// The offending field's location ("body.value") must appear in errors[].
+	foundField := false
+	for _, e := range got.Errors {
+		if strings.Contains(e.Location, "value") || strings.Contains(e.Message, "value") {
+			foundField = true
+			break
+		}
+	}
+	if !foundField {
+		t.Errorf("errors[] do not mention the offending field \"value\"; full body: %s", w.Body.String())
 	}
 }

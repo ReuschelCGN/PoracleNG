@@ -3,68 +3,31 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 )
 
-// legacyError is the wire shape PoracleWeb/ReactMap already expect from /api.
-// It implements huma.StatusError so huma uses it for every generated error.
-type legacyError struct {
-	StatusCode int    `json:"-"`
-	Status     string `json:"status"`  // always "error"
-	Message    string `json:"message"` // human-readable detail
-}
-
-func (e *legacyError) Error() string  { return e.Message }
-func (e *legacyError) GetStatus() int { return e.StatusCode }
-
-// humaNewError is the value we assign into huma.NewError; kept as a named
-// package func so tests can call it directly.
-//
-// When errs are present their per-field detail strings are appended to msg so
-// that 422 responses are informative rather than the opaque "validation
-// failed". The envelope shape ({status, message}) is never altered — we only
-// enrich the message text.
+// humaNewError is a thin pass-through to huma.NewError, kept as a named package
+// func so existing call sites compile unchanged. The huma surface now emits
+// huma's default RFC 9457 problem+json error model — no legacy override.
 func humaNewError(status int, msg string, errs ...error) huma.StatusError {
-	if msg == "" {
-		msg = http.StatusText(status)
-	}
-	if len(errs) > 0 {
-		parts := make([]string, 0, len(errs))
-		for _, e := range errs {
-			if e != nil {
-				parts = append(parts, e.Error())
-			}
-		}
-		if len(parts) > 0 {
-			msg = msg + ": " + strings.Join(parts, "; ")
-		}
-	}
-	return &legacyError{StatusCode: status, Status: "error", Message: msg}
+	return huma.NewError(status, msg, errs...)
 }
 
-// InstallLegacyErrorModel overrides huma's RFC-9457 error model with the
-// legacy {status,message} envelope. Call once at startup before registering.
-func InstallLegacyErrorModel() {
-	huma.NewError = humaNewError
-}
-
-// NewHumaAPI installs the legacy error model, builds a huma API bound to the
-// authenticated /api group, declares the X-Poracle-Secret security scheme, and
-// serves the OpenAPI spec + docs UI at PUBLIC top-level paths (no secret).
+// NewHumaAPI builds a huma API bound to the authenticated /api group, declares
+// the X-Poracle-Secret security scheme, and serves the OpenAPI spec + docs UI
+// at PUBLIC top-level paths (no secret). Errors use huma's default RFC 9457
+// problem+json model.
 func NewHumaAPI(r *gin.Engine, apiGroup *gin.RouterGroup, version string) huma.API {
-	InstallLegacyErrorModel()
-
 	cfg := huma.DefaultConfig("PoracleNG API", version)
 
 	// DefaultConfig registers a SchemaLinkTransformer via CreateHooks that
 	// injects a "$schema" field into every response body at runtime. This
 	// breaks byte-compatibility with existing clients (PoracleWeb, ReactMap)
-	// that expect exactly {"status":"ok",...} or {"status":"error","message":"..."}.
-	// Clear the hooks before NewWithGroup runs them so the transformer is
+	// that expect exactly {"status":"ok",...} on success bodies. Clear the
+	// hooks before NewWithGroup runs them so the transformer is
 	// never installed. The OpenAPI document itself is unaffected — the
 	// transformer only mutates live response bodies, not the spec.
 	cfg.CreateHooks = nil

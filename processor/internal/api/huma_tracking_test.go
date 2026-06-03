@@ -53,7 +53,7 @@ func buildHumaTestEngine(t *testing.T, humans store.HumanStore, withRecovery boo
 // TestHumaTrackingMonster_404_UnknownUser proves:
 // 1. The huma endpoint is reachable at /api/tracking/pokemon/{id}.
 // 2. The path parameter binds correctly.
-// 3. An unknown user produces the legacy {"status":"error","message":"User not found"} envelope.
+// 3. An unknown user produces a problem+json 404 (numeric status, detail).
 func TestHumaTrackingMonster_404_UnknownUser(t *testing.T) {
 	// Empty store — GetLite returns nil for any id.
 	mock := store.NewMockHumanStore()
@@ -71,17 +71,11 @@ func TestHumaTrackingMonster_404_UnknownUser(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if got["status"] != "error" {
-		t.Errorf("status = %v, want \"error\"", got["status"])
+	if s, _ := got["status"].(float64); s != float64(http.StatusNotFound) {
+		t.Errorf("status = %v, want %d", got["status"], http.StatusNotFound)
 	}
-	if got["message"] != "User not found" {
-		t.Errorf("message = %v, want \"User not found\"", got["message"])
-	}
-	// Strict shape: only "status" and "message" — no RFC-9457 fields.
-	for k := range got {
-		if k != "status" && k != "message" {
-			t.Errorf("unexpected key %q in 404 body: %v", k, got)
-		}
+	if got["detail"] != "User not found" {
+		t.Errorf("detail = %v, want \"User not found\"", got["detail"])
 	}
 }
 

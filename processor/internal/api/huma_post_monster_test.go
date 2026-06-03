@@ -93,8 +93,8 @@ func mustFlexBool(t *testing.T, s string) flexBool {
 
 // ── POST validation / parse boundary tests ──────────────────────────────────
 
-// TestPostMonster_404_UnknownUser: POST to an unknown user returns 404 with
-// the legacy error envelope — proves routing, method binding, and error shape.
+// TestPostMonster_404_UnknownUser: POST to an unknown user returns a
+// problem+json 404 — proves routing, method binding, and error shape.
 func TestPostMonster_404_UnknownUser(t *testing.T) {
 	mock := store.NewMockHumanStore()
 	r := buildHumaTestEngine(t, mock, true, RegisterTrackingMonster)
@@ -114,11 +114,11 @@ func TestPostMonster_404_UnknownUser(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if got["status"] != "error" {
-		t.Errorf("status = %v, want \"error\"", got["status"])
+	if s, _ := got["status"].(float64); s != float64(http.StatusNotFound) {
+		t.Errorf("status = %v, want %d", got["status"], http.StatusNotFound)
 	}
-	if got["message"] != "User not found" {
-		t.Errorf("message = %v, want \"User not found\"", got["message"])
+	if got["detail"] != "User not found" {
+		t.Errorf("detail = %v, want \"User not found\"", got["detail"])
 	}
 }
 
