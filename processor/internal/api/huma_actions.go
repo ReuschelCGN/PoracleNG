@@ -60,12 +60,61 @@ type deliverDispatcher interface {
 	Dispatch(job *delivery.Job)
 }
 
-// deliverInput carries the freeform delivery request: an array of delivery.Job
-// whose `Message` field is a pre-rendered RawMessage. Kept open so any valid
-// job shape parses; the body is unmarshalled into the exact same []delivery.Job
-// the legacy handler used.
+// apiDeliverJob is the request DTO for a single pre-rendered delivery job. It
+// mirrors the caller-relevant fields of delivery.Job with proper types so the
+// OpenAPI document describes the request shape. The `message` field uses
+// openJSON so its schema is OPEN (arbitrary JSON object/value) rather than the
+// base64 `string`/`byte` schema huma would otherwise emit for the underlying
+// json.RawMessage — openJSON implements huma.SchemaProvider (returning an empty,
+// constraint-free schema) and captures raw bytes via its UnmarshalJSON, so the
+// pre-rendered payload round-trips verbatim into delivery.Job.Message.
+//
+// Internal-only fields of delivery.Job (StaticMapData, Language, ReplyToID,
+// BypassRateLimit, SnapshotData — all `json:"-"`) are intentionally omitted.
+type apiDeliverJob struct {
+	Target  string   `json:"target" doc:"Destination ID/URL (user, channel, thread, webhook)"`
+	Type    string   `json:"type" doc:"Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:group, telegram:channel"`
+	Message openJSON `json:"message" doc:"Pre-rendered platform message payload (arbitrary JSON object/value)"`
+	TTH     struct {
+		Days    int `json:"days,omitempty"`
+		Hours   int `json:"hours,omitempty"`
+		Minutes int `json:"minutes,omitempty"`
+		Seconds int `json:"seconds,omitempty"`
+	} `json:"tth,omitempty" doc:"Time-to-hide; when the message should be auto-deleted (with the clean bit)"`
+	Clean        int     `json:"clean,omitempty" doc:"Lifecycle bitmask: 1=clean (delete on TTH), 2=edit, 3=both"`
+	EditKey      string  `json:"editKey,omitempty" doc:"Non-empty = track for future in-place edits"`
+	ReplyKey     string  `json:"replyKey,omitempty" doc:"Non-empty = (replyKey,target) indexes the latest sent message for reply chaining"`
+	MsgType      string  `json:"msgType,omitempty" doc:"Alert type (raid, egg, pokemon, ...) for per-lifecycle-type tracking"`
+	Name         string  `json:"name,omitempty" doc:"Human-readable destination name"`
+	LogReference string  `json:"logReference,omitempty" doc:"Encounter/gym ID for tracing"`
+	Lat          float64 `json:"lat,omitempty"`
+	Lon          float64 `json:"lon,omitempty"`
+}
+
+// toJob converts the request DTO into the internal delivery.Job dispatched to
+// the delivery system. The open `message` bytes become Job.Message verbatim.
+func (j apiDeliverJob) toJob() delivery.Job {
+	return delivery.Job{
+		Target:       j.Target,
+		Type:         j.Type,
+		Message:      json.RawMessage(j.Message),
+		TTH:          delivery.TTH{Days: j.TTH.Days, Hours: j.TTH.Hours, Minutes: j.TTH.Minutes, Seconds: j.TTH.Seconds},
+		Clean:        j.Clean,
+		EditKey:      j.EditKey,
+		ReplyKey:     j.ReplyKey,
+		MsgType:      j.MsgType,
+		Name:         j.Name,
+		LogReference: j.LogReference,
+		Lat:          j.Lat,
+		Lon:          j.Lon,
+	}
+}
+
+// deliverInput carries the delivery request: an array of pre-rendered delivery
+// jobs. The typed []apiDeliverJob body gives the OpenAPI document a real schema
+// (with an OPEN `message` field) while huma validates the array shape for us.
 type deliverInput struct {
-	Body openJSON
+	Body []apiDeliverJob
 }
 
 // deliverMessagesOutput is the typed body for the deliver-messages ops:
@@ -78,15 +127,16 @@ type deliverMessagesOutput struct {
 }
 
 // RegisterDeliverMessages registers a deliver-messages op at the given opID and
-// path. It accepts pre-rendered delivery jobs and dispatches them. Replaces gin
-// HandleDeliverMessages. Used twice in main.go: once for /deliverMessages and
-// once for the legacy /postMessage alias — both serve identically. Success body
-// is {"status":"ok","queued":N}.
-func RegisterDeliverMessages(api huma.API, opID, path string, dispatcher deliverDispatcher) {
+// path. It accepts an array of pre-rendered delivery jobs and dispatches them.
+// Replaces gin HandleDeliverMessages. Used twice in main.go: once for the
+// canonical /deliverMessages and once for the legacy /postMessage alias — both
+// serve identically; only their summary/description differ so the docs explain
+// which to use. Success body is {"status":"ok","queued":N}.
+func RegisterDeliverMessages(api huma.API, opID, path, summary, description string, dispatcher deliverDispatcher) {
 	huma.Register(api, huma.Operation{
 		OperationID: opID, Method: "POST", Path: path,
-		Summary:     "Deliver pre-rendered messages",
-		Description: "Accepts an array of pre-rendered delivery jobs and dispatches them to the delivery system. Request body is open: []Job where each job's `message` field is a pre-rendered RawMessage.",
+		Summary:     summary,
+		Description: description,
 		Tags:        []string{"delivery"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *deliverInput) (*deliverMessagesOutput, error) {
@@ -94,17 +144,13 @@ func RegisterDeliverMessages(api huma.API, opID, path string, dispatcher deliver
 			return nil, huma.Error503ServiceUnavailable("delivery dispatcher not configured")
 		}
 
-		var jobs []delivery.Job
-		if err := json.Unmarshal(in.Body, &jobs); err != nil {
-			return nil, huma.Error400BadRequest("invalid JSON: " + err.Error())
-		}
-
 		queued := 0
-		for i := range jobs {
-			if jobs[i].Target == "" || jobs[i].Type == "" {
+		for i := range in.Body {
+			if in.Body[i].Target == "" || in.Body[i].Type == "" {
 				continue
 			}
-			dispatcher.Dispatch(&jobs[i])
+			job := in.Body[i].toJob()
+			dispatcher.Dispatch(&job)
 			queued++
 		}
 

@@ -48,6 +48,87 @@
         },
         "type": "object"
       },
+      "ApiDeliverJob": {
+        "additionalProperties": false,
+        "properties": {
+          "clean": {
+            "description": "Lifecycle bitmask: 1=clean (delete on TTH), 2=edit, 3=both",
+            "format": "int64",
+            "type": "integer"
+          },
+          "editKey": {
+            "description": "Non-empty = track for future in-place edits",
+            "type": "string"
+          },
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "logReference": {
+            "description": "Encounter/gym ID for tracing",
+            "type": "string"
+          },
+          "lon": {
+            "format": "double",
+            "type": "number"
+          },
+          "message": {
+            "description": "Pre-rendered platform message payload (arbitrary JSON object/value)"
+          },
+          "msgType": {
+            "description": "Alert type (raid, egg, pokemon, ...) for per-lifecycle-type tracking",
+            "type": "string"
+          },
+          "name": {
+            "description": "Human-readable destination name",
+            "type": "string"
+          },
+          "replyKey": {
+            "description": "Non-empty = (replyKey,target) indexes the latest sent message for reply chaining",
+            "type": "string"
+          },
+          "target": {
+            "description": "Destination ID/URL (user, channel, thread, webhook)",
+            "type": "string"
+          },
+          "tth": {
+            "$ref": "#/components/schemas/ApiDeliverJobTTHStruct",
+            "description": "Time-to-hide; when the message should be auto-deleted (with the clean bit)"
+          },
+          "type": {
+            "description": "Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:group, telegram:channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ApiDeliverJobTTHStruct": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "seconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "Attachment": {
         "additionalProperties": false,
         "properties": {
@@ -11195,12 +11276,20 @@
     },
     "/deliverMessages": {
       "post": {
-        "description": "Accepts an array of pre-rendered delivery jobs and dispatches them to the delivery system. Request body is open: []Job where each job's `message` field is a pre-rendered RawMessage.",
+        "description": "Canonical delivery endpoint. Accepts an array of pre-rendered delivery jobs — each job carries a destination (target + type) and a `message` field holding the already-rendered platform payload (arbitrary JSON) — and dispatches them to the delivery system. Jobs missing target or type are silently skipped. Returns {\"status\":\"ok\",\"queued\":N} where N is the number of jobs accepted. Responds 503 when the delivery dispatcher is not configured.",
         "operationId": "post-deliver-messages",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/ApiDeliverJob"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
             }
           },
           "required": true
@@ -12544,12 +12633,20 @@
     },
     "/postMessage": {
       "post": {
-        "description": "Accepts an array of pre-rendered delivery jobs and dispatches them to the delivery system. Request body is open: []Job where each job's `message` field is a pre-rendered RawMessage.",
+        "description": "Legacy/backward-compatibility alias of POST /deliverMessages — identical request body and behaviour (dispatches an array of pre-rendered delivery jobs, skips jobs missing target/type, returns {\"status\":\"ok\",\"queued\":N}, 503 when the dispatcher is unconfigured). Retained for older clients; new clients should use /deliverMessages.",
         "operationId": "post-message",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/ApiDeliverJob"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
             }
           },
           "required": true
@@ -12581,7 +12678,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Deliver pre-rendered messages",
+        "summary": "Deliver pre-rendered messages (legacy alias)",
         "tags": [
           "delivery"
         ]

@@ -168,9 +168,23 @@ func registerAllHumaOpsForTest(humaAPI huma.API) {
 	RegisterSnapshotGet(humaAPI, nil)
 	RegisterButtonActions(humaAPI, nil)
 
-	// Delivery (+ legacy alias).
-	RegisterDeliverMessages(humaAPI, "post-deliver-messages", "/deliverMessages", nil)
-	RegisterDeliverMessages(humaAPI, "post-message", "/postMessage", nil)
+	// Delivery (+ legacy alias). Summary/description strings MUST mirror the
+	// per-call-site text in cmd/processor/main.go so the golden reflects
+	// production /docs (canonical vs. alias).
+	const (
+		deliverMessagesSummary = "Deliver pre-rendered messages"
+		deliverMessagesDesc    = "Canonical delivery endpoint. Accepts an array of pre-rendered delivery jobs — each job carries a destination " +
+			"(target + type) and a `message` field holding the already-rendered platform payload (arbitrary JSON) — and dispatches them to the " +
+			"delivery system. Jobs missing target or type are silently skipped. Returns {\"status\":\"ok\",\"queued\":N} where N is the number of " +
+			"jobs accepted. Responds 503 when the delivery dispatcher is not configured."
+
+		postMessageSummary = "Deliver pre-rendered messages (legacy alias)"
+		postMessageDesc    = "Legacy/backward-compatibility alias of POST /deliverMessages — identical request body and behaviour (dispatches an " +
+			"array of pre-rendered delivery jobs, skips jobs missing target/type, returns {\"status\":\"ok\",\"queued\":N}, 503 when the dispatcher " +
+			"is unconfigured). Retained for older clients; new clients should use /deliverMessages."
+	)
+	RegisterDeliverMessages(humaAPI, "post-deliver-messages", "/deliverMessages", deliverMessagesSummary, deliverMessagesDesc, nil)
+	RegisterDeliverMessages(humaAPI, "post-message", "/postMessage", postMessageSummary, postMessageDesc, nil)
 
 	// Command + resolve.
 	RegisterCommand(humaAPI, &bot.BotDeps{})

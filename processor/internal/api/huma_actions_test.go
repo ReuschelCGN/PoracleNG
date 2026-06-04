@@ -120,7 +120,7 @@ func TestHumaTest_MalformedBody400(t *testing.T) {
 func TestHumaDeliverMessages_OK(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
 	disp := &stubDeliverDispatcher{}
-	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", disp)
+	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", "Deliver pre-rendered messages", "canonical", disp)
 
 	// Open body: []Job with a pre-rendered `message` RawMessage. One job is
 	// missing target/type and must be skipped (not counted).
@@ -159,7 +159,7 @@ func TestHumaPostMessage_AliasesDeliverMessages(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
 	disp := &stubDeliverDispatcher{}
 	// Same handler logic registered at the legacy alias path.
-	RegisterDeliverMessages(api, "post-message", "/postMessage", disp)
+	RegisterDeliverMessages(api, "post-message", "/postMessage", "Deliver pre-rendered messages (legacy alias)", "alias", disp)
 
 	body := []byte(`[{"target":"999","type":"telegram:user","message":{"text":"x"}}]`)
 	w := postJSON(t, r, "/api/postMessage", body)
@@ -186,8 +186,8 @@ func TestHumaDeliverMessages_BothPathsServeSameAPI(t *testing.T) {
 	// Both ops registered on the SAME api instance, exactly as main.go does.
 	r, api := newFeaturesTestAPI(t)
 	disp := &stubDeliverDispatcher{}
-	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", disp)
-	RegisterDeliverMessages(api, "post-message", "/postMessage", disp)
+	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", "Deliver pre-rendered messages", "canonical", disp)
+	RegisterDeliverMessages(api, "post-message", "/postMessage", "Deliver pre-rendered messages (legacy alias)", "alias", disp)
 
 	body := []byte(`[{"target":"1","type":"discord:user","message":{"content":"a"}}]`)
 
@@ -203,7 +203,7 @@ func TestHumaDeliverMessages_BothPathsServeSameAPI(t *testing.T) {
 
 func TestHumaDeliverMessages_NilDispatcher503(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
-	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", (*delivery.Dispatcher)(nil))
+	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", "Deliver pre-rendered messages", "canonical", (*delivery.Dispatcher)(nil))
 
 	body := []byte(`[{"target":"1","type":"discord:user","message":{}}]`)
 	w := postJSON(t, r, "/api/deliverMessages", body)
@@ -212,12 +212,28 @@ func TestHumaDeliverMessages_NilDispatcher503(t *testing.T) {
 	}
 }
 
-func TestHumaDeliverMessages_MalformedBody400(t *testing.T) {
+func TestHumaDeliverMessages_WrongShape422(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
-	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", &stubDeliverDispatcher{})
+	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", "Deliver pre-rendered messages", "canonical", &stubDeliverDispatcher{})
 
-	// Not an array.
+	// Object where the schema expects an array → huma schema validation rejects
+	// it with 422 (the typed []apiDeliverJob body now documents + validates the
+	// request shape, replacing the old open-body handler-level 400).
 	w := postJSON(t, r, "/api/deliverMessages", []byte(`{"target":"1"}`))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected problem+json, got %q", ct)
+	}
+}
+
+func TestHumaDeliverMessages_MalformedJSON400(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	RegisterDeliverMessages(api, "post-deliver-messages", "/deliverMessages", "Deliver pre-rendered messages", "canonical", &stubDeliverDispatcher{})
+
+	// Syntactically invalid JSON is rejected with 400 before validation.
+	w := postJSON(t, r, "/api/deliverMessages", []byte(`not json`))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
 	}

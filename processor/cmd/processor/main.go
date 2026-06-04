@@ -669,10 +669,23 @@ func main() {
 	resolveCache := api.NewResolveCache()
 
 	// Delivery endpoint — accepts pre-rendered jobs (migrated to huma, in place
-	// — same paths, same {"status":"ok","queued":N} body, open []Job request,
-	// problem+json errors). /postMessage is a legacy alias serving identically.
-	api.RegisterDeliverMessages(humaAPI, "post-deliver-messages", "/deliverMessages", proc.dispatcher)
-	api.RegisterDeliverMessages(humaAPI, "post-message", "/postMessage", proc.dispatcher)
+	// — same paths, same {"status":"ok","queued":N} body, []Job request,
+	// problem+json errors). /postMessage is a legacy alias serving identically;
+	// only the docs differ so the OpenAPI explains which one to use.
+	const (
+		deliverMessagesSummary = "Deliver pre-rendered messages"
+		deliverMessagesDesc    = "Canonical delivery endpoint. Accepts an array of pre-rendered delivery jobs — each job carries a destination " +
+			"(target + type) and a `message` field holding the already-rendered platform payload (arbitrary JSON) — and dispatches them to the " +
+			"delivery system. Jobs missing target or type are silently skipped. Returns {\"status\":\"ok\",\"queued\":N} where N is the number of " +
+			"jobs accepted. Responds 503 when the delivery dispatcher is not configured."
+
+		postMessageSummary = "Deliver pre-rendered messages (legacy alias)"
+		postMessageDesc    = "Legacy/backward-compatibility alias of POST /deliverMessages — identical request body and behaviour (dispatches an " +
+			"array of pre-rendered delivery jobs, skips jobs missing target/type, returns {\"status\":\"ok\",\"queued\":N}, 503 when the dispatcher " +
+			"is unconfigured). Retained for older clients; new clients should use /deliverMessages."
+	)
+	api.RegisterDeliverMessages(humaAPI, "post-deliver-messages", "/deliverMessages", deliverMessagesSummary, deliverMessagesDesc, proc.dispatcher)
+	api.RegisterDeliverMessages(humaAPI, "post-message", "/postMessage", postMessageSummary, postMessageDesc, proc.dispatcher)
 
 	// Command framework — shared by API endpoint and Discord/Telegram bots
 	var cmdLanguages []string
