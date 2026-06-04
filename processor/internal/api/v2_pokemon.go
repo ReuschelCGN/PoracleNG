@@ -17,8 +17,7 @@ import (
 // pokemon_id is required (non-pointer). gender is the only string enum here.
 //
 // Defaults documented in each field's doc string come from the field audit
-// pokemon table. pvp_ranking_evolution is intentionally OMITTED (depends on the
-// unmerged pvp-mega-evolution branch; added in a follow-up).
+// pokemon table.
 type v2PokemonRule struct {
 	PokemonID int `json:"pokemon_id" required:"true" doc:"Pokédex id (required)"`
 
@@ -54,11 +53,12 @@ type v2PokemonRule struct {
 	Size    *int `json:"size,omitempty" nullable:"true" doc:"Minimum size tier. Omit to match any size (stored as -1 = any). Returned as null when at its wildcard."`
 	MaxSize *int `json:"max_size,omitempty" nullable:"true" doc:"Maximum size tier (1-5). Omit to impose no upper bound (stored as 5 = the top tier, i.e. no upper bound). Returned as null when at its wildcard."`
 
-	PVPRankingLeague *int `json:"pvp_ranking_league,omitempty" nullable:"true" doc:"PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard."`
-	PVPRankingBest   *int `json:"pvp_ranking_best,omitempty" nullable:"true" doc:"Best (lowest, 1-based) PVP rank to alert on. Omit to start from rank 1 (stored as 1 = best possible rank). Returned as null when at its wildcard."`
-	PVPRankingWorst  *int `json:"pvp_ranking_worst,omitempty" nullable:"true" doc:"Worst (highest) PVP rank to alert on. Omit to impose no upper rank limit (stored as 4096 = no upper rank limit sentinel; PVP ranks never exceed it). Returned as null when at its wildcard."`
-	PVPRankingMinCP  *int `json:"pvp_ranking_min_cp,omitempty" nullable:"true" doc:"PVP CP floor. Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard."`
-	PVPRankingCap    *int `json:"pvp_ranking_cap,omitempty" nullable:"true" doc:"PVP level cap. Omit to use the league default cap (stored as 0 = league default). Returned as null when at its wildcard."`
+	PVPRankingLeague    *int `json:"pvp_ranking_league,omitempty" nullable:"true" doc:"PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard."`
+	PVPRankingBest      *int `json:"pvp_ranking_best,omitempty" nullable:"true" doc:"Best (lowest, 1-based) PVP rank to alert on. Omit to start from rank 1 (stored as 1 = best possible rank). Returned as null when at its wildcard."`
+	PVPRankingWorst     *int `json:"pvp_ranking_worst,omitempty" nullable:"true" doc:"Worst (highest) PVP rank to alert on. Omit to impose no upper rank limit (stored as 4096 = no upper rank limit sentinel; PVP ranks never exceed it). Returned as null when at its wildcard."`
+	PVPRankingMinCP     *int `json:"pvp_ranking_min_cp,omitempty" nullable:"true" doc:"PVP CP floor. Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard."`
+	PVPRankingCap       *int `json:"pvp_ranking_cap,omitempty" nullable:"true" doc:"PVP level cap. Omit to use the league default cap (stored as 0 = league default). Returned as null when at its wildcard."`
+	PVPRankingEvolution *int `json:"pvp_ranking_evolution,omitempty" nullable:"true" doc:"Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0)."`
 
 	// Common fields.
 	Distance *int    `json:"distance,omitempty" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Returned as null when at its wildcard."`
@@ -146,6 +146,7 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 		PVPRankingWorst:       valueOr(req.PVPRankingWorst, 4096),
 		PVPRankingMinCP:       valueOr(req.PVPRankingMinCP, 0),
 		PVPRankingCap:         valueOr(req.PVPRankingCap, 0),
+		PVPRankingEvolution:   valueOr(req.PVPRankingEvolution, 0),
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
 		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
@@ -189,6 +190,7 @@ func pokemonRowToRule(row *db.MonsterTrackingAPI) v2PokemonRule {
 		PVPRankingWorst:       ptrUnless(row.PVPRankingWorst, 4096),
 		PVPRankingMinCP:       ptrUnless(row.PVPRankingMinCP, 0),
 		PVPRankingCap:         ptrUnless(row.PVPRankingCap, 0),
+		PVPRankingEvolution:   ptrUnless(row.PVPRankingEvolution, 0),
 		Distance:              ptrUnless(row.Distance, 0),
 		Template:              ptrUnless(row.Template, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

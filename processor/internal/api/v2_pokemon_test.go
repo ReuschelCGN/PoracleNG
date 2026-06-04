@@ -243,6 +243,41 @@ func TestV2Pokemon_GenderRoundTrip(t *testing.T) {
 	}
 }
 
+// TestV2Pokemon_PVPRankingEvolution covers the temp-evolution (mega) PVP
+// discriminator (0=base, 1=mega, 2=X, 3=Y) exposed over develop's existing
+// pvp_ranking_evolution column: a non-zero value stores + reads back; the
+// default 0 stores 0 and is hidden (null) on read.
+func TestV2Pokemon_PVPRankingEvolution(t *testing.T) {
+	r, ms, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	// Explicit Mega X (2) stores 2 and reads back 2.
+	v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon",
+		`[{"pokemon_id":6,"pvp_ranking_league":1500,"pvp_ranking_evolution":2}]`)
+	rows := ms.AllRows()
+	if len(rows) != 1 || rows[0].PVPRankingEvolution != 2 {
+		t.Fatalf("expected stored pvp_ranking_evolution 2 (Mega X), got %+v", rows)
+	}
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/pokemon", "")
+	out := v2RulesArray(t, v2DecodeBody(t, w), "rules")
+	if got := out[0]["pvp_ranking_evolution"]; got != float64(2) {
+		t.Fatalf("expected pvp_ranking_evolution 2 on read-back, got %v", got)
+	}
+
+	// Omitted → stored 0 (base form) → hidden (null) on read.
+	r2, ms2, _, restore2 := newV2PokemonTestAPI(t)
+	defer restore2()
+	v2DoReq(t, r2, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon", `[{"pokemon_id":25}]`)
+	if rows := ms2.AllRows(); len(rows) != 1 || rows[0].PVPRankingEvolution != 0 {
+		t.Fatalf("expected stored pvp_ranking_evolution 0 (base) on omission, got %+v", rows)
+	}
+	w2 := v2DoReq(t, r2, http.MethodGet, "/api/v2/humans/u1/tracking/pokemon", "")
+	out2 := v2RulesArray(t, v2DecodeBody(t, w2), "rules")
+	if got, ok := out2[0]["pvp_ranking_evolution"]; ok && got != nil {
+		t.Fatalf("expected pvp_ranking_evolution null/absent on base-form read-back, got %v", got)
+	}
+}
+
 func TestV2Pokemon_CleanEditSummaryBitmask(t *testing.T) {
 	r, ms, _, restore := newV2PokemonTestAPI(t)
 	defer restore()

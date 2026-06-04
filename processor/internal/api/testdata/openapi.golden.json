@@ -4808,6 +4808,14 @@
                     "null"
                   ]
                 },
+                "pvp_ranking_evolution": {
+                  "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -5104,6 +5112,14 @@
                     "null"
                   ]
                 },
+                "pvp_ranking_evolution": {
+                  "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -5394,6 +5410,14 @@
                 },
                 "pvp_ranking_cap": {
                   "description": "PVP level cap. Omit to use the league default cap (stored as 0 = league default). Returned as null when at its wildcard.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "pvp_ranking_evolution": {
+                  "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -7456,6 +7480,14 @@
                     "null"
                   ]
                 },
+                "pvp_ranking_evolution": {
+                  "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -9396,6 +9428,14 @@
                     "null"
                   ]
                 },
+                "pvp_ranking_evolution": {
+                  "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -10305,6 +10345,14 @@
           },
           "pvp_ranking_cap": {
             "description": "PVP level cap. Omit to use the league default cap (stored as 0 = league default). Returned as null when at its wildcard.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pvp_ranking_evolution": {
+            "description": "Temp-evolution (mega) PVP discriminator selecting which evolution's PVP rank this rule alerts on: 0 = base form, 1 = Mega, 2 = Mega X, 3 = Mega Y. Omit for base form (stored as 0). Returned as null when at its wildcard (0).",
             "format": "int64",
             "type": [
               "integer",
