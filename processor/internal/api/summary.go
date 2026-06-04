@@ -1,9 +1,11 @@
 package api
 
 import (
-	"encoding/json"
 	"slices"
 
+	log "github.com/sirupsen/logrus"
+
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -32,19 +34,47 @@ type summarySetRequest struct {
 	ActiveHours any `json:"active_hours"`
 }
 
+// activeHourEntry is the typed active-hours entry returned by the summary GET
+// endpoints. The json tags match db.ActiveHourEntry exactly so the array shape
+// round-trips with the stored value and the scheduler. Step>0 marks a range
+// entry (with end_hours/end_mins); step absent/0 is a single-fire entry.
+type activeHourEntry struct {
+	Day      int `json:"day" doc:"Day of week (0=Sunday … 6=Saturday)"`
+	Hours    int `json:"hours" doc:"Start hour (0–23)"`
+	Mins     int `json:"mins" doc:"Start minute (0–59)"`
+	EndHours int `json:"end_hours,omitempty" doc:"End hour (0–23); present on range entries (step>0)"`
+	EndMins  int `json:"end_mins,omitempty" doc:"End minute (0–59); present on range entries (step>0)"`
+	Step     int `json:"step,omitempty" doc:"Step in hours; >0 makes this a range entry"`
+}
+
 // summaryScheduleResponse is the JSON shape returned by GET endpoints.
 // We keep it stable independent of the SummarySchedule struct so adding
-// internal fields doesn't leak through to API consumers.
+// internal fields doesn't leak through to API consumers. active_hours is a
+// typed JSON array (empty array when no schedule is stored).
 type summaryScheduleResponse struct {
-	ID          string          `json:"id"`
-	AlertType   string          `json:"alert_type"`
-	ActiveHours json.RawMessage `json:"active_hours"`
+	ID          string            `json:"id"`
+	AlertType   string            `json:"alert_type"`
+	ActiveHours []activeHourEntry `json:"active_hours"`
 }
 
 func toSummaryResponse(s *store.SummarySchedule) summaryScheduleResponse {
-	hours := json.RawMessage(s.ActiveHours)
-	if len(hours) == 0 {
-		hours = json.RawMessage("[]")
+	// active_hours is stored as a JSON-array string; parse it into the typed
+	// array. A parse failure (malformed stored data) degrades to an empty
+	// array rather than leaking raw bytes — the schedule is still listed.
+	hours := make([]activeHourEntry, 0)
+	if parsed, err := db.ParseActiveHours(s.ActiveHours); err != nil {
+		log.Warnf("Summary API: %s/%s active_hours parse: %v", s.ID, s.AlertType, err)
+	} else {
+		for _, e := range parsed {
+			hours = append(hours, activeHourEntry{
+				Day:      e.Day,
+				Hours:    e.Hours,
+				Mins:     e.Mins,
+				EndHours: e.EndHours,
+				EndMins:  e.EndMins,
+				Step:     e.Step,
+			})
+		}
 	}
 	return summaryScheduleResponse{
 		ID:          s.ID,

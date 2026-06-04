@@ -11,11 +11,53 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 )
 
+// poracleWebAdmins is the typed admins sub-object: the discord/telegram admin
+// id lists (always non-nil arrays, never null — matching the legacy coercion).
+type poracleWebAdmins struct {
+	Discord  []string `json:"discord" doc:"Discord admin user ids"`
+	Telegram []string `json:"telegram" doc:"Telegram admin user ids"`
+}
+
+// poracleWebResponse is the typed body for GET /api/config/poracleWeb. It
+// mirrors buildPoracleWebResponse's exact key set, types, and nesting. Field
+// declaration order is deliberately alphabetical by json tag so the serialised
+// bytes are IDENTICAL to the legacy map[string]any (Go marshals map keys in
+// sorted order), keeping existing clients (PoracleWeb) byte-compatible.
+type poracleWebResponse struct {
+	AddressFormat                string           `json:"addressFormat" doc:"Geocoding address format string"`
+	Admins                       poracleWebAdmins `json:"admins" doc:"Discord/Telegram admin id lists"`
+	ChannelNotesContainsCategory bool             `json:"channelNotesContainsCategory" doc:"Whether channel notes carry the category (check_role + update_channel_notes)"`
+	DefaultDistance              int              `json:"defaultDistance" doc:"Default tracking distance (m)"`
+	DefaultPvpCap                int              `json:"defaultPvpCap" doc:"Default user PVP level cap"`
+	DefaultTemplateName          string           `json:"defaultTemplateName" doc:"Default DTS template name"`
+	DisabledHooks                []string         `json:"disabledHooks" doc:"Webhook types disabled on this server"`
+	EverythingFlagPermissions    string           `json:"everythingFlagPermissions" doc:"Permission mode for the !track everything keyword"`
+	GymBattles                   bool             `json:"gymBattles" doc:"Whether gym battle tracking is enabled"`
+	Locale                       string           `json:"locale" doc:"Default server locale"`
+	MaxDistance                  int              `json:"maxDistance" doc:"Maximum allowed tracking distance (m)"`
+	Prefix                       string           `json:"prefix" doc:"Discord command prefix"`
+	ProviderURL                  string           `json:"providerURL" doc:"Geocoding provider URL"`
+	PvpCaps                      []int            `json:"pvpCaps" doc:"Configured PVP level caps"`
+	PvpFilterGreatMinCP          int              `json:"pvpFilterGreatMinCP" doc:"Minimum CP floor for great-league PVP filters"`
+	PvpFilterLittleMinCP         int              `json:"pvpFilterLittleMinCP" doc:"Minimum CP floor for little-league PVP filters"`
+	PvpFilterMaxRank             int              `json:"pvpFilterMaxRank" doc:"Maximum PVP rank allowed in filters"`
+	PvpFilterUltraMinCP          int              `json:"pvpFilterUltraMinCP" doc:"Minimum CP floor for ultra-league PVP filters"`
+	PvpLittleLeagueAllowed       bool             `json:"pvpLittleLeagueAllowed" doc:"Whether little-league PVP filters are allowed"`
+	PvpRequiresMinCp             bool             `json:"pvpRequiresMinCp" doc:"Whether PVP filters require a min CP (force_min_cp + webhook data source)"`
+	StaticKey                    []string         `json:"staticKey" doc:"Tileserver static map keys (always an array)"`
+	Status                       string           `json:"status" doc:"Always \"ok\""`
+	Version                      string           `json:"version" doc:"Processor version"`
+}
+
+// poracleWebOutput is the typed huma output for GET /api/config/poracleWeb.
+type poracleWebOutput struct {
+	Body poracleWebResponse
+}
+
 // RegisterConfigPoracleWeb registers GET /api/config/poracleWeb, returning the
 // configuration subset PoracleWeb needs for its UI. Replaces gin
-// HandleConfigPoracleWeb. The response is a dynamic-keyed map (freeform open
-// body); the same {"status":"ok", ...} map the gin handler marshalled is
-// re-emitted byte-for-byte via anyBodyOutput.
+// HandleConfigPoracleWeb. The response is a typed config object; the serialised
+// bytes are identical to the legacy {"status":"ok", ...} map.
 func RegisterConfigPoracleWeb(api huma.API, cfg *config.Config) {
 	// Build the response once since config is immutable after load — mirror
 	// the legacy handler's pre-computation exactly.
@@ -23,11 +65,11 @@ func RegisterConfigPoracleWeb(api huma.API, cfg *config.Config) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-config-poracleweb", Method: "GET", Path: "/config/poracleWeb",
 		Summary:     "Server config for web UI",
-		Description: "Returns the configuration subset PoracleWeb needs for its UI. Response is a dynamic-keyed map (open body).",
+		Description: "Returns the configuration subset PoracleWeb needs for its UI.",
 		Tags:        []string{"config"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, _ *struct{}) (*anyBodyOutput, error) {
-		return &anyBodyOutput{Body: resp}, nil
+	}, func(_ context.Context, _ *struct{}) (*poracleWebOutput, error) {
+		return &poracleWebOutput{Body: resp}, nil
 	})
 }
 
@@ -179,8 +221,10 @@ func RegisterConfigValidate(api huma.API, deps ConfigDeps) {
 }
 
 // buildPoracleWebResponse mirrors HandleConfigPoracleWeb's response
-// construction exactly.
-func buildPoracleWebResponse(cfg *config.Config) map[string]any {
+// construction exactly, returning the typed poracleWebResponse. The nil-slice →
+// [] coercions (staticKey, admins, pvpCaps) are preserved so existing clients
+// keep seeing empty arrays rather than null.
+func buildPoracleWebResponse(cfg *config.Config) poracleWebResponse {
 	type hookFlag struct {
 		Name    string
 		Disable bool
@@ -231,32 +275,32 @@ func buildPoracleWebResponse(cfg *config.Config) map[string]any {
 		telegramAdmins = []string{}
 	}
 
-	return map[string]any{
-		"status":                       "ok",
-		"version":                      Version,
-		"locale":                       cfg.General.Locale,
-		"prefix":                       cfg.Discord.Prefix,
-		"providerURL":                  cfg.Geocoding.ProviderURL,
-		"addressFormat":                cfg.Locale.AddressFormat,
-		"staticKey":                    staticKeys,
-		"pvpFilterMaxRank":             cfg.PVP.PVPFilterMaxRank,
-		"pvpFilterGreatMinCP":          cfg.PVP.PVPFilterGreatMinCP,
-		"pvpFilterUltraMinCP":          cfg.PVP.PVPFilterUltraMinCP,
-		"pvpFilterLittleMinCP":         cfg.PVP.PVPFilterLittleMinCP,
-		"pvpLittleLeagueAllowed":       true,
-		"pvpCaps":                      pvpCaps,
-		"pvpRequiresMinCp":             pvpRequiresMinCp,
-		"defaultPvpCap":                cfg.Tracking.DefaultUserTrackingLevelCap,
-		"defaultTemplateName":          defaultTemplateName,
-		"channelNotesContainsCategory": channelNotesContainsCategory,
-		"admins": map[string]any{
-			"discord":  discordAdmins,
-			"telegram": telegramAdmins,
+	return poracleWebResponse{
+		Status:                       "ok",
+		Version:                      Version,
+		Locale:                       cfg.General.Locale,
+		Prefix:                       cfg.Discord.Prefix,
+		ProviderURL:                  cfg.Geocoding.ProviderURL,
+		AddressFormat:                cfg.Locale.AddressFormat,
+		StaticKey:                    staticKeys,
+		PvpFilterMaxRank:             cfg.PVP.PVPFilterMaxRank,
+		PvpFilterGreatMinCP:          cfg.PVP.PVPFilterGreatMinCP,
+		PvpFilterUltraMinCP:          cfg.PVP.PVPFilterUltraMinCP,
+		PvpFilterLittleMinCP:         cfg.PVP.PVPFilterLittleMinCP,
+		PvpLittleLeagueAllowed:       true,
+		PvpCaps:                      pvpCaps,
+		PvpRequiresMinCp:             pvpRequiresMinCp,
+		DefaultPvpCap:                cfg.Tracking.DefaultUserTrackingLevelCap,
+		DefaultTemplateName:          defaultTemplateName,
+		ChannelNotesContainsCategory: channelNotesContainsCategory,
+		Admins: poracleWebAdmins{
+			Discord:  discordAdmins,
+			Telegram: telegramAdmins,
 		},
-		"maxDistance":               cfg.Tracking.MaxDistance,
-		"defaultDistance":           cfg.Tracking.DefaultDistance,
-		"everythingFlagPermissions": cfg.Tracking.EverythingFlagPermissions,
-		"disabledHooks":             disabledHooks,
-		"gymBattles":                cfg.Tracking.EnableGymBattle,
+		MaxDistance:               cfg.Tracking.MaxDistance,
+		DefaultDistance:           cfg.Tracking.DefaultDistance,
+		EverythingFlagPermissions: cfg.Tracking.EverythingFlagPermissions,
+		DisabledHooks:             disabledHooks,
+		GymBattles:                cfg.Tracking.EnableGymBattle,
 	}
 }

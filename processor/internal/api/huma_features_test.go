@@ -48,9 +48,13 @@ func TestHumaSummaryGet_OK(t *testing.T) {
 	var body struct {
 		Status   string `json:"status"`
 		Schedule struct {
-			ID          string          `json:"id"`
-			AlertType   string          `json:"alert_type"`
-			ActiveHours json.RawMessage `json:"active_hours"`
+			ID          string `json:"id"`
+			AlertType   string `json:"alert_type"`
+			ActiveHours []struct {
+				Day   int `json:"day"`
+				Hours int `json:"hours"`
+				Mins  int `json:"mins"`
+			} `json:"active_hours"`
 		} `json:"schedule"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -58,6 +62,13 @@ func TestHumaSummaryGet_OK(t *testing.T) {
 	}
 	if body.Status != "ok" || body.Schedule.ID != "u1" || body.Schedule.AlertType != "quest" {
 		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+	// active_hours is now a typed JSON array, not a raw blob.
+	if len(body.Schedule.ActiveHours) != 1 {
+		t.Fatalf("want 1 active_hours entry, got %d: %s", len(body.Schedule.ActiveHours), w.Body.String())
+	}
+	if e := body.Schedule.ActiveHours[0]; e.Day != 1 || e.Hours != 7 || e.Mins != 30 {
+		t.Fatalf("active_hours[0] = %+v, want {day:1 hours:7 mins:30}", e)
 	}
 }
 

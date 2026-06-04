@@ -36,6 +36,47 @@
         ],
         "type": "object"
       },
+      "ActiveHourEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "description": "Day of week (0=Sunday … 6=Saturday)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "end_hours": {
+            "description": "End hour (0–23); present on range entries (step>0)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "end_mins": {
+            "description": "End minute (0–59); present on range entries (step>0)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hours": {
+            "description": "Start hour (0–23)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mins": {
+            "description": "Start minute (0–59)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "step": {
+            "description": "Step in hours; >0 makes this a range entry",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "hours",
+          "mins"
+        ],
+        "type": "object"
+      },
       "AdminRolesResult": {
         "additionalProperties": false,
         "properties": {
@@ -1481,6 +1522,185 @@
         ],
         "type": "object"
       },
+      "PoracleWebAdmins": {
+        "additionalProperties": false,
+        "properties": {
+          "discord": {
+            "description": "Discord admin user ids",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "telegram": {
+            "description": "Telegram admin user ids",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "discord",
+          "telegram"
+        ],
+        "type": "object"
+      },
+      "PoracleWebResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "addressFormat": {
+            "description": "Geocoding address format string",
+            "type": "string"
+          },
+          "admins": {
+            "$ref": "#/components/schemas/PoracleWebAdmins",
+            "description": "Discord/Telegram admin id lists"
+          },
+          "channelNotesContainsCategory": {
+            "description": "Whether channel notes carry the category (check_role + update_channel_notes)",
+            "type": "boolean"
+          },
+          "defaultDistance": {
+            "description": "Default tracking distance (m)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "defaultPvpCap": {
+            "description": "Default user PVP level cap",
+            "format": "int64",
+            "type": "integer"
+          },
+          "defaultTemplateName": {
+            "description": "Default DTS template name",
+            "type": "string"
+          },
+          "disabledHooks": {
+            "description": "Webhook types disabled on this server",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "everythingFlagPermissions": {
+            "description": "Permission mode for the !track everything keyword",
+            "type": "string"
+          },
+          "gymBattles": {
+            "description": "Whether gym battle tracking is enabled",
+            "type": "boolean"
+          },
+          "locale": {
+            "description": "Default server locale",
+            "type": "string"
+          },
+          "maxDistance": {
+            "description": "Maximum allowed tracking distance (m)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "prefix": {
+            "description": "Discord command prefix",
+            "type": "string"
+          },
+          "providerURL": {
+            "description": "Geocoding provider URL",
+            "type": "string"
+          },
+          "pvpCaps": {
+            "description": "Configured PVP level caps",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pvpFilterGreatMinCP": {
+            "description": "Minimum CP floor for great-league PVP filters",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pvpFilterLittleMinCP": {
+            "description": "Minimum CP floor for little-league PVP filters",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pvpFilterMaxRank": {
+            "description": "Maximum PVP rank allowed in filters",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pvpFilterUltraMinCP": {
+            "description": "Minimum CP floor for ultra-league PVP filters",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pvpLittleLeagueAllowed": {
+            "description": "Whether little-league PVP filters are allowed",
+            "type": "boolean"
+          },
+          "pvpRequiresMinCp": {
+            "description": "Whether PVP filters require a min CP (force_min_cp + webhook data source)",
+            "type": "boolean"
+          },
+          "staticKey": {
+            "description": "Tileserver static map keys (always an array)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          },
+          "version": {
+            "description": "Processor version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "addressFormat",
+          "admins",
+          "channelNotesContainsCategory",
+          "defaultDistance",
+          "defaultPvpCap",
+          "defaultTemplateName",
+          "disabledHooks",
+          "everythingFlagPermissions",
+          "gymBattles",
+          "locale",
+          "maxDistance",
+          "prefix",
+          "providerURL",
+          "pvpCaps",
+          "pvpFilterGreatMinCP",
+          "pvpFilterLittleMinCP",
+          "pvpFilterMaxRank",
+          "pvpFilterUltraMinCP",
+          "pvpLittleLeagueAllowed",
+          "pvpRequiresMinCp",
+          "staticKey",
+          "status",
+          "version"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1525,6 +1745,51 @@
         ],
         "type": "object"
       },
+      "RarityGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "description": "Rarity group constant (1=common … 5=ultra-rare)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pokemon_ids": {
+            "description": "Sorted pokemon ids in this rarity group",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "group",
+          "pokemon_ids"
+        ],
+        "type": "object"
+      },
+      "RarityStatsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "description": "Rarity groups in ascending order",
+            "items": {
+              "$ref": "#/components/schemas/RarityGroup"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "type": "object"
+      },
       "Reply": {
         "additionalProperties": false,
         "properties": {
@@ -1545,6 +1810,98 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ResolveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "discord": {
+            "$ref": "#/components/schemas/ResolveRequestDiscordStruct"
+          },
+          "telegram": {
+            "$ref": "#/components/schemas/ResolveRequestTelegramStruct"
+          }
+        },
+        "required": [
+          "discord",
+          "telegram",
+          "destinations"
+        ],
+        "type": "object"
+      },
+      "ResolveRequestDiscordStruct": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "guilds": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "users": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "users",
+          "roles",
+          "channels",
+          "guilds"
+        ],
+        "type": "object"
+      },
+      "ResolveRequestTelegramStruct": {
+        "additionalProperties": false,
+        "properties": {
+          "chats": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "chats"
+        ],
         "type": "object"
       },
       "ResolveResult": {
@@ -1597,6 +1954,73 @@
           "description",
           "id",
           "set"
+        ],
+        "type": "object"
+      },
+      "ShinyPossibleOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "map": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "pokemon id → true for every pokemon seen shiny in the rolling window",
+            "type": "object"
+          }
+        },
+        "required": [
+          "map"
+        ],
+        "type": "object"
+      },
+      "ShinyStatsEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "pokemon_id": {
+            "description": "Pokemon id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ratio": {
+            "description": "total / seen — e.g. 512 means an observed 1:512 shiny rate",
+            "format": "double",
+            "type": "number"
+          },
+          "seen": {
+            "description": "Confirmed-shiny sightings in the rolling window",
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total sightings in the rolling window",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pokemon_id",
+          "total",
+          "seen",
+          "ratio"
+        ],
+        "type": "object"
+      },
+      "ShinyStatsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "pokemon": {
+            "description": "Per-pokemon shiny rates, ascending by pokemon id",
+            "items": {
+              "$ref": "#/components/schemas/ShinyStatsEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pokemon"
         ],
         "type": "object"
       },
@@ -1774,7 +2198,15 @@
       "SummaryScheduleResponse": {
         "additionalProperties": false,
         "properties": {
-          "active_hours": {},
+          "active_hours": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveHourEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "alert_type": {
             "type": "string"
           },
@@ -1811,6 +2243,28 @@
         ],
         "type": "object"
       },
+      "TestBodyShape": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/TestTargetJSON",
+            "description": "Delivery destination + render context (id, type, language, template, location)"
+          },
+          "type": {
+            "description": "Webhook type: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle",
+            "type": "string"
+          },
+          "webhook": {
+            "description": "Raw webhook message payload (arbitrary JSON; shape depends on the type field)"
+          }
+        },
+        "required": [
+          "type",
+          "target",
+          "webhook"
+        ],
+        "type": "object"
+      },
       "TestDataEntry": {
         "additionalProperties": false,
         "properties": {
@@ -1830,6 +2284,44 @@
           "test",
           "location",
           "webhook"
+        ],
+        "type": "object"
+      },
+      "TestTargetJSON": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "latitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "language",
+          "template",
+          "latitude",
+          "longitude"
         ],
         "type": "object"
       },
@@ -11031,13 +11523,15 @@
     },
     "/config/poracleWeb": {
       "get": {
-        "description": "Returns the configuration subset PoracleWeb needs for its UI. Response is a dynamic-keyed map (open body).",
+        "description": "Returns the configuration subset PoracleWeb needs for its UI.",
         "operationId": "get-config-poracleweb",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PoracleWebResponse"
+                }
               }
             },
             "description": "OK"
@@ -12758,12 +13252,84 @@
     },
     "/resolve": {
       "post": {
-        "description": "Batch-resolves Discord/Telegram IDs (and unknown-type destinations) to display names. Request body is open: optional {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}. Response is a freeform map of resolved entities.",
+        "description": "Batch-resolves Discord/Telegram IDs (and unknown-type destinations) to display names. Request body: optional {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}. Response is a freeform map of resolved entities.",
         "operationId": "post-resolve",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "description": "Resolve request. All sections are optional: {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}.",
+                "properties": {
+                  "destinations": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "discord": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "channels": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "guilds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "roles": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "users": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "telegram": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "chats": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -12858,13 +13424,15 @@
     },
     "/stats/rarity": {
       "get": {
-        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
+        "description": "Returns the rolling-window rarity classification: each rarity group constant (1=common … 5=ultra-rare) with the sorted list of pokemon ids currently in that group.",
         "operationId": "get-stats-rarity",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RarityStatsOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -12885,7 +13453,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Get statistics",
+        "summary": "Rarity group statistics",
         "tags": [
           "stats"
         ]
@@ -12893,13 +13461,15 @@
     },
     "/stats/shiny": {
       "get": {
-        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
+        "description": "Returns per-pokemon shiny rates observed in the rolling window: total sightings, confirmed-shiny sightings, and the implied ratio.",
         "operationId": "get-stats-shiny",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ShinyStatsOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -12920,7 +13490,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Get statistics",
+        "summary": "Shiny rate statistics",
         "tags": [
           "stats"
         ]
@@ -12928,13 +13498,15 @@
     },
     "/stats/shiny-possible": {
       "get": {
-        "description": "Returns a statistics structure. The response body is freeform (open): the shape varies per stats endpoint (rarity groups, shiny rates, shiny-possible spawns).",
+        "description": "Returns the set of pokemon ids seen shiny in the rolling window, nested under `map` (pokemon id → true) for the alerter's ShinyPossible loader.",
         "operationId": "get-stats-shiny-possible",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ShinyPossibleOutputBody"
+                }
               }
             },
             "description": "OK"
@@ -12955,7 +13527,7 @@
             "poracleSecret": []
           }
         ],
-        "summary": "Get statistics",
+        "summary": "Shiny-possible spawn data",
         "tags": [
           "stats"
         ]
@@ -13136,7 +13708,28 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "active_hours": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": true,
+                          "description": "Active-hours entry: {day 0-6, hours 0-23, mins 0-59, optional step, end_hours, end_mins}. Integer fields also accept zero-padded strings (e.g. \"00\").",
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Active-hours schedule. Preferred form is a JSON array of entries {day, hours, mins, optional step/end_hours/end_mins}. For backward compatibility this in-place endpoint also accepts a JSON-string-encoded array. An empty array (or \"\"/\"[]\"/\"{}\") clears the schedule."
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -13230,12 +13823,54 @@
     },
     "/test": {
       "post": {
-        "description": "Runs a webhook through the enrichment + render pipeline (skipping matching/dedup) and delivers it to a specific target. Request body is open: {type, target, webhook} where `webhook` is a polymorphic webhook payload.",
+        "description": "Runs a webhook through the enrichment + render pipeline (skipping matching/dedup) and delivers it to a specific target. Request body: {type, target, webhook} where `webhook` is an OPEN polymorphic webhook payload.",
         "operationId": "post-test",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "description": "poracle-test request: {type, target, webhook}. `webhook` is an OPEN polymorphic webhook payload; required fields (type, target.id, webhook) are enforced by the handler.",
+                "properties": {
+                  "target": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "language": {
+                        "type": "string"
+                      },
+                      "latitude": {
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "longitude": {
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "template": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": {
+                    "description": "Webhook type: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle",
+                    "type": "string"
+                  },
+                  "webhook": {
+                    "description": "Raw webhook message payload (arbitrary JSON; shape depends on the type field)"
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -20812,6 +21447,7 @@
     },
     "/weather": {
       "get": {
+        "description": "Returns the current weather classification around the given S2 cell. The response body is a JSON object mapping each S2 cell id (an int64, serialised as a string key) to its weather condition id (an int — the Pokemon GO GameplayWeather condition).",
         "operationId": "get-weather",
         "parameters": [
           {
@@ -20833,6 +21469,7 @@
                     "format": "int64",
                     "type": "integer"
                   },
+                  "description": "S2 cell id (string-encoded int64) → weather condition id (int)",
                   "type": "object"
                 }
               }

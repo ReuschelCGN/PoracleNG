@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
@@ -11,11 +12,102 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/delivery"
 )
 
-// testInput carries the freeform poracle-test request. The body is open because
-// the `webhook` field is a polymorphic webhook payload (pokemon, raid, quest,
-// ...) that huma's default schema generation would otherwise reject.
+// openObjectSchema derives a DOCUMENTED but PERMISSIVE object schema from a Go
+// struct type. It is used by raw-capture request bodies that keep handler-level
+// lenient parsing: the OpenAPI document gains the struct's property descriptions
+// while huma's pre-bind validation never rejects a partial/empty/loosely-typed
+// body (so the existing handler 400 contract is preserved instead of a huma 422).
+//
+// IMPORTANT: r.Schema(t, false, "") returns the SAME cached *huma.Schema the
+// registry reuses for every other use of t. We shallow-copy before mutating so
+// the cached schema is never contaminated (see reference_huma_gotchas) — strict
+// uses of the same type keep their `required`/additionalProperties:false.
+func openObjectSchema(r huma.Registry, t reflect.Type, description string) *huma.Schema {
+	s := loosenSchema(r, r.Schema(t, false, ""))
+	s.Description = description
+	return s
+}
+
+// loosenSchema returns a deep, fully-inlined copy of an object schema with every
+// `required` cleared and `additionalProperties` opened at every level, so the
+// schema is purely descriptive (validation never rejects). $ref properties are
+// resolved against the registry and inlined as loosened copies — a bare ref
+// would otherwise resolve to the registered STRICT schema during validation,
+// re-introducing the required fields we are deliberately dropping. It never
+// mutates the input (the registry caches and reuses it).
+func loosenSchema(r huma.Registry, orig *huma.Schema) *huma.Schema {
+	if orig == nil {
+		return nil
+	}
+	if orig.Ref != "" {
+		// Resolve and inline the referenced schema, loosened.
+		if resolved := r.SchemaFromRef(orig.Ref); resolved != nil {
+			return loosenSchema(r, resolved)
+		}
+	}
+	s := *orig // copy
+	s.Ref = ""
+	if s.Type == "object" {
+		// Clear `required` and open additionalProperties so a partial/empty
+		// body is never rejected by huma's pre-bind validation — the handler's
+		// own required-field checks (→ 400) remain authoritative. Leaf types
+		// (string/array/int) are KEPT for documentation value.
+		s.Required = nil
+		s.AdditionalProperties = true
+		if len(orig.Properties) > 0 {
+			props := make(map[string]*huma.Schema, len(orig.Properties))
+			for k, v := range orig.Properties {
+				props[k] = loosenSchema(r, v)
+			}
+			s.Properties = props
+		}
+	}
+	if orig.Items != nil {
+		s.Items = loosenSchema(r, orig.Items)
+	}
+	return &s
+}
+
+// testBody is the POST /api/test request body. It captures the raw bytes
+// verbatim (like openJSON) so the handler keeps the legacy lenient parsing and
+// the handler-level required-field checks (→ 400). Its Schema() documents the
+// {type, target, webhook} wrapper — webhook OPEN (polymorphic), target as the
+// typed testTargetJSON shape — while staying permissive (no required,
+// additionalProperties allowed) so huma's pre-bind validation never rejects a
+// partial body before the handler's own validation runs.
+type testBody json.RawMessage
+
+func (b *testBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b testBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// testBodyShape is the documentation-only struct describing the test request
+// wrapper. It is never bound to (testBody captures raw bytes); it exists solely
+// so openObjectSchema can derive a documented schema for {type, target,
+// webhook}. webhook is openJSON so its schema stays OPEN.
+type testBodyShape struct {
+	Type    string         `json:"type" doc:"Webhook type: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle"`
+	Target  testTargetJSON `json:"target" doc:"Delivery destination + render context (id, type, language, template, location)"`
+	Webhook openJSON       `json:"webhook" doc:"Raw webhook message payload (arbitrary JSON; shape depends on the type field)"`
+}
+
+// Schema documents the test request wrapper, loosened to be permissive.
+func (testBody) Schema(r huma.Registry) *huma.Schema {
+	return openObjectSchema(r, reflect.TypeOf(testBodyShape{}),
+		"poracle-test request: {type, target, webhook}. `webhook` is an OPEN polymorphic webhook payload; required fields (type, target.id, webhook) are enforced by the handler.")
+}
+
+// testInput carries the poracle-test request body.
 type testInput struct {
-	Body openJSON
+	Body testBody
 }
 
 // RegisterTest registers POST /api/test, the poracle-test endpoint. Replaces
@@ -27,12 +119,12 @@ func RegisterTest(api huma.API, proc bot.TestProcessor) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-test", Method: "POST", Path: "/test",
 		Summary:     "Generate a test alert",
-		Description: "Runs a webhook through the enrichment + render pipeline (skipping matching/dedup) and delivers it to a specific target. Request body is open: {type, target, webhook} where `webhook` is a polymorphic webhook payload.",
+		Description: "Runs a webhook through the enrichment + render pipeline (skipping matching/dedup) and delivers it to a specific target. Request body: {type, target, webhook} where `webhook` is an OPEN polymorphic webhook payload.",
 		Tags:        []string{"test"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *testInput) (*statusOKOutput, error) {
 		var req TestRequest
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid JSON")
 		}
 
@@ -191,10 +283,39 @@ type resolveRequest struct {
 	Destinations []string `json:"destinations"`
 }
 
-// resolveInput carries the freeform resolve request. The body is open because it
-// has nested optional sections and per-entity dynamically-keyed result maps.
+// resolveBody is the resolve request body. It captures the raw bytes verbatim
+// (like openJSON) so the handler keeps the legacy lenient parsing (handler-level
+// json.Unmarshal → 400 on type mismatch). Its Schema() documents the
+// resolveRequest shape (the nested optional sections) while staying permissive
+// (no required, additionalProperties allowed) so huma's pre-bind validation
+// never rejects a partial/empty body — preserving the existing error contract
+// (a malformed body surfaces as the handler's 400, not a huma 422).
+type resolveBody json.RawMessage
+
+func (b *resolveBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b resolveBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// Schema documents the resolveRequest shape but loosened to be permissive: the
+// registry-built schema is shallow-copied before mutation (so the cached
+// resolveRequest schema is never contaminated — see reference_huma_gotchas),
+// then `required` is cleared and additionalProperties opened.
+func (resolveBody) Schema(r huma.Registry) *huma.Schema {
+	return openObjectSchema(r, reflect.TypeOf(resolveRequest{}),
+		"Resolve request. All sections are optional: {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}.")
+}
+
+// resolveInput carries the resolve request body.
 type resolveInput struct {
-	Body openJSON
+	Body resolveBody
 }
 
 // resolveResult is the typed top-level resolve response.
@@ -240,12 +361,12 @@ func RegisterResolve(api huma.API, deps ResolveDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-resolve", Method: "POST", Path: "/resolve",
 		Summary:     "Resolve Discord/Telegram IDs to names",
-		Description: "Batch-resolves Discord/Telegram IDs (and unknown-type destinations) to display names. Request body is open: optional {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}. Response is a freeform map of resolved entities.",
+		Description: "Batch-resolves Discord/Telegram IDs (and unknown-type destinations) to display names. Request body: optional {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}. Response is a freeform map of resolved entities.",
 		Tags:        []string{"resolve"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(ctx context.Context, in *resolveInput) (*resolveOutput, error) {
 		var req resolveRequest
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 

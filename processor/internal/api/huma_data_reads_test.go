@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/pokemon/poracleng/processor/internal/geocoding"
+	"github.com/pokemon/poracleng/processor/internal/tracker"
 )
 
 // fakeWeather is a stub WeatherExporter returning a fixed cell→weather map.
@@ -96,15 +97,15 @@ func TestHumaWeather_MissingCell(t *testing.T) {
 	}
 }
 
-// TestHumaStats_OK asserts the stats helper JSON-encodes the export result at
-// 200, byte-for-byte equivalent to the legacy HandleStats.
-func TestHumaStats_OK(t *testing.T) {
+// TestHumaStatsRarity_OK asserts the rarity stats op emits the typed
+// {groups:[{group, pokemon_ids}]} array, ascending by group.
+func TestHumaStatsRarity_OK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
 
-	RegisterStats(humaAPI, "test-stats", "/stats/rarity", func() any {
-		return map[string]any{"common": 10, "rare": 2}
+	RegisterStatsRarity(humaAPI, func() map[int][]int {
+		return map[int][]int{3: {25, 26}, 1: {1, 4}}
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/stats/rarity", nil)
@@ -114,9 +115,92 @@ func TestHumaStats_OK(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /api/stats/rarity = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-	got := decodeBody(t, w)
-	if got["common"] != float64(10) || got["rare"] != float64(2) {
-		t.Errorf("stats body = %v, want {common:10, rare:2}", got)
+	var body struct {
+		Groups []struct {
+			Group      int   `json:"group"`
+			PokemonIDs []int `json:"pokemon_ids"`
+		} `json:"groups"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v; raw: %s", err, w.Body.String())
+	}
+	if len(body.Groups) != 2 {
+		t.Fatalf("want 2 groups, got %d: %s", len(body.Groups), w.Body.String())
+	}
+	if body.Groups[0].Group != 1 || body.Groups[1].Group != 3 {
+		t.Errorf("groups not ascending by group: %v", body.Groups)
+	}
+	if len(body.Groups[1].PokemonIDs) != 2 || body.Groups[1].PokemonIDs[0] != 25 {
+		t.Errorf("group 3 pokemon_ids = %v, want [25 26]", body.Groups[1].PokemonIDs)
+	}
+}
+
+// TestHumaStatsShiny_OK asserts the shiny stats op emits the typed
+// {pokemon:[{pokemon_id, total, seen, ratio}]} array, ascending by id.
+func TestHumaStatsShiny_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
+
+	RegisterStatsShiny(humaAPI, func() map[int]tracker.ShinyStats {
+		return map[int]tracker.ShinyStats{
+			25: {Total: 512, Seen: 1, Ratio: 512},
+			1:  {Total: 100, Seen: 2, Ratio: 50},
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stats/shiny", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/stats/shiny = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Pokemon []struct {
+			PokemonID int     `json:"pokemon_id"`
+			Total     int64   `json:"total"`
+			Seen      int64   `json:"seen"`
+			Ratio     float64 `json:"ratio"`
+		} `json:"pokemon"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v; raw: %s", err, w.Body.String())
+	}
+	if len(body.Pokemon) != 2 || body.Pokemon[0].PokemonID != 1 || body.Pokemon[1].PokemonID != 25 {
+		t.Fatalf("shiny pokemon not ascending by id: %v", body.Pokemon)
+	}
+	if body.Pokemon[1].Total != 512 || body.Pokemon[1].Ratio != 512 {
+		t.Errorf("pokemon 25 = %+v, want total=512 ratio=512", body.Pokemon[1])
+	}
+}
+
+// TestHumaStatsShinyPossible_OK asserts the shiny-possible op preserves the
+// {map:{id:true}} shape with string-encoded pokemon id keys.
+func TestHumaStatsShinyPossible_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
+
+	RegisterStatsShinyPossible(humaAPI, func() map[string]any {
+		return map[string]any{"map": map[int]bool{25: true, 1: true}}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stats/shiny-possible", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/stats/shiny-possible = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Map map[string]bool `json:"map"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v; raw: %s", err, w.Body.String())
+	}
+	if !body.Map["25"] || !body.Map["1"] {
+		t.Errorf("shiny-possible map = %v, want {1:true,25:true}", body.Map)
 	}
 }
 

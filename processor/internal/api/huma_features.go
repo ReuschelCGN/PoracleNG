@@ -24,15 +24,67 @@ type summaryAlertInput struct {
 	AlertType string `path:"alertType"`
 }
 
-// summarySetInput carries the {id} / {alertType} path parameters plus the open
-// JSON body for the schedule upsert. The body is captured raw (openJSON) so the
-// handler can unmarshal it into summarySetRequest with the exact lenient logic
-// the legacy gin handler used — accepting active_hours as a JSON string OR an
-// array/object, with db.ParseActiveHours tolerating zero-padded ("00") ints.
+// summarySetBody is the schedule-upsert request body. It captures the raw bytes
+// verbatim (like openJSON) so the handler keeps the legacy lenient parsing —
+// accepting active_hours as a JSON array OR a JSON-string-encoded array, with
+// db.ParseActiveHours tolerating zero-padded ("00") ints. Unlike openJSON, its
+// Schema() advertises a DOCUMENTED but PERMISSIVE schema: it describes the
+// {active_hours: [ActiveHourEntry]} array shape for the docs while staying
+// permissive (anyOf array|string, no strict per-field types) so huma's
+// pre-bind validation does not reject the legacy lenient forms. (huma validates
+// the body against the schema BEFORE binding, so a strict schema here would
+// break leniency — see reference_huma_gotchas.)
+type summarySetBody json.RawMessage
+
+func (b *summarySetBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b summarySetBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// Schema documents the active_hours array shape while remaining permissive.
+func (summarySetBody) Schema(huma.Registry) *huma.Schema {
+	// Permissive entry: object with the documented fields but NO strict per-
+	// field types or `required`, so zero-padded string ints ("00") still pass.
+	entry := &huma.Schema{
+		Type:                 "object",
+		Description:          "Active-hours entry: {day 0-6, hours 0-23, mins 0-59, optional step, end_hours, end_mins}. Integer fields also accept zero-padded strings (e.g. \"00\").",
+		AdditionalProperties: true,
+	}
+	return &huma.Schema{
+		Type: "object",
+		Properties: map[string]*huma.Schema{
+			"active_hours": {
+				Description: "Active-hours schedule. Preferred form is a JSON array of entries " +
+					"{day, hours, mins, optional step/end_hours/end_mins}. For backward compatibility " +
+					"this in-place endpoint also accepts a JSON-string-encoded array. An empty array " +
+					"(or \"\"/\"[]\"/\"{}\") clears the schedule.",
+				AnyOf: []*huma.Schema{
+					{Type: "array", Items: entry},
+					{Type: "string"},
+				},
+			},
+		},
+		// Open: no Required, additionalProperties allowed — keeps the lenient
+		// legacy contract intact under huma's pre-bind validation.
+		AdditionalProperties: true,
+	}
+}
+
+// summarySetInput carries the {id} / {alertType} path parameters plus the
+// schedule-upsert body. The body is summarySetBody (raw-captured + documented
+// permissive schema) so the handler can unmarshal it into summarySetRequest
+// with the exact lenient logic the legacy gin handler used.
 type summarySetInput struct {
-	ID        string   `path:"id"`
-	AlertType string   `path:"alertType"`
-	Body      openJSON `contentType:"application/json"`
+	ID        string         `path:"id"`
+	AlertType string         `path:"alertType"`
+	Body      summarySetBody `contentType:"application/json"`
 }
 
 // RegisterSummarySet registers POST /api/summaries/{id}/{alertType} (the
@@ -66,7 +118,7 @@ func RegisterSummarySet(api huma.API, deps *SummaryDeps) {
 		}
 
 		var req summarySetRequest
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body")
 		}
 		if req.ActiveHours == nil {

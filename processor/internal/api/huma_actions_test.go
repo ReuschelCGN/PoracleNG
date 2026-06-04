@@ -295,14 +295,19 @@ func TestHumaResolve_EmptyBody_OK(t *testing.T) {
 	}
 }
 
-func TestHumaResolve_MalformedBody400(t *testing.T) {
+func TestHumaResolve_MalformedBody422(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
 	RegisterResolve(api, ResolveDeps{})
 
-	// destinations wrong type (object, not array) → unmarshal fails.
+	// destinations wrong type (object, not array). Now that the request body
+	// carries a documented schema (destinations: array), huma's pre-bind
+	// validation rejects the type mismatch with a precise 422 problem+json
+	// (previously the handler's json.Unmarshal surfaced it as a generic 400).
+	// Still a 4xx problem+json rejection — the leaf TYPE documentation is worth
+	// the sharper error.
 	w := postJSON(t, r, "/api/resolve", []byte(`{"destinations":{"a":1}}`))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", w.Code, w.Body.String())
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "application/problem+json" {
 		t.Fatalf("expected problem+json, got %q", ct)

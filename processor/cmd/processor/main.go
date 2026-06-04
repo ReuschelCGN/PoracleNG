@@ -381,9 +381,9 @@ func main() {
 	// Weather, stats, geocode (migrated to huma, in place — same paths, same
 	// success JSON, problem+json errors). test stays on gin below.
 	api.RegisterWeather(humaAPI, proc.weather)
-	api.RegisterStats(humaAPI, "get-stats-rarity", "/stats/rarity", func() any { return proc.stats.ExportGroups() })
-	api.RegisterStats(humaAPI, "get-stats-shiny", "/stats/shiny", func() any { return proc.stats.ExportShinyStats() })
-	api.RegisterStats(humaAPI, "get-stats-shiny-possible", "/stats/shiny-possible", func() any { return proc.stats.ExportShinyPossible() })
+	api.RegisterStatsRarity(humaAPI, proc.stats.ExportGroups)
+	api.RegisterStatsShiny(humaAPI, proc.stats.ExportShinyStats)
+	api.RegisterStatsShinyPossible(humaAPI, proc.stats.ExportShinyPossible)
 	api.RegisterGeocode(humaAPI, proc.enricher.Geocoder)
 
 	// poracle-test (migrated to huma, in place — same path, same {"status":"ok"}

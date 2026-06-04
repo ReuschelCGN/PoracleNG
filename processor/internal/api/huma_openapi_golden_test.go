@@ -14,6 +14,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/tracker"
 )
 
 // huma_openapi_golden_test.go is the golden OpenAPI spec test over the huma ops
@@ -103,9 +104,9 @@ func registerAllHumaOpsForTest(humaAPI huma.API) {
 
 	// Weather, stats, geocode.
 	RegisterWeather(humaAPI, nil)
-	RegisterStats(humaAPI, "get-stats-rarity", "/stats/rarity", func() any { return nil })
-	RegisterStats(humaAPI, "get-stats-shiny", "/stats/shiny", func() any { return nil })
-	RegisterStats(humaAPI, "get-stats-shiny-possible", "/stats/shiny-possible", func() any { return nil })
+	RegisterStatsRarity(humaAPI, func() map[int][]int { return nil })
+	RegisterStatsShiny(humaAPI, func() map[int]tracker.ShinyStats { return nil })
+	RegisterStatsShinyPossible(humaAPI, func() map[string]any { return nil })
 	RegisterGeocode(humaAPI, nil)
 
 	// poracle-test.
