@@ -479,7 +479,17 @@ func (c *TrackedCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply
 		sb.WriteString("\n⚠️ " + tr.Tf("tracking.warn_stopped", prefix))
 	}
 
-	return bot.SplitTextReply(strings.TrimSpace(sb.String()))
+	// Long lists become a single file attachment instead of a wall of
+	// messages (the attachment carries the full text; short lists stay
+	// inline). Telegram sends it as a document, Discord as a file upload.
+	totalRules := len(monsters) + len(raidList) + len(eggList) + len(questList) +
+		len(invasionList) + len(lureList) + len(gymList) + len(nestList) +
+		len(fortList) + len(maxbattleList)
+	return bot.SplitOrAttachReply(
+		strings.TrimSpace(sb.String()),
+		"tracked.txt",
+		tr.Tf("tracking.list_attached", totalRules),
+	)
 }
 
 type trackedHuman struct {
