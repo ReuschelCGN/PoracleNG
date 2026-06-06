@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -103,24 +104,80 @@ func RegisterTemplateConfig(api huma.API, ts dtsMetadataReader) {
 	})
 }
 
-// dtsRenderInput carries the freeform render request. The body is open because
-// `view` is an arbitrary map of template variables.
+// dtsRenderRequest documents the render request wrapper. It is the
+// documentation-only shape for dtsRenderBody.Schema() (never bound to directly —
+// dtsRenderBody captures raw bytes). The outer fields are NAMED and documented;
+// `view` is openJSON so its schema stays OPEN. The scalar outer fields use
+// openJSON too (their intended type is described in prose) so huma's pre-bind
+// validation never rejects a wrong-typed scalar before the handler runs — this
+// preserves the legacy lenient contract (a type mismatch surfaces as the
+// handler's 400, not a huma 422).
+type dtsRenderRequest struct {
+	Type     openJSON `json:"type" doc:"Template type string, e.g. monster, raid, egg, quest"`
+	ID       openJSON `json:"id" doc:"Template id string (the configured template name/number)"`
+	Platform openJSON `json:"platform" doc:"Target platform string: discord or telegram"`
+	Language openJSON `json:"language" doc:"Locale code string, e.g. en, de"`
+	View     openJSON `json:"view" doc:"Arbitrary template-variable map (open shape)"`
+}
+
+// dtsRenderBody is the POST /api/dts/render request body. It captures the raw
+// bytes verbatim (like openJSON) so the handler keeps the legacy lenient parsing
+// and its own required-field checks. Its Schema() documents the
+// {type,id,platform,language,view} wrapper — view OPEN — while staying permissive
+// (no required, additionalProperties allowed) so huma's pre-bind validation never
+// rejects a partial body before the handler runs.
+type dtsRenderBody json.RawMessage
+
+func (b *dtsRenderBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b dtsRenderBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// Schema documents the render request wrapper, loosened to be permissive.
+func (dtsRenderBody) Schema(r huma.Registry) *huma.Schema {
+	return openObjectSchema(r, reflect.TypeOf(dtsRenderRequest{}),
+		"DTS render request: {type,id,platform,language,view}. `view` is an OPEN template-variable map; the template is selected by type/id/platform/language.")
+}
+
+// dtsRenderInput carries the render request.
 type dtsRenderInput struct {
-	Body openJSON
+	Body dtsRenderBody
+}
+
+// dtsRenderResponse is the typed body for POST /api/dts/render. The outer
+// envelope is named; `message` stays OPEN (the rendered template parsed back to
+// any JSON value). Field order is alphabetical (message, status) to match the
+// legacy map[string]any byte order.
+type dtsRenderResponse struct {
+	Message any    `json:"message" doc:"The rendered template parsed back to JSON (any shape)"`
+	Status  string `json:"status" doc:"Always \"ok\""`
+}
+
+// dtsRenderOutput is the typed huma output for POST /api/dts/render.
+type dtsRenderOutput struct {
+	Body dtsRenderResponse
 }
 
 // RegisterDTSRender registers POST /api/dts/render, rendering a DTS template on
-// demand. Replaces gin HandleDTSRender. The request body is freeform (open):
-// {type,id,platform,language} plus an arbitrary `view` map. The response
-// `message` is the parsed rendered template (any JSON value).
+// demand. Replaces gin HandleDTSRender. The request envelope is named/documented
+// ({type,id,platform,language}) with an OPEN `view` map and stays permissive
+// (extras tolerated). The response `message` is the parsed rendered template (any
+// JSON value).
 func RegisterDTSRender(api huma.API, ts dtsRenderReader) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-dts-render", Method: "POST", Path: "/dts/render",
 		Summary:     "Render a DTS template",
-		Description: "Renders a DTS template on demand. Request body is open: {type,id,platform,language} plus an arbitrary `view` variable map. Response `message` is the rendered template parsed back to JSON (any shape).",
+		Description: "Renders a DTS template on demand. Request envelope ({type,id,platform,language}) is typed; `view` is an OPEN template-variable map. Response `message` is the rendered template parsed back to JSON (any shape).",
 		Tags:        []string{"dts"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsRenderInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsRenderInput) (*dtsRenderOutput, error) {
 		var req struct {
 			Type     string         `json:"type"`
 			ID       string         `json:"id"`
@@ -128,7 +185,7 @@ func RegisterDTSRender(api huma.API, ts dtsRenderReader) {
 			Language string         `json:"language"`
 			View     map[string]any `json:"view"`
 		}
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body: " + err.Error())
 		}
 
@@ -156,7 +213,7 @@ func RegisterDTSRender(api huma.API, ts dtsRenderReader) {
 			return nil, huma.Error500InternalServerError("rendered template is not valid JSON: " + err.Error())
 		}
 
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "message": message}}, nil
+		return &dtsRenderOutput{Body: dtsRenderResponse{Message: message, Status: "ok"}}, nil
 	})
 }
 
@@ -223,31 +280,82 @@ func RegisterDTSSaveTemplates(api huma.API, ts dtsSaveWriter) {
 	})
 }
 
-// dtsEnrichInput carries the freeform enrich request: a `webhook` RawMessage
-// plus typed type/language/platform fields.
+// dtsEnrichRequest documents the enrich request wrapper (documentation-only
+// shape for dtsEnrichBody.Schema(); never bound to directly). The outer fields
+// are NAMED and documented; `webhook` is openJSON so its schema stays OPEN. The
+// scalar outer fields use openJSON too (intended type described in prose) so
+// huma never rejects a wrong-typed scalar before the handler — preserving the
+// legacy lenient 400 contract.
+type dtsEnrichRequest struct {
+	Type     openJSON `json:"type" doc:"Webhook type string: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle"`
+	Webhook  openJSON `json:"webhook" doc:"Raw webhook message payload (open shape; depends on the type field)"`
+	Language openJSON `json:"language" doc:"Locale code string (defaults to en)"`
+	Platform openJSON `json:"platform" doc:"Target platform string (defaults to discord)"`
+}
+
+// dtsEnrichBody is the POST /api/dts/enrich request body. It captures the raw
+// bytes verbatim so the handler keeps the legacy lenient parsing and its own
+// required-field checks. Its Schema() documents the {type,language,platform,
+// webhook} wrapper — webhook OPEN — while staying permissive.
+type dtsEnrichBody json.RawMessage
+
+func (b *dtsEnrichBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b dtsEnrichBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// Schema documents the enrich request wrapper, loosened to be permissive.
+func (dtsEnrichBody) Schema(r huma.Registry) *huma.Schema {
+	return openObjectSchema(r, reflect.TypeOf(dtsEnrichRequest{}),
+		"DTS enrich request: {type,language,platform,webhook}. `webhook` is an OPEN payload; required fields (type, webhook) are enforced by the handler.")
+}
+
+// dtsEnrichInput carries the enrich request.
 type dtsEnrichInput struct {
-	Body openJSON
+	Body dtsEnrichBody
+}
+
+// dtsEnrichResponse is the typed body for POST /api/dts/enrich. The outer
+// envelope is named; `variables` stays OPEN (the enriched variable map, any
+// shape). Field order is alphabetical (status, variables) to match the legacy
+// map[string]any byte order.
+type dtsEnrichResponse struct {
+	Status    string `json:"status" doc:"Always \"ok\""`
+	Variables any    `json:"variables" doc:"The enriched template-variable map (any shape)"`
+}
+
+// dtsEnrichOutput is the typed huma output for POST /api/dts/enrich.
+type dtsEnrichOutput struct {
+	Body dtsEnrichResponse
 }
 
 // RegisterDTSEnrich registers POST /api/dts/enrich, running a webhook through
-// the enrichment pipeline. Replaces gin HandleDTSEnrich. The request body is
-// open: {type,language,platform} plus an arbitrary `webhook` object. The
-// response `variables` is the enriched variable map (any shape).
+// the enrichment pipeline. Replaces gin HandleDTSEnrich. The request envelope is
+// named/documented ({type,language,platform}) with an OPEN `webhook` field and
+// stays permissive. The response `variables` is the enriched variable map (any
+// shape).
 func RegisterDTSEnrich(api huma.API, svc EnrichService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-dts-enrich", Method: "POST", Path: "/dts/enrich",
 		Summary:     "Run webhook through enrichment pipeline",
-		Description: "Runs a webhook through the enrichment pipeline. Request body is open: {type,language,platform} plus an arbitrary `webhook` object. Response `variables` is the enriched variable map (any shape).",
+		Description: "Runs a webhook through the enrichment pipeline. Request envelope ({type,language,platform}) is typed; `webhook` is an OPEN payload. Response `variables` is the enriched variable map (any shape).",
 		Tags:        []string{"dts"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *dtsEnrichInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *dtsEnrichInput) (*dtsEnrichOutput, error) {
 		var req struct {
 			Type     string          `json:"type"`
 			Webhook  json.RawMessage `json:"webhook"`
 			Language string          `json:"language"`
 			Platform string          `json:"platform"`
 		}
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body: " + err.Error())
 		}
 
@@ -270,14 +378,60 @@ func RegisterDTSEnrich(api huma.API, svc EnrichService) {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 
-		return &anyBodyOutput{Body: map[string]any{"status": "ok", "variables": variables}}, nil
+		return &dtsEnrichOutput{Body: dtsEnrichResponse{Status: "ok", Variables: variables}}, nil
 	})
 }
 
-// dtsSendTestInput carries the freeform sendtest request: a polymorphic
-// `template` value plus a `variables` map and typed target/language/platform.
+// dtsSendTestTarget is the target sub-object for the sendtest request. Its
+// scalar fields use openJSON (intended type described in prose) so a wrong-typed
+// scalar never trips huma's pre-bind validation — preserving the legacy lenient
+// 400 contract.
+type dtsSendTestTarget struct {
+	ID   openJSON `json:"id" doc:"Destination ID string (required; type defaults to discord:user)"`
+	Type openJSON `json:"type" doc:"Destination type string, e.g. discord:user, discord:channel, telegram:user"`
+}
+
+// dtsSendTestRequest documents the sendtest request wrapper (documentation-only
+// shape for dtsSendTestBody.Schema(); never bound to directly). The outer fields
+// are NAMED and documented; `template` and `variables` stay OPEN. Scalar outer
+// fields use openJSON too so huma never rejects a wrong-typed scalar before the
+// handler — preserving the legacy lenient 400 contract.
+type dtsSendTestRequest struct {
+	Template  openJSON          `json:"template" doc:"Polymorphic template value (string or object) — open shape"`
+	Variables openJSON          `json:"variables" doc:"Arbitrary template-variable map — open shape"`
+	Target    dtsSendTestTarget `json:"target" doc:"Delivery destination (id required; type defaults to discord:user)"`
+	Language  openJSON          `json:"language" doc:"Locale code string (defaults to en)"`
+	Platform  openJSON          `json:"platform" doc:"Target platform string (defaults to discord)"`
+}
+
+// dtsSendTestBody is the POST /api/dts/sendtest request body. It captures the
+// raw bytes verbatim so the handler keeps the legacy lenient parsing and its own
+// required-field checks. Its Schema() documents the {template,variables,target,
+// language,platform} wrapper — template and variables OPEN — while staying
+// permissive.
+type dtsSendTestBody json.RawMessage
+
+func (b *dtsSendTestBody) UnmarshalJSON(data []byte) error {
+	*b = append((*b)[:0], data...)
+	return nil
+}
+
+func (b dtsSendTestBody) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte("null"), nil
+	}
+	return b, nil
+}
+
+// Schema documents the sendtest request wrapper, loosened to be permissive.
+func (dtsSendTestBody) Schema(r huma.Registry) *huma.Schema {
+	return openObjectSchema(r, reflect.TypeOf(dtsSendTestRequest{}),
+		"DTS sendtest request: {template,variables,target,language,platform}. `template` and `variables` are OPEN; required fields (template, target.id) are enforced by the handler.")
+}
+
+// dtsSendTestInput carries the sendtest request.
 type dtsSendTestInput struct {
-	Body openJSON
+	Body dtsSendTestBody
 }
 
 // dtsSendTestOutput is the typed body for POST /api/dts/sendtest: {status,
@@ -291,13 +445,13 @@ type dtsSendTestOutput struct {
 
 // RegisterDTSSendTest registers POST /api/dts/sendtest, rendering a template
 // with provided variables and delivering it to a target. Replaces gin
-// HandleDTSSendTest. The request body is open: a polymorphic `template` value,
-// an arbitrary `variables` map, plus {target,language,platform}.
+// HandleDTSSendTest. The request envelope ({target,language,platform}) is typed;
+// `template` and `variables` stay OPEN, and the body stays permissive.
 func RegisterDTSSendTest(api huma.API, dispatcher dtsDispatcher, ts dtsSendTestReader, renderer dtsShortener) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-dts-sendtest", Method: "POST", Path: "/dts/sendtest",
 		Summary:     "Render and deliver a test message",
-		Description: "Renders a template with provided variables and delivers it to a target. Request body is open: a polymorphic `template` value (string or object), an arbitrary `variables` map, plus {target,language,platform}.",
+		Description: "Renders a template with provided variables and delivers it to a target. Request envelope ({target,language,platform}) is typed; `template` (string or object) and `variables` are OPEN.",
 		Tags:        []string{"dts"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsSendTestInput) (*dtsSendTestOutput, error) {
@@ -315,7 +469,7 @@ func RegisterDTSSendTest(api huma.API, dispatcher dtsDispatcher, ts dtsSendTestR
 			Language string `json:"language"`
 			Platform string `json:"platform"`
 		}
-		if err := json.Unmarshal(in.Body, &req); err != nil {
+		if err := json.Unmarshal([]byte(in.Body), &req); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body: " + err.Error())
 		}
 

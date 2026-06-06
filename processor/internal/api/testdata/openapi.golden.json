@@ -356,6 +356,45 @@
         ],
         "type": "object"
       },
+      "ConfigSaveResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "description": "Path (relative to config/) of the pre-write backup of config.toml",
+            "type": "string"
+          },
+          "restart_fields": {
+            "description": "Changed fields that require a restart to take effect (omitted when none)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "restart_required": {
+            "description": "Whether a restart is needed for the saved changes to take effect",
+            "type": "boolean"
+          },
+          "saved": {
+            "description": "Number of config fields written",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup",
+          "restart_required",
+          "saved",
+          "status"
+        ],
+        "type": "object"
+      },
       "ConfigSchemaOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -463,6 +502,60 @@
           "title",
           "description",
           "fields"
+        ],
+        "type": "object"
+      },
+      "ConfigValidateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "issues": {
+            "description": "Per-field validation issues (each {field, severity, message}); empty/absent when all values are valid",
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issues",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ConfigValuesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "overridden": {
+            "description": "Always an empty list; retained for editor backward compatibility",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {},
+            "description": "Current merged config values: a dynamically-keyed {section: {field: value}} map (open shape)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "overridden",
+          "status",
+          "values"
         ],
         "type": "object"
       },
@@ -599,6 +692,47 @@
         },
         "required": [
           "actions"
+        ],
+        "type": "object"
+      },
+      "DtsEnrichRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "description": "Locale code string (defaults to en)"
+          },
+          "platform": {
+            "description": "Target platform string (defaults to discord)"
+          },
+          "type": {
+            "description": "Webhook type string: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle"
+          },
+          "webhook": {
+            "description": "Raw webhook message payload (open shape; depends on the type field)"
+          }
+        },
+        "required": [
+          "type",
+          "webhook",
+          "language",
+          "platform"
+        ],
+        "type": "object"
+      },
+      "DtsEnrichResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          },
+          "variables": {
+            "description": "The enriched template-variable map (any shape)"
+          }
+        },
+        "required": [
+          "status",
+          "variables"
         ],
         "type": "object"
       },
@@ -767,6 +901,51 @@
         ],
         "type": "object"
       },
+      "DtsRenderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Template id string (the configured template name/number)"
+          },
+          "language": {
+            "description": "Locale code string, e.g. en, de"
+          },
+          "platform": {
+            "description": "Target platform string: discord or telegram"
+          },
+          "type": {
+            "description": "Template type string, e.g. monster, raid, egg, quest"
+          },
+          "view": {
+            "description": "Arbitrary template-variable map (open shape)"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "platform",
+          "language",
+          "view"
+        ],
+        "type": "object"
+      },
+      "DtsRenderResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "The rendered template parsed back to JSON (any shape)"
+          },
+          "status": {
+            "description": "Always \"ok\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "status"
+        ],
+        "type": "object"
+      },
       "DtsSaveOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -797,6 +976,51 @@
         "required": [
           "status",
           "message"
+        ],
+        "type": "object"
+      },
+      "DtsSendTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "description": "Locale code string (defaults to en)"
+          },
+          "platform": {
+            "description": "Target platform string (defaults to discord)"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DtsSendTestTarget",
+            "description": "Delivery destination (id required; type defaults to discord:user)"
+          },
+          "template": {
+            "description": "Polymorphic template value (string or object) — open shape"
+          },
+          "variables": {
+            "description": "Arbitrary template-variable map — open shape"
+          }
+        },
+        "required": [
+          "template",
+          "variables",
+          "target",
+          "language",
+          "platform"
+        ],
+        "type": "object"
+      },
+      "DtsSendTestTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Destination ID string (required; type defaults to discord:user)"
+          },
+          "type": {
+            "description": "Destination type string, e.g. discord:user, discord:channel, telegram:user"
+          }
+        },
+        "required": [
+          "id",
+          "type"
         ],
         "type": "object"
       },
@@ -11459,6 +11683,26 @@
           "active_hours"
         ],
         "type": "object"
+      },
+      "ValidationIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "severity",
+          "message"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -11641,7 +11885,7 @@
     },
     "/config/validate": {
       "post": {
-        "description": "Runs the config-values validation pass without saving. Request body is open: a nested {section: {field: value}} map. Response is {status:\"ok\", issues:[...]} where each issue is {field, severity, message}.",
+        "description": "Runs the config-values validation pass without saving. Request body stays open: a nested {section: {field: value}} map. Response envelope ({status, issues}) is typed; each issue is {field, severity, message}.",
         "operationId": "post-config-validate",
         "requestBody": {
           "content": {
@@ -11655,7 +11899,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigValidateResponse"
+                }
               }
             },
             "description": "OK"
@@ -11684,7 +11930,7 @@
     },
     "/config/values": {
       "get": {
-        "description": "Returns current merged config values (reflection-built map). Response is freeform (open body). The `overridden` field is always an empty list, retained for editor backward compatibility.",
+        "description": "Returns current merged config values. The outer envelope ({status, values, overridden}) is typed; `values` is open (the reflection-built {section:{field:value}} map). The `overridden` field is always an empty list, retained for editor backward compatibility.",
         "operationId": "get-config-values",
         "parameters": [
           {
@@ -11700,7 +11946,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigValuesResponse"
+                }
               }
             },
             "description": "OK"
@@ -11727,7 +11975,7 @@
         ]
       },
       "post": {
-        "description": "Rewrites config/config.toml in place (previous version backed up to config/backups/). Request body is open: a nested {section: {field: value}} map of editor updates.",
+        "description": "Rewrites config/config.toml in place (previous version backed up to config/backups/). Request body stays open: a nested {section: {field: value}} map of editor updates. Response envelope ({status, saved, restart_required, backup, restart_fields?}) is typed.",
         "operationId": "post-config-values",
         "requestBody": {
           "content": {
@@ -11741,7 +11989,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigSaveResponse"
+                }
               }
             },
             "description": "OK"
@@ -11904,12 +12154,30 @@
     },
     "/dts/enrich": {
       "post": {
-        "description": "Runs a webhook through the enrichment pipeline. Request body is open: {type,language,platform} plus an arbitrary `webhook` object. Response `variables` is the enriched variable map (any shape).",
+        "description": "Runs a webhook through the enrichment pipeline. Request envelope ({type,language,platform}) is typed; `webhook` is an OPEN payload. Response `variables` is the enriched variable map (any shape).",
         "operationId": "post-dts-enrich",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "description": "DTS enrich request: {type,language,platform,webhook}. `webhook` is an OPEN payload; required fields (type, webhook) are enforced by the handler.",
+                "properties": {
+                  "language": {
+                    "description": "Locale code string (defaults to en)"
+                  },
+                  "platform": {
+                    "description": "Target platform string (defaults to discord)"
+                  },
+                  "type": {
+                    "description": "Webhook type string: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle"
+                  },
+                  "webhook": {
+                    "description": "Raw webhook message payload (open shape; depends on the type field)"
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -11918,7 +12186,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsEnrichResponse"
+                }
               }
             },
             "description": "OK"
@@ -12137,12 +12407,33 @@
     },
     "/dts/render": {
       "post": {
-        "description": "Renders a DTS template on demand. Request body is open: {type,id,platform,language} plus an arbitrary `view` variable map. Response `message` is the rendered template parsed back to JSON (any shape).",
+        "description": "Renders a DTS template on demand. Request envelope ({type,id,platform,language}) is typed; `view` is an OPEN template-variable map. Response `message` is the rendered template parsed back to JSON (any shape).",
         "operationId": "post-dts-render",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "description": "DTS render request: {type,id,platform,language,view}. `view` is an OPEN template-variable map; the template is selected by type/id/platform/language.",
+                "properties": {
+                  "id": {
+                    "description": "Template id string (the configured template name/number)"
+                  },
+                  "language": {
+                    "description": "Locale code string, e.g. en, de"
+                  },
+                  "platform": {
+                    "description": "Target platform string: discord or telegram"
+                  },
+                  "type": {
+                    "description": "Template type string, e.g. monster, raid, egg, quest"
+                  },
+                  "view": {
+                    "description": "Arbitrary template-variable map (open shape)"
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -12151,7 +12442,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DtsRenderResponse"
+                }
               }
             },
             "description": "OK"
@@ -12180,12 +12473,42 @@
     },
     "/dts/sendtest": {
       "post": {
-        "description": "Renders a template with provided variables and delivers it to a target. Request body is open: a polymorphic `template` value (string or object), an arbitrary `variables` map, plus {target,language,platform}.",
+        "description": "Renders a template with provided variables and delivers it to a target. Request envelope ({target,language,platform}) is typed; `template` (string or object) and `variables` are OPEN.",
         "operationId": "post-dts-sendtest",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "additionalProperties": true,
+                "description": "DTS sendtest request: {template,variables,target,language,platform}. `template` and `variables` are OPEN; required fields (template, target.id) are enforced by the handler.",
+                "properties": {
+                  "language": {
+                    "description": "Locale code string (defaults to en)"
+                  },
+                  "platform": {
+                    "description": "Target platform string (defaults to discord)"
+                  },
+                  "target": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "id": {
+                        "description": "Destination ID string (required; type defaults to discord:user)"
+                      },
+                      "type": {
+                        "description": "Destination type string, e.g. discord:user, discord:channel, telegram:user"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "template": {
+                    "description": "Polymorphic template value (string or object) — open shape"
+                  },
+                  "variables": {
+                    "description": "Arbitrary template-variable map — open shape"
+                  }
+                },
+                "type": "object"
+              }
             }
           },
           "required": true

@@ -79,23 +79,41 @@ type configValuesInput struct {
 	Section string `query:"section"`
 }
 
+// configValuesResponse is the typed body for GET /api/config/values. The outer
+// envelope is named/documented; `values` stays OPEN (it is the reflection-built
+// ExtractValues map of dynamically-keyed sections/fields). Field order is
+// deliberately alphabetical by json tag (overridden, status, values) so the
+// serialised bytes are IDENTICAL to the legacy map[string]any response (Go
+// marshals map keys in sorted order).
+type configValuesResponse struct {
+	Overridden []string       `json:"overridden" doc:"Always an empty list; retained for editor backward compatibility"`
+	Status     string         `json:"status" doc:"Always \"ok\""`
+	Values     map[string]any `json:"values" doc:"Current merged config values: a dynamically-keyed {section: {field: value}} map (open shape)"`
+}
+
+// configValuesOutput is the typed huma output for GET /api/config/values.
+type configValuesOutput struct {
+	Body configValuesResponse
+}
+
 // RegisterConfigValues registers GET /api/config/values, returning current
-// merged config values (reflection-built map → open body). Replaces gin
-// HandleConfigValues. The "overridden" field is always an empty list, preserved
-// for editor backward compatibility.
+// merged config values (reflection-built map). Replaces gin HandleConfigValues.
+// The envelope is typed; `values` stays open (the ExtractValues reflection map).
+// The "overridden" field is always an empty list, preserved for editor backward
+// compatibility.
 func RegisterConfigValues(api huma.API, deps ConfigDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-config-values", Method: "GET", Path: "/config/values",
 		Summary:     "Current merged config values",
-		Description: "Returns current merged config values (reflection-built map). Response is freeform (open body). The `overridden` field is always an empty list, retained for editor backward compatibility.",
+		Description: "Returns current merged config values. The outer envelope ({status, values, overridden}) is typed; `values` is open (the reflection-built {section:{field:value}} map). The `overridden` field is always an empty list, retained for editor backward compatibility.",
 		Tags:        []string{"config"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *configValuesInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *configValuesInput) (*configValuesOutput, error) {
 		values := ExtractValues(deps.Cfg, in.Section)
-		return &anyBodyOutput{Body: map[string]any{
-			"status":     "ok",
-			"values":     values,
-			"overridden": []string{},
+		return &configValuesOutput{Body: configValuesResponse{
+			Overridden: []string{},
+			Status:     "ok",
+			Values:     values,
 		}}, nil
 	})
 }
@@ -104,6 +122,41 @@ func RegisterConfigValues(api huma.API, deps ConfigDeps) {
 // because the editor POSTs a dynamically-keyed {section: {field: value}} map.
 type configWriteInput struct {
 	Body openJSON
+}
+
+// configSaveResponse is the typed body for POST /api/config/values. The request
+// stays OPEN (configWriteInput.Body openJSON — the nested {section:{field:value}}
+// editor map), but the response envelope is named/documented. Field order is
+// deliberately alphabetical by json tag (backup, restart_fields, restart_required,
+// saved, status) so the serialised bytes are IDENTICAL to the legacy
+// map[string]any response. `restart_fields` is omitempty to match the legacy
+// handler, which only sets the key when at least one restart-required field was
+// changed.
+type configSaveResponse struct {
+	Backup          string   `json:"backup" doc:"Path (relative to config/) of the pre-write backup of config.toml"`
+	RestartFields   []string `json:"restart_fields,omitempty" doc:"Changed fields that require a restart to take effect (omitted when none)"`
+	RestartRequired bool     `json:"restart_required" doc:"Whether a restart is needed for the saved changes to take effect"`
+	Saved           int      `json:"saved" doc:"Number of config fields written"`
+	Status          string   `json:"status" doc:"Always \"ok\""`
+}
+
+// configSaveOutput is the typed huma output for POST /api/config/values.
+type configSaveOutput struct {
+	Body configSaveResponse
+}
+
+// configValidateResponse is the typed body for POST /api/config/validate. The
+// request stays OPEN (the config map); the response envelope is named. Field
+// order is deliberately alphabetical by json tag (issues, status) so the
+// serialised bytes are IDENTICAL to the legacy map[string]any response.
+type configValidateResponse struct {
+	Issues []ValidationIssue `json:"issues" doc:"Per-field validation issues (each {field, severity, message}); empty/absent when all values are valid"`
+	Status string            `json:"status" doc:"Always \"ok\""`
+}
+
+// configValidateOutput is the typed huma output for POST /api/config/validate.
+type configValidateOutput struct {
+	Body configValidateResponse
 }
 
 // RegisterConfigSave registers POST /api/config/values, rewriting
@@ -115,10 +168,10 @@ func RegisterConfigSave(api huma.API, deps ConfigDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-config-values", Method: "POST", Path: "/config/values",
 		Summary:     "Save config changes",
-		Description: "Rewrites config/config.toml in place (previous version backed up to config/backups/). Request body is open: a nested {section: {field: value}} map of editor updates.",
+		Description: "Rewrites config/config.toml in place (previous version backed up to config/backups/). Request body stays open: a nested {section: {field: value}} map of editor updates. Response envelope ({status, saved, restart_required, backup, restart_fields?}) is typed.",
 		Tags:        []string{"config"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *configWriteInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *configWriteInput) (*configSaveOutput, error) {
 		var updates map[string]any
 		if err := json.Unmarshal(in.Body, &updates); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body: " + err.Error())
@@ -182,16 +235,13 @@ func RegisterConfigSave(api huma.API, deps ConfigDeps) {
 		saved := countFields(updates)
 		log.Infof("config: saved %d field(s) via API (restart_required=%v, backup=%s)", saved, restartRequired, backupRel)
 
-		resp := map[string]any{
-			"status":           "ok",
-			"saved":            saved,
-			"restart_required": restartRequired,
-			"backup":           backupRel,
-		}
-		if len(restartFields) > 0 {
-			resp["restart_fields"] = restartFields
-		}
-		return &anyBodyOutput{Body: resp}, nil
+		return &configSaveOutput{Body: configSaveResponse{
+			Backup:          backupRel,
+			RestartFields:   restartFields,
+			RestartRequired: restartRequired,
+			Saved:           saved,
+			Status:          "ok",
+		}}, nil
 	})
 }
 
@@ -203,19 +253,19 @@ func RegisterConfigValidate(api huma.API, deps ConfigDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-config-validate", Method: "POST", Path: "/config/validate",
 		Summary:     "Dry-run config validation",
-		Description: "Runs the config-values validation pass without saving. Request body is open: a nested {section: {field: value}} map. Response is {status:\"ok\", issues:[...]} where each issue is {field, severity, message}.",
+		Description: "Runs the config-values validation pass without saving. Request body stays open: a nested {section: {field: value}} map. Response envelope ({status, issues}) is typed; each issue is {field, severity, message}.",
 		Tags:        []string{"config"},
 		Security:    []map[string][]string{{"poracleSecret": {}}},
-	}, func(_ context.Context, in *configWriteInput) (*anyBodyOutput, error) {
+	}, func(_ context.Context, in *configWriteInput) (*configValidateOutput, error) {
 		var updates map[string]any
 		if err := json.Unmarshal(in.Body, &updates); err != nil {
 			return nil, huma.Error400BadRequest("invalid request body: " + err.Error())
 		}
 
 		issues := validateConfigValues(updates, deps.ConfigDir)
-		return &anyBodyOutput{Body: map[string]any{
-			"status": "ok",
-			"issues": issues,
+		return &configValidateOutput{Body: configValidateResponse{
+			Issues: issues,
+			Status: "ok",
 		}}, nil
 	})
 }
