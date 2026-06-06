@@ -610,6 +610,37 @@ func TestTrack_RejectsLocationWithoutDistance(t *testing.T) {
 	}
 }
 
+// TestTrack_AreaWithDefaultDistance_NoMutualExclusion guards the bug where a
+// configured [tracking] default_distance made `!track X area:Y` (no explicit
+// d:) wrongly trip the area-vs-distance mutual-exclusion check: enforceDistance
+// injected the default into filters.distance, so parseOverride saw distance>0.
+// In area-mode the default must not apply — and the stored rule must keep
+// distance 0 so the matcher honours override_areas (distance>0 ⇒ haversine).
+func TestTrack_AreaWithDefaultDistance_NoMutualExclusion(t *testing.T) {
+	ctx, _ := newTestTrackCtx(t)
+	ctx.Config.Tracking.DefaultDistance = 1000
+
+	cmd := &TrackCommand{}
+	replies := cmd.Run(ctx, []string{"25", "iv100", "area:london"})
+
+	if anyContains(replies, "mutually exclusive") {
+		t.Fatalf("default_distance must not force area→distance exclusion; got %+v", replies)
+	}
+	if !anyReact(replies, "✅") {
+		t.Fatalf("expected success react, got %+v", replies)
+	}
+	rows := ctx.Tracking.Monsters.(*store.MockTrackingStore[db.MonsterTrackingAPI]).AllRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 stored rule, got %d", len(rows))
+	}
+	if rows[0].Distance != 0 {
+		t.Fatalf("area-mode rule must store distance 0 (not default_distance), got %d", rows[0].Distance)
+	}
+	if len(rows[0].OverrideAreas) == 0 {
+		t.Fatalf("expected override_areas set on the stored rule, got %+v", rows[0].OverrideAreas)
+	}
+}
+
 func TestTrack_RejectsAreaWithDistance(t *testing.T) {
 	ctx, _ := newTestTrackCtx(t)
 	ctx.HasLocation = true
