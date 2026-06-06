@@ -137,8 +137,15 @@ func extractPings(args []string) (pings string, remaining []string) {
 }
 
 // enforceDistance applies default and max distance limits from config.
-func enforceDistance(ctx *bot.CommandContext, distance int) int {
-	if distance == 0 && ctx.Config.Tracking.DefaultDistance > 0 {
+// enforceDistance applies the configured default_distance (when the user gave
+// no explicit d:) and clamps to max_distance. areaMode must be true when the
+// rule uses an area: override: area-mode and distance-mode are mutually
+// exclusive, so default_distance must NOT be injected there — otherwise it both
+// trips the area-vs-distance rejection in parseOverride and (if stored) makes
+// the matcher prefer the haversine check over the area overlap, ignoring the
+// override_areas the user asked for.
+func enforceDistance(ctx *bot.CommandContext, distance int, areaMode bool) int {
+	if !areaMode && distance == 0 && ctx.Config.Tracking.DefaultDistance > 0 {
 		distance = ctx.Config.Tracking.DefaultDistance
 	}
 	if ctx.Config.Tracking.MaxDistance > 0 && distance > ctx.Config.Tracking.MaxDistance {
@@ -377,7 +384,7 @@ func parseCommonTrackFields(ctx *bot.CommandContext, parsed *bot.ParsedArgs, dts
 	if d, ok := parsed.Singles["d"]; ok {
 		f.Distance = d
 	}
-	f.Distance = enforceDistance(ctx, f.Distance)
+	f.Distance = enforceDistance(ctx, f.Distance, len(parsed.StringLists["area"]) > 0)
 
 	return f, nil
 }

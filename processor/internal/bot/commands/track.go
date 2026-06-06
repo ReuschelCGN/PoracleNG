@@ -364,7 +364,7 @@ func (c *TrackCommand) parseFilters(ctx *bot.CommandContext, parsed *bot.ParsedA
 	if d, ok := parsed.Singles["d"]; ok {
 		f.distance = d
 	}
-	f.distance = enforceDistance(ctx, f.distance)
+	f.distance = enforceDistance(ctx, f.distance, len(parsed.StringLists["area"]) > 0)
 
 	// Template
 	if t, ok := parsed.Strings["template"]; ok {
