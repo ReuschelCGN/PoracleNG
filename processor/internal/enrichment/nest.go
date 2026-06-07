@@ -49,7 +49,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	if nest.PolyPath != "" {
 		var rawPolygons [][][2]float64
 		if err := json.Unmarshal([]byte(nest.PolyPath), &rawPolygons); err != nil {
-			log.Debugf("[%d] nest: failed to parse poly_path: %s", nest.NestID, err)
+			log.Debugf("[%s] nest: failed to parse poly_path: %s", nest.NestID, err)
 		} else {
 			var polygons [][]staticmap.LatLon
 			for _, rawPoly := range rawPolygons {
