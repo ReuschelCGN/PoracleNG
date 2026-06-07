@@ -40,6 +40,9 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 	if mb != nil {
 		m["station_id"] = mb.ID
 		m["station_name"] = mb.Name
+		// pokemonId / battle_pokemon_id are aliases of the same value; templates
+		// (and the legacy alerter) reference {{pokemonId}} for the dex number.
+		m["pokemonId"] = mb.BattlePokemonID
 		m["battle_start"] = mb.BattleStart
 		m["total_stationed_pokemon"] = mb.TotalStationedPokemon
 		m["total_stationed_gmax"] = mb.TotalStationedGmax
@@ -113,6 +116,14 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 					"baseStamina": monster.Stamina,
 				}
 				m["weaknessList"] = gamedata.CalculateWeaknesses(monster.Types, gd.Types)
+
+				// Generation (number + roman). generationName is added per-language
+				// by MaxbattleTranslate. Mirrors raid/pokemon enrichment.
+				gen := gd.GetGeneration(mb.BattlePokemonID, mb.BattlePokemonForm)
+				m["generation"] = gen
+				if info := gd.GetGenerationInfo(gen); info != nil {
+					m["generationRoman"] = info.Roman
+				}
 			}
 		}
 	}
@@ -148,6 +159,7 @@ func (e *Enricher) MaxbattleTranslate(base map[string]any, mb *webhook.Maxbattle
 
 	if mb.BattlePokemonID > 0 {
 		TranslateMonsterNamesEng(m, gd, tr, e.Translations, mb.BattlePokemonID, mb.BattlePokemonForm, 0)
+		addGenerationFields(m, gd, tr, e.Translations.For("en"), mb.BattlePokemonID, mb.BattlePokemonForm)
 		monster := gd.GetMonster(mb.BattlePokemonID, mb.BattlePokemonForm)
 		if monster != nil {
 			TranslateTypeNames(m, tr, e.Translations.For("en"), monster.Types)
