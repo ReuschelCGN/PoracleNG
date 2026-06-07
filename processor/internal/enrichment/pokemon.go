@@ -364,9 +364,10 @@ func (e *Enricher) PokemonTranslate(base map[string]any, pokemon *webhook.Pokemo
 	if weather == 0 {
 		weather = pokemon.Weather
 	}
-	addWeatherFields(m, gd, tr, monster.Types, weather)
+	addWeatherFields(m, gd, tr, enTr, monster.Types, weather)
 	gameWeatherID := toInt(base["gameWeatherId"])
 	m["gameWeatherName"] = TranslateWeatherName(tr, gameWeatherID)
+	m["gameWeatherNameEng"] = TranslateWeatherName(enTr, gameWeatherID)
 	if gameWeatherID > 0 {
 		if wInfo, ok := gd.Util.Weather[gameWeatherID]; ok {
 			m["gameWeatherEmojiKey"] = wInfo.Emoji

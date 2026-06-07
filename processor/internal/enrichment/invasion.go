@@ -176,6 +176,7 @@ func (e *Enricher) InvasionTranslate(base map[string]any, lat, lon float64, grun
 	tr := e.Translations.For(lang)
 	gameWeatherID := toInt(base["gameWeatherId"])
 	m["gameWeatherName"] = TranslateWeatherName(tr, gameWeatherID)
+	m["gameWeatherNameEng"] = TranslateWeatherName(e.Translations.For("en"), gameWeatherID)
 	if gameWeatherID > 0 {
 		if wInfo, ok := gd.Util.Weather[gameWeatherID]; ok {
 			m["gameWeatherEmojiKey"] = wInfo.Emoji
