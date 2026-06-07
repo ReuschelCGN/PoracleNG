@@ -303,7 +303,7 @@ var knownPrefixKeys = []string{
 	// can't add weight constraints.
 	"arg.prefix.rarity", "arg.prefix.maxrarity",
 	"arg.prefix.size", "arg.prefix.maxsize",
-	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap",
+	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap", "arg.prefix.mega",
 	"arg.prefix.form", "arg.prefix.template", "arg.prefix.move", "arg.prefix.language",
 	"arg.prefix.gym",
 	"arg.prefix.stardust", "arg.prefix.energy", "arg.prefix.candy",
@@ -319,7 +319,7 @@ var knownKeywordKeys = []string{
 	"arg.remove", "arg.everything", "arg.individually",
 	"arg.clean", "arg.edit", "arg.summary", "arg.shiny", "arg.ex",
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
-	"arg.gmax",
+	"arg.gmax", "arg.mega",
 	"arg.pokestop", "arg.gym", "arg.station", "arg.location", "arg.new", "arg.removal", "arg.photo", "arg.name", "arg.description", "arg.include_empty",
 	"arg.stardust", "arg.energy", "arg.candy",
 	"arg.slot_changes", "arg.battle_changes",
@@ -592,8 +592,24 @@ func (am *ArgMatcher) tryPrefixSingle(tok, key, lang string, result *ParsedArgs)
 	return false
 }
 
+// tokenIsKnownPokemon reports whether the whole token resolves to a pokemon.
+// Used to stop open-valued string prefixes (mega:, form:, move:, …) from
+// swallowing a token that is actually a pokemon name via the no-colon
+// concatenation form — e.g. "meganium" would otherwise match the "mega"
+// prefix as mega+"nium", leaving no pokemon to resolve. Colon forms like
+// "mega:x" never resolve to a pokemon, so this guard doesn't affect them.
+func (am *ArgMatcher) tokenIsKnownPokemon(tok, lang string) bool {
+	if am.resolver == nil {
+		return false
+	}
+	return len(am.resolver.Resolve(tok, lang)) > 0
+}
+
 // tryPrefixString matches patterns like "form:alola" or "formalola", "template:2", "move:hydro pump".
 func (am *ArgMatcher) tryPrefixString(tok, key, lang string, result *ParsedArgs) bool {
+	if am.tokenIsKnownPokemon(tok, lang) {
+		return false
+	}
 	prefix := am.cachedPrefix(key, lang)
 	for _, p := range prefix {
 		if val, ok := stripPrefix(tok, p); ok {
@@ -609,6 +625,9 @@ func (am *ArgMatcher) tryPrefixString(tok, key, lang string, result *ParsedArgs)
 // Values are comma-split and lowercased; calling this multiple times on
 // different tokens accumulates all values in result.StringLists[shortKey].
 func (am *ArgMatcher) tryPrefixStringList(tok, key, lang string, result *ParsedArgs) bool {
+	if am.tokenIsKnownPokemon(tok, lang) {
+		return false
+	}
 	prefixes := am.cachedPrefix(key, lang)
 	for _, p := range prefixes {
 		val, ok := stripPrefix(tok, p)

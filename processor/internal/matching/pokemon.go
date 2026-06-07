@@ -98,6 +98,9 @@ type PokemonMatcher struct {
 	PVPEvolutionDirectTracking bool
 	StrictLocations            bool
 	AreaSecurityEnabled        bool
+	// IncludeMegaEvolution is the server default for rules with
+	// PVPRankingEvolution == 0: when true those rules also match mega entries.
+	IncludeMegaEvolution bool
 }
 
 // Match returns all matched users for a pokemon along with the geofence
@@ -192,6 +195,22 @@ func (m *PokemonMatcher) matchMonsters(
 		}
 		// PVP league filters
 		if league != 0 {
+			// Mega/temporary-evolution discriminator (parallel to the cap filter).
+			switch monster.PVPRankingEvolution {
+			case 0:
+				// "without mega": base only, unless the server default includes megas.
+				if !m.IncludeMegaEvolution && leagueData.Evolution != 0 {
+					continue
+				}
+			case 1:
+				if leagueData.Evolution == 0 { // any mega
+					continue
+				}
+			default:
+				if leagueData.Evolution != monster.PVPRankingEvolution { // specific mega (2=X,3=Y)
+					continue
+				}
+			}
 			if leagueData.Rank > monster.PVPRankingWorst {
 				continue
 			}

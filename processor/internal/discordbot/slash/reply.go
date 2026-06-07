@@ -118,6 +118,18 @@ func buildReplyPayloads(r bot.Reply) []replyPayload {
 		return []replyPayload{{embeds: []*discordgo.MessageEmbed{embed}}}
 	}
 
+	// File attachment (e.g. a long !tracked list rendered to tracked.txt).
+	// Text rides along as the message content next to the upload.
+	if r.Attachment != nil {
+		return []replyPayload{{
+			content: r.Text,
+			files: []*discordgo.File{{
+				Name:   r.Attachment.Filename,
+				Reader: bytes.NewReader(r.Attachment.Content),
+			}},
+		}}
+	}
+
 	// Raw Embed JSON (full Discord message shape: content/embed/embeds).
 	if len(r.Embed) > 0 {
 		if p, ok := parseEmbedJSON(r.Embed); ok {

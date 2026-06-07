@@ -498,6 +498,36 @@ func SplitTextReply(text string) []Reply {
 	return replies
 }
 
+// maxInlineReplyChunks is the most Discord-sized (2000-char) messages a reply
+// may span before SplitOrAttachReply switches to a single file attachment.
+// Beyond this, splitting becomes a wall of messages; a file is cleaner. The
+// threshold is message-count rather than row-count so it tracks the real
+// constraint (the 2000-char limit) regardless of how long individual rows are.
+const maxInlineReplyChunks = 3
+
+// SplitOrAttachReply returns the text as inline messages when short, or as a
+// single file attachment when it would span more than maxInlineReplyChunks
+// Discord messages. attachMessage is the localized one-liner shown alongside
+// the attachment (the caller supplies it so this stays i18n-agnostic). The
+// attachment carries the full untruncated text; filename is e.g. "tracked.txt".
+//
+// Telegram delivers the Attachment as a document; the Discord text-bot and
+// slash surfaces send it as a file upload.
+func SplitOrAttachReply(text, filename, attachMessage string) []Reply {
+	chunks := SplitMessage(text, 2000)
+	if len(chunks) <= maxInlineReplyChunks {
+		replies := make([]Reply, len(chunks))
+		for i, msg := range chunks {
+			replies[i] = Reply{Text: msg}
+		}
+		return replies
+	}
+	return []Reply{{
+		Text:       attachMessage,
+		Attachment: &Attachment{Filename: filename, Content: []byte(text)},
+	}}
+}
+
 // Attachment is a file to attach to the reply message.
 type Attachment struct {
 	Filename string `json:"filename"`

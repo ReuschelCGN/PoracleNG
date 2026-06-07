@@ -122,6 +122,42 @@ func TestBuildTarget_NonAdminChannelUsesConfiguredPrefix(t *testing.T) {
 	}
 }
 
+// TestBuildTarget_NameResolvesNamedTargets ensures `name:` resolves not just
+// Discord webhooks but every named, non-command destination — notably
+// telegram:channel (the Telegram analogue of a Discord webhook). A store
+// refactor narrowed the lookup to type='webhook', breaking telegram:channel
+// resolution; this guards against that regression.
+func TestBuildTarget_NameResolvesNamedTargets(t *testing.T) {
+	cases := []struct {
+		hookType string
+		hookName string
+		hookID   string
+	}{
+		{TypeWebhook, "MyHook", "wh1"},
+		{"telegram:channel", "innsbrucktop100", "-1001234567890"},
+		{TypeTelegramGroup, "mygroup", "-100999"},
+		{TypeDiscordChannel, "namedchan", "chX"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.hookType, func(t *testing.T) {
+			humans := store.NewMockHumanStore()
+			humans.AddHuman(&store.Human{ID: "user1", Type: TypeDiscordUser, Name: "Alice", Enabled: true})
+			humans.AddHuman(&store.Human{ID: tc.hookID, Type: tc.hookType, Name: tc.hookName, Enabled: true})
+			ctx := &CommandContext{
+				UserID: "user1", Platform: "discord", IsDM: true, IsAdmin: true,
+				TargetID: "user1", Humans: humans,
+			}
+			target, _, err := BuildTarget(ctx, []string{"name:" + tc.hookName, "pikachu"})
+			if err != nil {
+				t.Fatalf("name:%s (%s): unexpected error: %v", tc.hookName, tc.hookType, err)
+			}
+			if target == nil || target.ID != tc.hookID {
+				t.Fatalf("name:%s (%s): expected target %s, got %+v", tc.hookName, tc.hookType, tc.hookID, target)
+			}
+		})
+	}
+}
+
 func TestBuildTarget_NonAdminInUnregisteredChannelRejected(t *testing.T) {
 	ctx := newTargetCtx(t, false, false)
 	// Remove the channel from the mock store so it appears unregistered

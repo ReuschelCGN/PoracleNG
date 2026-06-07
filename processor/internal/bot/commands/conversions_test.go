@@ -70,6 +70,45 @@ func TestRowText_MonsterShowsOverridesViaConverter(t *testing.T) {
 	}
 }
 
+// TestRowText_MonsterShowsMegaViaConverter ensures the per-rule mega mode
+// (PVPRankingEvolution) survives monsterAPIToTracking and reaches rowtext —
+// the !track confirmation and !tracked both render through this converter,
+// so a dropped field shows no mega indication even though matching works.
+func TestRowText_MonsterShowsMegaViaConverter(t *testing.T) {
+	g := testRowTextGenerator(t)
+	tr := g.Translations.For("en")
+
+	api := &db.MonsterTrackingAPI{
+		ID:                  "discord:user:1",
+		ProfileNo:           1,
+		PokemonID:           25,
+		MinIV:               -1,
+		MaxIV:               100,
+		MaxCP:               9000,
+		MaxLevel:            55,
+		MaxATK:              15,
+		MaxDEF:              15,
+		MaxSTA:              15,
+		MaxSize:             5,
+		MaxRarity:           6,
+		Template:            "1",
+		PVPRankingLeague:    2500,
+		PVPRankingBest:      1,
+		PVPRankingWorst:     100,
+		PVPRankingEvolution: 1,
+	}
+
+	tracking := monsterAPIToTracking(api)
+	if tracking.PVPRankingEvolution != 1 {
+		t.Fatalf("monsterAPIToTracking dropped PVPRankingEvolution: got %d, want 1", tracking.PVPRankingEvolution)
+	}
+
+	got := g.MonsterRowText(tr, tracking)
+	if !strings.Contains(got, "mega") {
+		t.Fatalf("rowtext missing 'mega' after converter; got: %s", got)
+	}
+}
+
 // TestConverters_AllTypesPreserveOverrides checks that every *APIToTracking converter
 // copies OverrideLocationLabel and OverrideAreas to the output struct.
 func TestConverters_AllTypesPreserveOverrides(t *testing.T) {

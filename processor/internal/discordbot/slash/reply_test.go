@@ -108,6 +108,26 @@ func TestBuildReplyPayloadsPlainTextChunks(t *testing.T) {
 	}
 }
 
+func TestBuildReplyPayloadsAttachment(t *testing.T) {
+	// A Reply with an Attachment (e.g. a long !tracked list) becomes a single
+	// payload carrying the file plus the text as message content.
+	r := bot.Reply{
+		Text:       "your list is long — see attached",
+		Attachment: &bot.Attachment{Filename: "tracked.txt", Content: []byte("row1\nrow2\nrow3")},
+	}
+	payloads := buildReplyPayloads(r)
+	if len(payloads) != 1 {
+		t.Fatalf("expected 1 payload, got %d", len(payloads))
+	}
+	p := payloads[0]
+	if len(p.files) != 1 || p.files[0].Name != "tracked.txt" {
+		t.Fatalf("expected one tracked.txt file, got %+v", p.files)
+	}
+	if p.content != "your list is long — see attached" {
+		t.Errorf("content=%q, want the attach message", p.content)
+	}
+}
+
 func TestBuildReplyPayloadsEmbedJSON(t *testing.T) {
 	// A raw Embed JSON blob (used by /track confirmations etc.) is
 	// parsed and reflected as a Discord MessageEmbed in the payload.
