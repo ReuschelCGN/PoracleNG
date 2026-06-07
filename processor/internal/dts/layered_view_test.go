@@ -235,6 +235,24 @@ func TestLayeredView_ComputedGenderData(t *testing.T) {
 	assert.Equal(t, "♂️", gd["emoji"])
 }
 
+func TestLayeredView_ComputedGenderDataEng(t *testing.T) {
+	emoji := &EmojiLookup{
+		custom:   make(map[string]map[string]string),
+		defaults: map[string]string{"male": "♂️"},
+	}
+	lv := newTestView(t, func(o *testViewOpts) {
+		o.emoji = emoji
+		o.base = map[string]any{"genderEmojiKey": "male"}
+		o.perLang = map[string]any{"genderName": "Männlich", "genderNameEng": "Male"}
+	})
+	v, ok := lv.GetField("genderDataEng")
+	require.True(t, ok)
+	gd, ok := v.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "Male", gd["name"], "genderDataEng should use the English name")
+	assert.Equal(t, "♂️", gd["emoji"])
+}
+
 func TestLayeredView_ComputedMegaName(t *testing.T) {
 	lv := newTestView(t, func(o *testViewOpts) {
 		o.templateType = "raid"

@@ -19,6 +19,7 @@ func maxbattleTestEnricher() *Enricher {
 		"max_battle_6": "Tier 6",
 		"poke_type_4":  "Fire",
 		"poke_type_12": "Grass",
+		"weather_1":    "Clear",
 	}))
 	gd := &gamedata.GameData{
 		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
@@ -78,6 +79,7 @@ func TestMaxbattleTranslate_SetsGenerationName(t *testing.T) {
 		BattleLevel: 6, BattlePokemonID: 6, BattlePokemonForm: 0,
 	}
 	base, _ := e.Maxbattle(52.5, 13.4, 0, mb, TileModeSkip)
+	base["gameWeatherId"] = 1 // mockWeather returns 0; inject to exercise the Eng variant
 	m := e.MaxbattleTranslate(base, mb, "en")
 
 	if got := m["generation"]; got != 1 {
@@ -85,5 +87,12 @@ func TestMaxbattleTranslate_SetsGenerationName(t *testing.T) {
 	}
 	if got, _ := m["generationName"].(string); got != "Kanto" {
 		t.Errorf("generationName = %q, want %q", got, "Kanto")
+	}
+	// Shared-with-raid *Eng fields.
+	if got, _ := m["gameWeatherNameEng"].(string); got != "Clear" {
+		t.Errorf("gameWeatherNameEng = %q, want %q", got, "Clear")
+	}
+	if _, ok := m["boostWeatherNameEng"]; !ok {
+		t.Errorf("boostWeatherNameEng should be emitted")
 	}
 }
