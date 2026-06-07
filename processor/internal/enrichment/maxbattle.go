@@ -40,6 +40,17 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 	if mb != nil {
 		m["station_id"] = mb.ID
 		m["station_name"] = mb.Name
+		// pokemonId / battle_pokemon_id are aliases of the same value; templates
+		// (and the legacy alerter) reference {{pokemonId}} for the dex number.
+		m["pokemonId"] = mb.BattlePokemonID
+		// Identity passthroughs templates reference (parity with PoracleJS).
+		m["form"] = mb.BattlePokemonForm
+		m["formId"] = mb.BattlePokemonForm
+		m["gender"] = mb.BattlePokemonGender
+		m["costume"] = mb.BattlePokemonCostume
+		m["alignment"] = mb.BattlePokemonAlignment
+		m["level"] = mb.BattleLevel
+		m["bread"] = mb.BattlePokemonBreadMode
 		m["battle_start"] = mb.BattleStart
 		m["total_stationed_pokemon"] = mb.TotalStationedPokemon
 		m["total_stationed_gmax"] = mb.TotalStationedGmax
@@ -113,6 +124,29 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 					"baseStamina": monster.Stamina,
 				}
 				m["weaknessList"] = gamedata.CalculateWeaknesses(monster.Types, gd.Types)
+
+				// Generation (number + roman). generationName is added per-language
+				// by MaxbattleTranslate. Mirrors raid/pokemon enrichment.
+				gen := gd.GetGeneration(mb.BattlePokemonID, mb.BattlePokemonForm)
+				m["generation"] = gen
+				if info := gd.GetGenerationInfo(gen); info != nil {
+					m["generationRoman"] = info.Roman
+				}
+
+				// Boosting weathers (which weather conditions boost this boss).
+				boostingWeathers := gd.GetBoostingWeathers(monster.Types)
+				m["boostingWeatherIds"] = boostingWeathers
+				m["boostingWeatherEmojiKeys"] = gd.GetWeatherEmojiKeys(boostingWeathers)
+			}
+
+			// Shiny possibility (mirrors raid).
+			if e.ShinyProvider != nil {
+				if e.ShinyProvider.GetShinyRate(mb.BattlePokemonID) > 0 {
+					m["shinyPossible"] = true
+					m["shinyPossibleEmojiKey"] = "shiny"
+				} else {
+					m["shinyPossible"] = false
+				}
 			}
 		}
 	}
@@ -136,6 +170,7 @@ func (e *Enricher) MaxbattleTranslate(base map[string]any, mb *webhook.Maxbattle
 
 	gameWeatherID := toInt(base["gameWeatherId"])
 	m["gameWeatherName"] = TranslateWeatherName(tr, gameWeatherID)
+	m["gameWeatherNameEng"] = TranslateWeatherName(e.Translations.For("en"), gameWeatherID)
 	if gameWeatherID > 0 {
 		if wInfo, ok := gd.Util.Weather[gameWeatherID]; ok {
 			m["gameWeatherEmojiKey"] = wInfo.Emoji
@@ -148,10 +183,17 @@ func (e *Enricher) MaxbattleTranslate(base map[string]any, mb *webhook.Maxbattle
 
 	if mb.BattlePokemonID > 0 {
 		TranslateMonsterNamesEng(m, gd, tr, e.Translations, mb.BattlePokemonID, mb.BattlePokemonForm, 0)
+		addGenerationFields(m, gd, tr, e.Translations.For("en"), mb.BattlePokemonID, mb.BattlePokemonForm)
+		addGenderFields(m, gd, tr, e.Translations.For("en"), mb.BattlePokemonGender)
+		// megaName: max-battle bosses are never mega/evolved, so it's the base
+		// name (mirrors raid's not-evolved branch).
+		if n, ok := m["name"].(string); ok {
+			m["megaName"] = n
+		}
 		monster := gd.GetMonster(mb.BattlePokemonID, mb.BattlePokemonForm)
 		if monster != nil {
 			TranslateTypeNames(m, tr, e.Translations.For("en"), monster.Types)
-			addWeatherFields(m, gd, tr, monster.Types, toInt(base["gameWeatherId"]))
+			addWeatherFields(m, gd, tr, e.Translations.For("en"), monster.Types, toInt(base["gameWeatherId"]))
 			if weaknesses, ok := base["weaknessList"].([]gamedata.WeaknessCategory); ok {
 				m["weaknessList"] = TranslateWeaknessCategories(weaknesses, tr, gd)
 			}

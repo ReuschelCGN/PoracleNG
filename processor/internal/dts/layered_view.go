@@ -463,6 +463,19 @@ func buildComputedFields(templateType string, base, perLang map[string]any, emoj
 			"emoji": genderEmoji,
 		}
 	}
+	// genderDataEng — English name + same (language-independent) emoji.
+	genderNameEng := ""
+	if perLang != nil {
+		if n, ok := perLang["genderNameEng"].(string); ok {
+			genderNameEng = n
+		}
+	}
+	if genderNameEng != "" || genderEmoji != "" {
+		m["genderDataEng"] = map[string]any{
+			"name":  genderNameEng,
+			"emoji": genderEmoji,
+		}
+	}
 
 	return m
 }

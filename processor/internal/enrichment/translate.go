@@ -329,18 +329,20 @@ func translateGenerationName(tr *i18n.Translator, gen int) string {
 }
 
 // addWeatherFields adds weather-related enrichment fields.
-func addWeatherFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, typeIDs []int, weatherID int) {
+func addWeatherFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, typeIDs []int, weatherID int) {
 	boosted := gd.IsBoostedByWeather(typeIDs, weatherID)
 	m["boosted"] = boosted
 	if boosted {
 		m["boostWeatherId"] = weatherID
 		m["boostWeatherName"] = TranslateWeatherName(tr, weatherID)
+		m["boostWeatherNameEng"] = TranslateWeatherName(enTr, weatherID)
 		if wInfo, ok := gd.Util.Weather[weatherID]; ok {
 			m["boostWeatherEmojiKey"] = wInfo.Emoji
 		}
 	} else {
 		m["boostWeatherId"] = ""
 		m["boostWeatherName"] = ""
+		m["boostWeatherNameEng"] = ""
 		m["boostWeatherEmojiKey"] = ""
 	}
 }
