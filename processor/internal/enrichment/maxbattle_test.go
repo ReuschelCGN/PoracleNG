@@ -22,7 +22,8 @@ func maxbattleTestEnricher() *Enricher {
 	}))
 	gd := &gamedata.GameData{
 		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
-			{ID: 6, Form: 0}: {PokemonID: 6, FormID: 0, Types: []int{4, 12}, GenID: 1, Attack: 1, Defense: 1, Stamina: 1},
+			{ID: 6, Form: 0}:  {PokemonID: 6, FormID: 0, Types: []int{4, 12}, GenID: 1, Attack: 1, Defense: 1, Stamina: 1},
+			{ID: 6, Form: 65}: {PokemonID: 6, FormID: 65, Types: []int{4, 12}, GenID: 1, Attack: 1, Defense: 1, Stamina: 1},
 		},
 		Moves: map[int]*gamedata.Move{},
 		Types: map[int]*gamedata.TypeInfo{},
@@ -44,7 +45,9 @@ func TestMaxbattle_SetsPokemonIdAndGeneration(t *testing.T) {
 	e := maxbattleTestEnricher()
 	mb := &webhook.MaxbattleWebhook{
 		ID: "station1", Name: "Power Spot", Latitude: 52.5, Longitude: 13.4,
-		BattleLevel: 6, BattlePokemonID: 6, BattlePokemonForm: 0,
+		BattleLevel: 6, BattlePokemonID: 6, BattlePokemonForm: 65,
+		BattlePokemonGender: 2, BattlePokemonCostume: 3, BattlePokemonAlignment: 1,
+		BattlePokemonBreadMode: 2,
 	}
 	m, _ := e.Maxbattle(52.5, 13.4, 0, mb, TileModeSkip)
 
@@ -53,6 +56,18 @@ func TestMaxbattle_SetsPokemonIdAndGeneration(t *testing.T) {
 	}
 	if got := m["generation"]; got != 1 {
 		t.Errorf("generation = %v, want 1", got)
+	}
+	// Identity passthroughs (PoracleJS parity).
+	for field, want := range map[string]int{
+		"form": 65, "formId": 65, "gender": 2, "costume": 3,
+		"alignment": 1, "level": 6, "bread": 2,
+	} {
+		if got := m[field]; got != want {
+			t.Errorf("%s = %v, want %d", field, got, want)
+		}
+	}
+	if _, ok := m["boostingWeatherIds"]; !ok {
+		t.Errorf("boostingWeatherIds should be set")
 	}
 }
 
