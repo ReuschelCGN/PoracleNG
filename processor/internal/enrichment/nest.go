@@ -92,7 +92,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 		"pokemon_id":      nest.PokemonID,
 		"form":            nest.Form,
 		"pokemonSpawnAvg": nest.PokemonAvg,
-	}, tileMode, strconv.FormatInt(nest.NestID, 10))
+	}, tileMode, nest.NestID)
 
 	// Pokemon identity
 	m["pokemonId"] = nest.PokemonID
