@@ -139,10 +139,13 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	}
 
 	// Build insert structs — one per pokemon per PVP league
-	// If no PVP, one entry per pokemon with zeroed PVP fields
+	// If no PVP, one entry per pokemon with no PVP league. Best/Worst use the
+	// no-constraint rank defaults (1 / 4096) so non-PVP rows match the DB column
+	// defaults and the API (a zero-value entry would store 0/0, breaking dedup
+	// parity with API-created rows and surfacing 0/0 instead of null in the v2 API).
 	pvpList := pvpEntries
 	if len(pvpList) == 0 {
-		pvpList = []pvpEntry{{}} // single entry with zero PVP
+		pvpList = []pvpEntry{{Best: 1, Worst: 4096}} // single entry, no PVP league
 	}
 	insert := make([]db.MonsterTrackingAPI, 0, len(monsterList)*len(pvpList))
 	for _, mon := range monsterList {
