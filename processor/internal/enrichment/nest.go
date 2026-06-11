@@ -3,7 +3,6 @@ package enrichment
 import (
 	"encoding/json"
 	"math"
-	"strconv"
 
 	log "github.com/sirupsen/logrus"
 
@@ -50,7 +49,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	if nest.PolyPath != "" {
 		var rawPolygons [][][2]float64
 		if err := json.Unmarshal([]byte(nest.PolyPath), &rawPolygons); err != nil {
-			log.Debugf("[%d] nest: failed to parse poly_path: %s", nest.NestID, err)
+			log.Debugf("[%s] nest: failed to parse poly_path: %s", nest.NestID, err)
 		} else {
 			var polygons [][]staticmap.LatLon
 			for _, rawPoly := range rawPolygons {
@@ -77,7 +76,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	}
 
 	// Map URLs — ReactMap deep-links by nest id (`/id/nests/{nest_id}`)
-	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", strconv.FormatInt(nest.NestID, 10))
+	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", nest.NestID)
 
 	// Reverse geocoding
 	e.addGeoResult(m, nest.Lat, nest.Lon)
@@ -93,7 +92,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 		"pokemon_id":      nest.PokemonID,
 		"form":            nest.Form,
 		"pokemonSpawnAvg": nest.PokemonAvg,
-	}, tileMode, strconv.FormatInt(nest.NestID, 10))
+	}, tileMode, nest.NestID)
 
 	// Pokemon identity
 	m["pokemonId"] = nest.PokemonID
