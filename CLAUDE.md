@@ -343,6 +343,10 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 - `GET /health` — health check
 - `GET /metrics` — Prometheus metrics
 - `POST /` — webhook receiver from Golbat (no auth, Golbat doesn't authenticate)
+- `GET /openapi.json` — OpenAPI 3.1 spec
+- `GET /docs` — interactive API docs
+
+**huma surface (`/api/*` reads + features, and `/api/v2/*`)**: The `/api/*` read/reload/feature endpoints listed below and the entire `/api/v2/*` surface are served by [huma](https://github.com/danielgtaylor/huma) (mounted on gin via humagin, one instance), and appear in the OpenAPI 3.1 spec at `/openapi.json` / `/docs`. Error bodies on this surface are RFC 9457 `application/problem+json` (`status`, `title`, `detail`, `errors[]`) — replacing the old `{status:"error",message}` / `gin.H{"error":...}` bodies (status codes unchanged; a few manual-400s became validation-422s). `/health`, `/metrics`, pprof, and the webhook receiver `POST /` stay on plain gin by design.
 
 ## Command System
 
@@ -545,8 +549,17 @@ All API endpoints are accessed via the processor (port 3030). The processor hand
 | GET | `/api/dts/actions` | List registered button actions + their scopes/params (drives the config editor's button UI) |
 | GET | `/health` | Health check; returns `{status, version, capabilities}` where `capabilities` is a static feature map (`buttons`, `snapshots`, `autocreate`, `tomlDts`, `buttonResponseObject`) so clients can do explicit feature detection without probing endpoints |
 | GET | `/metrics` | Prometheus metrics |
+| GET | `/openapi.json` | OpenAPI 3.1 spec (whole `/api` + `/api/v2` surface; public) |
+| GET | `/docs` | Interactive API docs (public) |
 
 Tracking types: pokemon, raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle.
+
+**`/api/v2/*` (strict v2 surface)**: Alongside the in-place `/api/*` endpoints above sits a clean, strict, documented v2 API for tracking + humans/profiles. It is served by the same huma instance (typed bodies, `additionalProperties:false`, no lenient coercion, problem+json errors).
+- **Tracking** is human-scoped: `GET|POST /api/v2/humans/{id}/tracking/{type}`, `GET|PUT|DELETE /api/v2/humans/{id}/tracking/{type}/{uid}`, bulk `DELETE …/{type}?uid=1,2,3`, and a full snapshot `GET /api/v2/humans/{id}/tracking` (human + all-type rules + profiles + locations + summaries). Query params: `?profile=`, `?include_descriptions=`, `?silent=`, `?all_profiles=`. v2 adds an **11th tracking type, `incident`** (game `PokestopEvent`, e.g. Showcase), not present in v1.
+- **humans/profiles** are discrete typed action endpoints under `/api/v2/humans/{id}/…` (enable/disable, admin-disable, language, location, areas, check-location, locations CRUD incl. a **new `PUT …/locations/{label}`** to update coords, roles, profiles CRUD with a strict typed `active_hours` schema, profile switch). Pure action endpoints return a minimal `{"status":"ok"}` ack; resource endpoints return the typed body directly.
+- Design doc: `docs/v2-api-design.md`.
+
+**v1 is frozen**: the v1 `/api/tracking/*`, `/api/humans/*`, `/api/profiles/*` (and `/api/tracking/pokemon/refresh`) endpoints remain on plain gin, unchanged and fully supported (still lenient via the coercion below), but deprecated — clients migrate to `/api/v2` on their own schedule. No sunset date yet.
 
 **Flexible JSON type coercion**: All tracking CRUD POST endpoints accept flexible JSON types for numeric and boolean fields. Third-party clients like ReactMap may send `"clean": false` (boolean) instead of `"clean": 0` (number). The `flexBool` and `flexInt` custom JSON types in `processor/internal/api/tracking.go` handle this coercion transparently:
 - `flexBool`: accepts `true`/`false`, `0`/`1`, `"0"`/`"1"` — coerces to int (0 or 1)

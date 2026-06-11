@@ -1,11 +1,5 @@
 package api
 
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-)
-
 // ConfigFieldDef describes a single config field for the editor.
 type ConfigFieldDef struct {
 	Name        string `json:"name"`
@@ -626,10 +620,3 @@ var configSchema = []ConfigSection{
 	},
 }
 
-// HandleConfigSchema returns the config schema for the editor UI.
-// GET /api/config/schema
-func HandleConfigSchema() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "sections": configSchema})
-	}
-}
