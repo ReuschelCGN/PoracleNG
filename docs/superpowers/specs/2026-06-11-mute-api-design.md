@@ -42,12 +42,20 @@ params rejected (422); human must exist (404 otherwise).
 |---|---|---|
 | `GET` | `/api/v2/humans/{id}/mutes` | `{mutes:[<item>…]}` — **active** entries only (expired-but-unswept are filtered) |
 | `POST` | `/api/v2/humans/{id}/mutes` | Body `{scope, value?, duration_min?}` → `{mute:<item>, replaced:bool}`. Re-muting the same `(scope,value)` replaces the entry (extends expiry) and sets `replaced:true`, mirroring `Store.Add` |
-| `DELETE` | `/api/v2/humans/{id}/mutes?scope=&value=` | Remove one entry → `{removed:1}`; 404 when no matching mute exists |
-| `DELETE` | `/api/v2/humans/{id}/mutes` | No params: remove **all** the user's mutes → `{removed:n}` (n may be 0) |
+| `DELETE` | `/api/v2/humans/{id}/mutes?scope=&value=` | Remove one entry → `{deleted:[<item>]}`; 404 when no matching mute exists |
+| `DELETE` | `/api/v2/humans/{id}/mutes` | No params: remove **all** the user's mutes → `{deleted:[<item>…]}` (empty array when none) |
 
 `DELETE` with `scope` but a missing-yet-required `value` (any scope except `everything`)
 is a 422, as is `value` without `scope`. `scope=everything` takes no value in DELETE just
 as in POST.
+
+Response-shape conformance: DELETE returns the removed entries (`{deleted:[…]}`),
+mirroring v2 tracking's delete shape. POST returns `{mute:<item>, replaced:bool}` — a
+deliberate typed struct rather than the humans-action `{status:ok}`, permitted by the
+design doc's "status plus extra fields keep their own typed structs" rule; it returns the
+canonical entry (computed `expires_at`) so clients don't need a follow-up GET, and
+`replaced` mirrors the bot's muted/re-muted distinction. Unknown human → 404 via the same
+`GetLite` lookup as v2 tracking's `resolveHuman`.
 
 ## Item schema
 
