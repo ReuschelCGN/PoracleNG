@@ -135,10 +135,11 @@ func registerAllHumaOpsForTest(humaAPI huma.API) {
 	RegisterV2TrackingIncident(humaAPI, trackingDeps)
 	RegisterV2TrackingSnapshot(humaAPI, trackingDeps) // MUST follow per-type.
 
-	// Strict v2 humans / locations / profiles.
+	// Strict v2 humans / locations / profiles / mutes.
 	RegisterV2Humans(humaAPI, trackingDeps)
 	RegisterV2Locations(humaAPI, trackingDeps)
 	RegisterV2Profiles(humaAPI, trackingDeps)
+	RegisterV2Mutes(humaAPI, trackingDeps)
 
 	// Strict v2 roles.
 	RegisterV2Roles(humaAPI, &RoleDeps{})

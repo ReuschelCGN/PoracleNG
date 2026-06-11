@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
@@ -44,6 +45,7 @@ type v2SnapshotBody struct {
 	Profiles  []ProfileResponse            `json:"profiles"`
 	Locations locationsPayload             `json:"locations"`
 	Summaries []summaryScheduleResponse    `json:"summaries"`
+	Mutes     []v2MuteItem                 `json:"mutes" doc:"Active (non-expired) alert mutes — same items as GET …/mutes. Mutes are held in memory only and are cleared by a processor restart."`
 }
 
 type v2SnapshotOutput struct {
@@ -102,6 +104,7 @@ func RegisterV2TrackingSnapshot(api huma.API, deps *TrackingDeps) {
 		out.Body.Profiles = profilesToResponse(profiles)
 		out.Body.Locations = snapshotLocations(deps, human.ID, humanFull)
 		out.Body.Summaries = snapshotSummaries(deps, human.ID)
+		out.Body.Mutes = snapshotMutes(deps, human.ID)
 		return out, nil
 	})
 }
@@ -127,6 +130,20 @@ func snapshotLocations(deps *TrackingDeps, id string, humanFull *store.Human) lo
 			Latitude:  humanFull.Latitude,
 			Longitude: humanFull.Longitude,
 		}
+	}
+	return out
+}
+
+// snapshotMutes returns the human's active mutes via the same conversion the
+// mutes list endpoint uses. nil store ⇒ empty (tests and minimal harnesses).
+func snapshotMutes(deps *TrackingDeps, id string) []v2MuteItem {
+	out := []v2MuteItem{}
+	if deps.Mutes == nil {
+		return out
+	}
+	now := time.Now().Unix()
+	for _, e := range deps.Mutes.ListActive(id, now) {
+		out = append(out, muteEntryToItem(e, now))
 	}
 	return out
 }

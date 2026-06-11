@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **v2 mutes API.** `GET/POST /api/v2/humans/{id}/mutes` and
+  `DELETE /api/v2/humans/{id}/mutes[?scope=&value=]` expose the in-memory alert
+  mutes (the `!mute` / alert-button feature) over HTTP, and the v2 full
+  snapshot now carries a `mutes` array. Mutes remain volatile — they are
+  cleared by a processor restart.
 - **OpenAPI 3.1 spec + interactive docs.** The processor now serves a single
   OpenAPI 3.1 document at `GET /openapi.json` with interactive documentation at
   `GET /docs` (both public, no `X-Poracle-Secret` required). The spec covers the
