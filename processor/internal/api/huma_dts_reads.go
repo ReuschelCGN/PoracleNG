@@ -101,6 +101,7 @@ func RegisterDTSGetTemplates(api huma.API, ts dtsTemplateReader) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-templates", Method: "GET", Path: "/dts/templates",
 		Summary: "DTS template entries with full content", Tags: []string{"dts"},
+		Description: "Returns {status, templates}: the loaded DTS template entries (optionally filtered by the type/platform/language/id query params) with resolved content, including the text of any referenced templateFile. The template-editor read endpoint.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsTemplatesQueryInput) (*dtsGetTemplatesOutput, error) {
 		entries := ts.FilteredEntries(in.Type, in.Platform, in.Language, in.ID)
@@ -138,6 +139,7 @@ func RegisterDTSDeleteTemplate(api huma.API, ts dtsTemplateReader) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-dts-template", Method: "DELETE", Path: "/dts/templates",
 		Summary: "Delete a DTS template entry", Tags: []string{"dts"},
+		Description: "Removes the DTS entry identified by the type/platform/language/id query keys from memory and disk. Unknown keys yield 404; readonly fallback entries (and other store rejections) yield 403.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsDeleteTemplateInput) (*statusOKOutput, error) {
 		if in.Type == "" || in.Platform == "" || in.ID == "" {
@@ -185,6 +187,7 @@ func RegisterDTSTemplateFileWrite(api huma.API, ts dtsTemplateReader, configDir 
 	huma.Register(api, huma.Operation{
 		OperationID: "put-dts-template-file", Method: "PUT", Path: "/dts/templates/file",
 		Summary: "Update raw templateFile content", Tags: []string{"dts"},
+		Description: "Overwrites the raw Handlebars text of an external templateFile referenced by DTS entries (path relative to config/, e.g. dts/fort_update.txt). Returns {status, templateFile, backup}; a backup copy is written to config/backups/ before the file is replaced.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsTemplateFileWriteInput) (*dtsTemplateFileWriteOutput, error) {
 		entry := ts.GetEntry(in.Type, in.Platform, in.Language, in.ID)
@@ -245,6 +248,7 @@ func RegisterDTSFieldTypes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-fields", Method: "GET", Path: "/dts/fields",
 		Summary: "List all DTS type names", Tags: []string{"dts"},
+		Description: "Returns {status, types}: every DTS template type name that has field metadata (pokemon, raid, quest, ...). Use GET /dts/fields/{type} for the per-type field list.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*dtsFieldTypesOutput, error) {
 		types := make([]string, 0, len(fieldsByType))
@@ -283,6 +287,7 @@ func RegisterDTSFields(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-fields-type", Method: "GET", Path: "/dts/fields/{type}",
 		Summary: "Template fields, block scopes, and snippets for a type", Tags: []string{"dts"},
+		Description: "Returns {status, type, fields, blockScopes, snippets}: the template fields available to DTS templates of the given type, plus block scopes and starter snippets — the data behind template-editor autocomplete. 404 for an unknown type.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsFieldsInput) (*dtsFieldsOutput, error) {
 		out := &dtsFieldsOutput{}
@@ -319,6 +324,7 @@ func RegisterDTSPartials(api huma.API, ts dtsTemplateReader) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-partials", Method: "GET", Path: "/dts/partials",
 		Summary: "Handlebars partials for client-side rendering", Tags: []string{"dts"},
+		Description: "Returns {status, partials}: the registered Handlebars partials as a name → source map, letting clients reproduce server-side rendering (e.g. live template preview).",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*dtsPartialsOutput, error) {
 		out := &dtsPartialsOutput{}
@@ -350,6 +356,7 @@ func RegisterDTSTestdata(api huma.API, configDir, fallbackDir string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-testdata", Method: "GET", Path: "/dts/testdata",
 		Summary: "Test webhook scenarios from testdata.json", Tags: []string{"dts"},
+		Description: "Returns {status, testdata}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsTestdataInput) (*dtsTestdataOutput, error) {
 		entries := loadTestdata(configDir, fallbackDir)
@@ -387,6 +394,7 @@ func RegisterButtonActions(api huma.API, reg *buttonactions.Registry) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-actions", Method: "GET", Path: "/dts/actions",
 		Summary: "List registered button actions + their scopes/params", Tags: []string{"dts"},
+		Description: "Returns the registered alert-button actions (mute, unsubscribe, redeliver, render, ...) with each action's allowed scopes, whether a scope is required, and its known params — so editors can render per-action button configuration UI.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*dtsActionsOutput, error) {
 		if reg == nil {

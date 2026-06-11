@@ -166,6 +166,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-summaries-for-user", Method: "GET", Path: "/summaries/{id}",
 		Summary: "List summary schedules for a user", Tags: []string{"summaries"},
+		Description: "Returns {status, schedules}: the user's summary schedules across alert types (currently only \"quest\" supports summaries). 503 when the summary feature is disabled.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *summaryIDInput) (*summaryListOutput, error) {
 		if deps.Schedules == nil {
@@ -196,6 +197,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-summary", Method: "GET", Path: "/summaries/{id}/{alertType}",
 		Summary: "Get a summary schedule", Tags: []string{"summaries"},
+		Description: "Returns {status, schedule}: the user's summary schedule for one alert type. The schedule's active_hours decide when buffered alerts are dispatched as a digest. 503 when the summary feature is disabled.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *summaryAlertInput) (*summaryGetOutput, error) {
 		if deps.Schedules == nil {
@@ -225,6 +227,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-summary", Method: "DELETE", Path: "/summaries/{id}/{alertType}",
 		Summary: "Delete a summary schedule", Tags: []string{"summaries"},
+		Description: "Removes the user's summary schedule for the alert type — the API counterpart of `!summary <type> cleartime`. Matched alerts still buffer per the tracking rules but no longer fire on a timer.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *summaryAlertInput) (*statusOKOutput, error) {
 		if deps.Schedules == nil {
@@ -252,6 +255,7 @@ func RegisterSummaries(api huma.API, deps *SummaryDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "trigger-summary", Method: "POST", Path: "/summaries/{id}/{alertType}/trigger",
 		Summary: "Trigger a summary dispatch", Tags: []string{"summaries"},
+		Description: "Dispatches the user's buffered summary for the alert type immediately — the API counterpart of `!summary quest now`. Returns {status:\"ok\"} once the dispatch is queued.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *summaryAlertInput) (*statusOKOutput, error) {
 		if deps.Dispatch == nil {
@@ -329,6 +333,7 @@ func RegisterCommand(api huma.API, deps *bot.BotDeps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "post-command", Method: "POST", Path: "/command",
 		Summary: "Execute a bot command", Tags: []string{"command"},
+		Description: "Runs a bot command line (e.g. \"track pikachu iv90\") through the same parser the Discord/Telegram bots use, on behalf of the user/channel described by the body. Returns {status, replies} with the messages the bot would have sent instead of delivering them.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *commandInput) (*commandOutput, error) {
 		req := commandRequest{

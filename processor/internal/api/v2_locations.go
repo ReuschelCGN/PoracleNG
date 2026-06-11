@@ -29,15 +29,15 @@ import (
 
 // v2LocationItem is one saved location in a v2 response.
 type v2LocationItem struct {
-	Label     string  `json:"label"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
+	Label     string  `json:"label" doc:"Saved-location label (unique per human, matched case-insensitively); referenced by tracking rules via override_location_label."`
+	Latitude  float64 `json:"latitude" doc:"Saved-location latitude."`
+	Longitude float64 `json:"longitude" doc:"Saved-location longitude."`
 }
 
 // v2DefaultLocation is the human's default (humans-table) lat/lon.
 type v2DefaultLocation struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
+	Latitude  float64 `json:"latitude" doc:"Default-location latitude from the humans table."`
+	Longitude float64 `json:"longitude" doc:"Default-location longitude from the humans table."`
 }
 
 // v2LocationsOutput is the GET list response: named saved locations + an

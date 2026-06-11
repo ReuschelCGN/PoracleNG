@@ -1493,60 +1493,77 @@
         "additionalProperties": false,
         "properties": {
           "admin_disable": {
+            "description": "Legacy int flag: 1 = administratively disabled (user cannot re-enable themselves), 0 = not.",
             "format": "int64",
             "type": "integer"
           },
           "area": {
+            "description": "Selected geofence areas as a JSON-encoded string array, e.g. \"[\\\"downtown\\\"]\" — clients must parse the string. \"[]\" when none.",
             "type": "string"
           },
           "area_restriction": {
+            "description": "Area-security allowed-area names as a JSON-encoded string array. Null when unrestricted.",
             "type": "string"
           },
           "blocked_alerts": {
+            "description": "Alert types this destination has blocked, as a JSON-encoded string array (e.g. \"[\\\"raid\\\"]\"). Null when none.",
             "type": "string"
           },
           "community_membership": {
+            "description": "Area-security community names as a JSON-encoded string array. \"[]\" when area security is off or the user has no communities.",
             "type": "string"
           },
           "current_profile_no": {
+            "description": "Active profile number (matches profiles[].profile_no). 1 is the default profile.",
             "format": "int64",
             "type": "integer"
           },
           "disabled_date": {
+            "description": "When the destination was disabled. Null while enabled.",
             "type": "string"
           },
           "enabled": {
+            "description": "Legacy int flag: 1 = alerts enabled, 0 = stopped. (Kept numeric for legacy clients; v2 mutations use the enable/disable endpoints.)",
             "format": "int64",
             "type": "integer"
           },
           "fails": {
+            "description": "Consecutive delivery-failure count; the user is auto-disabled past the configured threshold.",
             "format": "int64",
             "type": "integer"
           },
           "id": {
+            "description": "Destination id: Discord user/channel/webhook id or Telegram chat id.",
             "type": "string"
           },
           "language": {
+            "description": "User locale code (e.g. \"de\"). Null when unset (falls back to the configured default locale).",
             "type": "string"
           },
           "last_checked": {
+            "description": "When reconciliation last verified this destination. Null if never checked.",
             "type": "string"
           },
           "latitude": {
+            "description": "Default location latitude. 0 when no location is set.",
             "format": "double",
             "type": "number"
           },
           "longitude": {
+            "description": "Default location longitude. 0 when no location is set.",
             "format": "double",
             "type": "number"
           },
           "name": {
+            "description": "Display name (Discord username, channel name, webhook name, ...).",
             "type": "string"
           },
           "notes": {
+            "description": "Free-form operator notes.",
             "type": "string"
           },
           "type": {
+            "description": "Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:channel, telegram:group.",
             "type": "string"
           }
         },
@@ -1929,30 +1946,38 @@
         "additionalProperties": false,
         "properties": {
           "active_hours": {
+            "description": "Auto-switch schedule as a raw JSON string (legacy encoding; the typed shape is the v2 profiles endpoint's active_hours array). \"[]\" or \"\" when unscheduled.",
             "type": "string"
           },
           "area": {
+            "description": "Profile geofence-area override as a JSON-encoded string array — clients must parse the string. \"[]\" when the profile has no area override.",
             "type": "string"
           },
           "id": {
+            "description": "Owning destination id (humans.id).",
             "type": "string"
           },
           "latitude": {
+            "description": "Profile location-override latitude. 0 when the profile has no location override.",
             "format": "double",
             "type": "number"
           },
           "longitude": {
+            "description": "Profile location-override longitude. 0 when the profile has no location override.",
             "format": "double",
             "type": "number"
           },
           "name": {
+            "description": "Profile display name.",
             "type": "string"
           },
           "profile_no": {
+            "description": "Profile number within the user (1 = default profile).",
             "format": "int64",
             "type": "integer"
           },
           "uid": {
+            "description": "Database row id of the profile.",
             "format": "int64",
             "type": "integer"
           }
@@ -7147,10 +7172,12 @@
         "additionalProperties": false,
         "properties": {
           "latitude": {
+            "description": "Default-location latitude from the humans table.",
             "format": "double",
             "type": "number"
           },
           "longitude": {
+            "description": "Default-location longitude from the humans table.",
             "format": "double",
             "type": "number"
           }
@@ -10631,13 +10658,16 @@
         "additionalProperties": false,
         "properties": {
           "label": {
+            "description": "Saved-location label (unique per human, matched case-insensitively); referenced by tracking rules via override_location_label.",
             "type": "string"
           },
           "latitude": {
+            "description": "Saved-location latitude.",
             "format": "double",
             "type": "number"
           },
           "longitude": {
+            "description": "Saved-location longitude.",
             "format": "double",
             "type": "number"
           }
@@ -11228,6 +11258,7 @@
         "additionalProperties": false,
         "properties": {
           "active_hours": {
+            "description": "Auto-switch schedule as a typed array. Always [] when unscheduled (never null, never a string).",
             "items": {
               "$ref": "#/components/schemas/V2ActiveHourEntry"
             },
@@ -11237,27 +11268,34 @@
             ]
           },
           "area": {
+            "description": "Profile geofence-area override as a JSON-encoded string array (legacy encoding retained on this field) — \"[]\" when the profile has no area override.",
             "type": "string"
           },
           "id": {
+            "description": "Owning human id.",
             "type": "string"
           },
           "latitude": {
+            "description": "Profile location-override latitude. 0 when the profile has no location override.",
             "format": "double",
             "type": "number"
           },
           "longitude": {
+            "description": "Profile location-override longitude. 0 when the profile has no location override.",
             "format": "double",
             "type": "number"
           },
           "name": {
+            "description": "Profile display name.",
             "type": "string"
           },
           "profile_no": {
+            "description": "Profile number within the human (1 = default profile); referenced by tracking rules and profile switch.",
             "format": "int64",
             "type": "integer"
           },
           "uid": {
+            "description": "Database row id of the profile.",
             "format": "int64",
             "type": "integer"
           }
@@ -11721,6 +11759,7 @@
   "paths": {
     "/command": {
       "post": {
+        "description": "Runs a bot command line (e.g. \"track pikachu iv90\") through the same parser the Discord/Telegram bots use, on behalf of the user/channel described by the body. Returns {status, replies} with the messages the bot would have sent instead of delivering them.",
         "operationId": "post-command",
         "requestBody": {
           "content": {
@@ -11804,6 +11843,7 @@
     },
     "/config/schema": {
       "get": {
+        "description": "Returns {status, sections}: per-section field metadata (names, types, defaults, descriptions) describing the editable config surface. Drives the config-editor UI; pair with GET /config/values for current values.",
         "operationId": "get-config-schema",
         "responses": {
           "200": {
@@ -12073,6 +12113,7 @@
     },
     "/dts/actions": {
       "get": {
+        "description": "Returns the registered alert-button actions (mute, unsubscribe, redeliver, render, ...) with each action's allowed scopes, whether a scope is required, and its known params — so editors can render per-action button configuration UI.",
         "operationId": "get-dts-actions",
         "responses": {
           "200": {
@@ -12217,6 +12258,7 @@
     },
     "/dts/fields": {
       "get": {
+        "description": "Returns {status, types}: every DTS template type name that has field metadata (pokemon, raid, quest, ...). Use GET /dts/fields/{type} for the per-type field list.",
         "operationId": "get-dts-fields",
         "responses": {
           "200": {
@@ -12253,6 +12295,7 @@
     },
     "/dts/fields/{type}": {
       "get": {
+        "description": "Returns {status, type, fields, blockScopes, snippets}: the template fields available to DTS templates of the given type, plus block scopes and starter snippets — the data behind template-editor autocomplete. 404 for an unknown type.",
         "operationId": "get-dts-fields-type",
         "parameters": [
           {
@@ -12299,6 +12342,7 @@
     },
     "/dts/partials": {
       "get": {
+        "description": "Returns {status, partials}: the registered Handlebars partials as a name → source map, letting clients reproduce server-side rendering (e.g. live template preview).",
         "operationId": "get-dts-partials",
         "responses": {
           "200": {
@@ -12548,6 +12592,7 @@
     },
     "/dts/templates": {
       "delete": {
+        "description": "Removes the DTS entry identified by the type/platform/language/id query keys from memory and disk. Unknown keys yield 404; readonly fallback entries (and other store rejections) yield 403.",
         "operationId": "delete-dts-template",
         "parameters": [
           {
@@ -12616,6 +12661,7 @@
         ]
       },
       "get": {
+        "description": "Returns {status, templates}: the loaded DTS template entries (optionally filtered by the type/platform/language/id query params) with resolved content, including the text of any referenced templateFile. The template-editor read endpoint.",
         "operationId": "get-dts-templates",
         "parameters": [
           {
@@ -12729,6 +12775,7 @@
     },
     "/dts/templates/file": {
       "put": {
+        "description": "Overwrites the raw Handlebars text of an external templateFile referenced by DTS entries (path relative to config/, e.g. dts/fort_update.txt). Returns {status, templateFile, backup}; a backup copy is written to config/backups/ before the file is replaced.",
         "operationId": "put-dts-template-file",
         "parameters": [
           {
@@ -12809,6 +12856,7 @@
     },
     "/dts/testdata": {
       "get": {
+        "description": "Returns {status, testdata}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use.",
         "operationId": "get-dts-testdata",
         "parameters": [
           {
@@ -12855,6 +12903,7 @@
     },
     "/geocode/forward": {
       "get": {
+        "description": "Resolves a free-text place query (`q`) to coordinates via the configured geocoding provider. Returns an array of candidate results (lat/lon plus address detail); an empty array when nothing matched. 503 when no geocoder is configured.",
         "operationId": "get-geocode-forward",
         "parameters": [
           {
@@ -12908,6 +12957,7 @@
     },
     "/geofence/all": {
       "get": {
+        "description": "Returns every loaded geofence (file- and Koji-sourced) as {status, geofence}: name, display metadata, and polygon path per fence.",
         "operationId": "get-geofence-all",
         "responses": {
           "200": {
@@ -12944,6 +12994,7 @@
     },
     "/geofence/all/geojson": {
       "get": {
+        "description": "Exports all loaded geofences as a standard GeoJSON FeatureCollection wrapped in {status, geoJSON}, suitable for map display or import into other tools.",
         "operationId": "get-geofence-geojson",
         "responses": {
           "200": {
@@ -12980,6 +13031,7 @@
     },
     "/geofence/all/hash": {
       "get": {
+        "description": "Returns {status, areas}: an MD5 hash of each geofence's polygon path keyed by area name, so clients can detect geofence changes without downloading the full polygon data.",
         "operationId": "get-geofence-hash",
         "responses": {
           "200": {
@@ -13016,6 +13068,7 @@
     },
     "/geofence/distanceMap/{lat}/{lon}/{distance}": {
       "get": {
+        "description": "Generates a static-map tile showing a circle of the given radius (metres) around the coordinates (used to visualise distance-based tracking). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
         "operationId": "get-geofence-distance-map",
         "parameters": [
           {
@@ -13081,6 +13134,7 @@
     },
     "/geofence/locationMap/{lat}/{lon}": {
       "get": {
+        "description": "Generates a static-map tile with a pin at the given coordinates (used to confirm location settings). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
         "operationId": "get-geofence-location-map",
         "parameters": [
           {
@@ -13137,6 +13191,7 @@
     },
     "/geofence/overviewMap": {
       "post": {
+        "description": "Generates a single static-map tile overlaying the polygons of the geofence areas named in the request body. Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
         "operationId": "post-geofence-overview-map",
         "requestBody": {
           "content": {
@@ -13255,6 +13310,7 @@
     },
     "/geofence/weatherMap/{lat}/{lon}": {
       "get": {
+        "description": "Generates a static-map tile showing the S2 weather cell covering the location (current weather unless overridden by the `weather` query). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
         "operationId": "get-geofence-weather-map",
         "parameters": [
           {
@@ -13319,6 +13375,7 @@
     },
     "/geofence/{area}/map": {
       "get": {
+        "description": "Generates a static-map tile of the named geofence area's polygon. Returns {status, url} — the tileserver URL of the generated image. 404 for an unknown area; 503 when no static map provider is configured.",
         "operationId": "get-geofence-area-map",
         "parameters": [
           {
@@ -13692,6 +13749,7 @@
     },
     "/snapshots/{messageID}": {
       "get": {
+        "description": "Returns the stored enrichment snapshot for a delivered message, addressed by message id plus the `target` query (destination id). Admin diagnostics for the buttons/snapshots feature. 503 when [snapshots] is disabled; 404 when the snapshot has expired or never existed.",
         "operationId": "get-snapshot",
         "parameters": [
           {
@@ -13858,6 +13916,7 @@
     },
     "/summaries/{id}": {
       "get": {
+        "description": "Returns {status, schedules}: the user's summary schedules across alert types (currently only \"quest\" supports summaries). 503 when the summary feature is disabled.",
         "operationId": "list-summaries-for-user",
         "parameters": [
           {
@@ -13904,6 +13963,7 @@
     },
     "/summaries/{id}/{alertType}": {
       "delete": {
+        "description": "Removes the user's summary schedule for the alert type — the API counterpart of `!summary <type> cleartime`. Matched alerts still buffer per the tracking rules but no longer fire on a timer.",
         "operationId": "delete-summary",
         "parameters": [
           {
@@ -13956,6 +14016,7 @@
         ]
       },
       "get": {
+        "description": "Returns {status, schedule}: the user's summary schedule for one alert type. The schedule's active_hours decide when buffered alerts are dispatched as a digest. 503 when the summary feature is disabled.",
         "operationId": "get-summary",
         "parameters": [
           {
@@ -14092,6 +14153,7 @@
     },
     "/summaries/{id}/{alertType}/trigger": {
       "post": {
+        "description": "Dispatches the user's buffered summary for the alert type immediately — the API counterpart of `!summary quest now`. Returns {status:\"ok\"} once the dispatch is queued.",
         "operationId": "trigger-summary",
         "parameters": [
           {
