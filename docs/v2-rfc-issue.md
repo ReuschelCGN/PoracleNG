@@ -1,4 +1,9 @@
 <!-- Ready-to-post GitHub issue. Copy everything below the line. -->
+<!-- STATUS (2026-06): posted as jfberry/PoracleNG#138; v2 has since been BUILT on branch
+     huma-api-migration. This file is the historical RFC text. The as-built contract is
+     docs/v2-api-design.md + the live spec at /openapi.json; fields marked "prospective"
+     below (e.g. pvp_ranking_evolution) are now implemented. The v1->v2 client mapping is
+     docs/v1-to-v2-migration-guide.md. -->
 <!-- Suggested title: RFC: PoracleNG v2 API — clean, documented, OpenAPI-first (feedback wanted) -->
 
 ---

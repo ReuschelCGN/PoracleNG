@@ -4,7 +4,7 @@ All API endpoints are available through the processor (default port 3030). The p
 
 > **Live OpenAPI docs.** This surface is now also documented live via an OpenAPI 3.1 spec at `GET /openapi.json` with interactive docs at `GET /docs` (both public, no secret). The `/api/*` read/feature endpoints are served by [huma](https://github.com/danielgtaylor/huma), and errors on the huma surface are returned as RFC 9457 `application/problem+json` (`status`, `title`, `detail`, `errors[]`) rather than the legacy `{status:"error",message}` shape shown under [Response Format](#response-format).
 >
-> **New strict `/api/v2` API.** A clean, strict, typed `/api/v2` surface (human-scoped tracking — including the new `incident` type — plus discrete humans/profiles action endpoints) is the **recommended API for new clients**. The v1 endpoints documented below are **frozen and deprecated-but-supported** (no sunset date yet); migrate to `/api/v2` to access new tracking types and the cleaner contract. See [`docs/v2-api-design.md`](docs/v2-api-design.md) and `/docs` for v2 details.
+> **New strict `/api/v2` API.** A clean, strict, typed `/api/v2` surface (human-scoped tracking — including the new `incident` type — plus discrete humans/profiles action endpoints) is the **recommended API for new clients**. The v1 endpoints documented below are **frozen and deprecated-but-supported** (no sunset date yet); migrate to `/api/v2` to access new tracking types and the cleaner contract. See the [v1 → v2 migration guide](docs/v1-to-v2-migration-guide.md) for the endpoint/field mapping, and [`docs/v2-api-design.md`](docs/v2-api-design.md) and `/docs` for v2 details.
 
 ## Contents
 

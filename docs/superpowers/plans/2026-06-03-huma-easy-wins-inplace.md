@@ -1,5 +1,7 @@
 # Huma Easy-Wins (in-place /api) Implementation Plan
 
+> **SUPERSEDED CONVENTION — errors.** The error convention below (`{status:"error",message}` via `humaNewError`) was superseded by the master plan (`2026-06-03-huma-full-api-master-plan.md`, Task 0.1): the built surface uses RFC 9457 `application/problem+json` via huma's default error model, and `InstallLegacyErrorModel`/`humaNewError` no longer exist. Everything else in this plan was executed as written (as P1/P2 of the master plan).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (or executing-plans) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Document and validate the ~30 "easy-win" `/api/*` endpoints (reloads, read-only data, tile-URL, masterdata, DTS-editor reads, snapshots, summaries, autocreate/run, command) by moving them to huma **in place** — same paths, same success JSON, no client changes — so they appear in the OpenAPI spec at `/openapi.json` + `/docs`.

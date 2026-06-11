@@ -35,7 +35,7 @@ v2 is a **clean HTTP facade over the same store/matcher/business logic** — no 
 
 - Base path: `/api/v2`. The existing `/api/*` (v1) is unchanged and remains available.
 - Auth: `X-Poracle-Secret: <secret>` request header (same secret as v1). Unauthenticated requests get `401`.
-- Docs: OpenAPI spec at `GET /api/v2/openapi.json`; interactive docs at `GET /api/v2/docs` (both public, no secret).
+- Docs: OpenAPI spec at `GET /openapi.json`; interactive docs at `GET /docs` (both public, no secret). One spec covers the huma-served `/api/*` endpoints and all of `/api/v2`.
 
 ### Errors (RFC 9457 `application/problem+json`)
 
