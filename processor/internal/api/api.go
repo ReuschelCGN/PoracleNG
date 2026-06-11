@@ -26,26 +26,6 @@ type WeatherExporter interface {
 	ExportCellWeather(cellID string) map[int64]int
 }
 
-// HandleWeather returns a Gin handler that serves weather data for a cell.
-func HandleWeather(weather WeatherExporter) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cellID := c.Query("cell")
-		if cellID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cell parameter required"})
-			return
-		}
-
-		c.JSON(http.StatusOK, weather.ExportCellWeather(cellID))
-	}
-}
-
-// HandleStats returns a Gin handler that serves the result of a stats function.
-func HandleStats(fn func() any) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, fn())
-	}
-}
-
 // Capabilities is the static feature map this PoracleNG binary supports.
 // Returned in the /health response so clients (config editor, web UI)
 // can do explicit feature detection rather than probing endpoints or

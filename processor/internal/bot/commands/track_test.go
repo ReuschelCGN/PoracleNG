@@ -360,6 +360,25 @@ func TestTrack_WithIVFilter(t *testing.T) {
 	assert.Equal(t, 100, rows[0].MaxIV)
 }
 
+// TestTrack_NonPVP_RankDefaults verifies that a non-PVP !track stores the
+// no-constraint PVP rank defaults (best 1 / worst 4096), matching the DB column
+// defaults and the v1/v2 API — not the zero-value 0/0 the base entry used to
+// store, which broke dedup parity with API-created rows and surfaced as 0/0
+// (instead of null) in the v2 API response.
+func TestTrack_NonPVP_RankDefaults(t *testing.T) {
+	ctx := trackCtx(t)
+	replies := runTrack(t, ctx, "25")
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Monsters.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 0, rows[0].PVPRankingLeague, "non-PVP rule has no league")
+	assert.Equal(t, 1, rows[0].PVPRankingBest, "non-PVP rule should default best rank to 1")
+	assert.Equal(t, 4096, rows[0].PVPRankingWorst, "non-PVP rule should default worst rank to 4096")
+}
+
 func TestTrack_WithDistance(t *testing.T) {
 	ctx := trackCtx(t)
 	ctx.HasLocation = true
