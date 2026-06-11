@@ -427,6 +427,7 @@ func main() {
 		Translations: proc.enricher.Translations,
 		Dispatcher:   proc.dispatcher,
 		Summaries:    summaryScheduleStore,
+		Mutes:        proc.muteStore,
 		ReloadFunc:   proc.triggerReload,
 	}
 	// Strict v2 tracking surface (huma). v1 gin routes below are left untouched
@@ -459,6 +460,10 @@ func main() {
 	// profile actions with a strict typed active_hours schema; v1 gin profile
 	// routes stay frozen.
 	api.RegisterV2Profiles(humaAPI, trackingDeps)
+
+	// Strict v2 mutes surface (huma, sub-resource of human) over the in-memory
+	// mute store — net-new in v2 (the bot/buttons were the only mute writers).
+	api.RegisterV2Mutes(humaAPI, trackingDeps)
 
 	tracking := apiGroup.Group("/tracking")
 	tracking.GET("/pokemon/refresh", api.HandleReload(func() error {

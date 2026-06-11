@@ -715,8 +715,9 @@ The store is a separate pogreb instance from the geocoder cache — different wo
 - `!<type> mute ...` aliases (e.g. `!raid mute id:X`) route through `RouteToMuteFromType`.
 - `!tracked` shows the active mutes alongside tracking rules.
 - Mute buttons on alerts (see "Button actions" below) write the same `mute.Entry` shape via `buttonactions.HandleMute`.
+- **v2 mutes API** (`internal/api/v2_mutes.go`): `GET|POST /api/v2/humans/{id}/mutes`, `DELETE …/mutes?scope=&value=` (single) and `DELETE …/mutes` (all). Strict schemas, problem+json; mute identity is `(scope, value)` so deletes address via query params; DELETE returns `{deleted:[…]}` like v2 tracking. Area values validate against `AreaLogic` when present, else live `StateMgr` fences (production path). The v2 full snapshot includes a `mutes` array. The API documents the in-memory volatility — entries vanish on restart. Design: `docs/superpowers/specs/2026-06-11-mute-api-design.md`.
 
-Tracking-UID mutes (`!mute id:N` / `!mute raid id:N`) are documented in the design but rejected by the v1 parser — they need `MatchedUser.RuleUID` plumbing in the matcher first.
+Tracking-UID mutes are fully wired: the matcher compares `mute.Event.MatchedRuleUID` (populated per matched user in `cmd/processor/helpers.go`) against `tracking`-scope entries, created via `!mute id:N`, alert buttons, or the v2 mutes API.
 
 ## Button Actions
 

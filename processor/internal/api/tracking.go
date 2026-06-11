@@ -16,6 +16,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
+	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
 	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
@@ -33,6 +34,7 @@ type TrackingDeps struct {
 	Dispatcher   *delivery.Dispatcher
 	AreaLogic    *bot.AreaLogic             // nil-safe: area validation skipped when nil
 	Summaries    store.SummaryScheduleStore // nil-safe: snapshot summaries omitted when nil
+	Mutes        *mute.Store                // in-memory mute store (v2 mutes endpoints + snapshot mutes; nil-safe in snapshot, required by RegisterV2Mutes)
 	ReloadFunc   func()                     // triggers debounced state reload (from ProcessorService.triggerReload)
 
 	// v2SnapshotProviders is the per-instance registry of type-erased snapshot

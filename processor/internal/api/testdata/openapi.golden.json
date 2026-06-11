@@ -2850,6 +2850,56 @@
         ],
         "type": "object"
       },
+      "V2CreateMuteInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_min": {
+            "description": "Mute length in minutes. Defaults to 60; maximum one week (10080).",
+            "format": "int64",
+            "maximum": 10080,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Mute scope. value is required for every scope except 'everything', where it must be absent.",
+            "enum": [
+              "gym",
+              "pokemon",
+              "area",
+              "pokestop",
+              "station",
+              "tracking",
+              "everything"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "Scope identifier: gym/pokestop/station id, pokemon dex id or tracking-rule uid (numeric string), or area name (matched case-insensitively against loaded geofences).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "type": "object"
+      },
+      "V2CreateMuteOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mute": {
+            "$ref": "#/components/schemas/V2MuteItem"
+          },
+          "replaced": {
+            "description": "True when an existing mute with the same scope and value was extended rather than a new one created.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mute",
+          "replaced"
+        ],
+        "type": "object"
+      },
       "V2CreateOutputV2EggRuleBody": {
         "additionalProperties": false,
         "properties": {
@@ -8686,6 +8736,25 @@
         ],
         "type": "object"
       },
+      "V2DeletedMutesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "description": "The removed mutes (empty when a delete-all found none).",
+            "items": {
+              "$ref": "#/components/schemas/V2MuteItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
       "V2EggRule": {
         "additionalProperties": false,
         "properties": {
@@ -10883,6 +10952,67 @@
         },
         "type": "object"
       },
+      "V2MuteItem": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "Unix seconds when the mute lapses.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "remaining_secs": {
+            "description": "Seconds until expiry at response time (UI convenience, derived from expires_at).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "What the mute suppresses: a specific gym/pokestop/station (by id), a pokemon species (by dex id), a geofence area (by name), one tracking rule (by uid), or everything.",
+            "enum": [
+              "gym",
+              "pokemon",
+              "area",
+              "pokestop",
+              "station",
+              "tracking",
+              "everything"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "Scope-specific identifier (gym/pokestop/station id, dex id or rule uid as a numeric string, canonical area name). Null for scope=everything.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "scope",
+          "value",
+          "expires_at",
+          "remaining_secs"
+        ],
+        "type": "object"
+      },
+      "V2MutesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mutes": {
+            "description": "Active (non-expired) mutes. Mutes are held in memory only and are cleared by a processor restart.",
+            "items": {
+              "$ref": "#/components/schemas/V2MuteItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mutes"
+        ],
+        "type": "object"
+      },
       "V2NestRule": {
         "additionalProperties": false,
         "properties": {
@@ -11631,6 +11761,16 @@
           "locations": {
             "$ref": "#/components/schemas/LocationsPayload"
           },
+          "mutes": {
+            "description": "Active (non-expired) alert mutes — same items as GET …/mutes. Mutes are held in memory only and are cleared by a processor restart.",
+            "items": {
+              "$ref": "#/components/schemas/V2MuteItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "profiles": {
             "items": {
               "$ref": "#/components/schemas/ProfileResponse"
@@ -11665,7 +11805,8 @@
           "tracking",
           "profiles",
           "locations",
-          "summaries"
+          "summaries",
+          "mutes"
         ],
         "type": "object"
       },
@@ -15190,6 +15331,188 @@
         "summary": "Update a saved location's coords",
         "tags": [
           "v2-locations"
+        ]
+      }
+    },
+    "/v2/humans/{id}/mutes": {
+      "delete": {
+        "description": "With ?scope= (and ?value= for every scope except 'everything'): removes that single mute, 404 when it does not exist. With no params: removes every mute the human has. Returns the removed entries.",
+        "operationId": "v2-delete-human-mutes",
+        "parameters": [
+          {
+            "description": "Human id (the owning user)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Human id (the owning user)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Scope of the mute to remove. Omit (together with value) to remove all mutes.",
+            "explode": false,
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "description": "Scope of the mute to remove. Omit (together with value) to remove all mutes.",
+              "enum": [
+                "gym",
+                "pokemon",
+                "area",
+                "pokestop",
+                "station",
+                "tracking",
+                "everything"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Value of the mute to remove, as returned by the list endpoint. Required with scope, except scope=everything which takes none.",
+            "explode": false,
+            "in": "query",
+            "name": "value",
+            "schema": {
+              "description": "Value of the mute to remove, as returned by the list endpoint. Required with scope, except scope=everything which takes none.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2DeletedMutesOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "poracleSecret": []
+          }
+        ],
+        "summary": "Remove one mute or all mutes",
+        "tags": [
+          "v2-mutes"
+        ]
+      },
+      "get": {
+        "description": "Returns the human's active (non-expired) alert mutes. Mutes are held in memory only and are cleared by a processor restart.",
+        "operationId": "v2-list-human-mutes",
+        "parameters": [
+          {
+            "description": "Human id (the owning user)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Human id (the owning user)",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2MutesOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "poracleSecret": []
+          }
+        ],
+        "summary": "List a human's active mutes",
+        "tags": [
+          "v2-mutes"
+        ]
+      },
+      "post": {
+        "description": "Suppresses the human's alerts matching the scope for duration_min minutes (default 60, max one week). Re-muting the same scope+value extends the expiry and reports replaced=true. Mutes are held in memory only and are cleared by a processor restart.",
+        "operationId": "v2-create-human-mute",
+        "parameters": [
+          {
+            "description": "Human id (the owning user)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Human id (the owning user)",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2CreateMuteInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2CreateMuteOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "poracleSecret": []
+          }
+        ],
+        "summary": "Mute alerts for a scope",
+        "tags": [
+          "v2-mutes"
         ]
       }
     },
