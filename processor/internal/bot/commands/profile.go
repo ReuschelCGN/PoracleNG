@@ -18,8 +18,19 @@ func (c *ProfileCommand) Name() string      { return "cmd.profile" }
 func (c *ProfileCommand) Aliases() []string { return nil }
 
 func (c *ProfileCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
+	if help := helpArgReply(ctx, args, "msg.profile.usage"); help != nil {
+		return []bot.Reply{*help}
+	}
+
 	if len(args) == 0 {
-		return c.listProfiles(ctx)
+		replies := c.listProfiles(ctx)
+		// Append usage hint only for the bare-call path; explicit `list`
+		// subcommand doesn't get it since the user has already proven they
+		// know !profile syntax.
+		if len(replies) > 0 {
+			replies[len(replies)-1].Text += "\n\n" + inlineUsage(ctx, "msg.profile.usage")
+		}
+		return replies
 	}
 
 	subcommand := args[0]
@@ -72,7 +83,7 @@ func (c *ProfileCommand) listProfiles(ctx *bot.CommandContext) []bot.Reply {
 		if p.ProfileNo == ctx.ProfileNo {
 			activeMarker = "*"
 		}
-		sb.WriteString(fmt.Sprintf("%d%s. %s", p.ProfileNo, activeMarker, ctx.EscapeForReply(p.Name)))
+		fmt.Fprintf(&sb, "%d%s. %s", p.ProfileNo, activeMarker, ctx.EscapeForReply(p.Name))
 
 		if len(p.Area) > 0 && ctx.AreaLogic != nil {
 			displayNames := ctx.AreaLogic.ResolveDisplayNames(p.Area)
@@ -82,7 +93,7 @@ func (c *ProfileCommand) listProfiles(ctx *bot.CommandContext) []bot.Reply {
 		}
 
 		if p.Latitude != 0 || p.Longitude != 0 {
-			sb.WriteString(fmt.Sprintf(" - location: %.5f,%.5f", p.Latitude, p.Longitude))
+			fmt.Fprintf(&sb, " - location: %.5f,%.5f", p.Latitude, p.Longitude)
 		}
 		sb.WriteByte('\n')
 
@@ -235,7 +246,7 @@ func buildDayPrefixMap(ctx *bot.CommandContext) map[string][]int {
 func (c *ProfileCommand) setTime(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
 	if len(args) == 0 {
-		return []bot.Reply{{React: "🙅", Text: tr.T("msg.profile.settime_usage")}}
+		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.profile.settime_usage", bot.CommandPrefix(ctx))}}
 	}
 
 	dayPrefixes := buildDayPrefixMap(ctx)
@@ -251,7 +262,7 @@ func (c *ProfileCommand) setTime(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	if len(entries) == 0 {
-		return []bot.Reply{{React: "🙅", Text: tr.T("msg.profile.settime_usage")}}
+		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.profile.settime_usage", bot.CommandPrefix(ctx))}}
 	}
 
 	data, _ := json.Marshal(entries)
@@ -283,7 +294,7 @@ func (c *ProfileCommand) clearTime(ctx *bot.CommandContext) []bot.Reply {
 func (c *ProfileCommand) copyTo(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
 	if len(args) == 0 {
-		return []bot.Reply{{React: "🙅", Text: tr.T("msg.profile.copyto_usage")}}
+		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.profile.copyto_usage", bot.CommandPrefix(ctx))}}
 	}
 
 	// Load all profiles for this user.
@@ -333,7 +344,7 @@ func (c *ProfileCommand) copyTo(ctx *bot.CommandContext, args []string) []bot.Re
 		}
 		nameMatch := false
 		for _, v := range valid {
-			if strings.ToLower(v) == strings.ToLower(p.Name) {
+			if strings.EqualFold(v, p.Name) {
 				nameMatch = true
 				break
 			}
@@ -357,7 +368,7 @@ func (c *ProfileCommand) copyTo(ctx *bot.CommandContext, args []string) []bot.Re
 	}
 
 	if len(copiedNames) == 0 && len(invalid) == 0 {
-		return []bot.Reply{{React: "🙅", Text: tr.T("msg.profile.copyto_usage")}}
+		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.profile.copyto_usage", bot.CommandPrefix(ctx))}}
 	}
 
 	ctx.TriggerReload()

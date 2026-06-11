@@ -8,6 +8,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/matching"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
+	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -93,6 +94,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 		matched, matchedAreas := ps.gymMatcher.Match(data, st)
 		matched = ps.filterBlocked(matched)
 		matched = ps.filterValidation("gym", raw, matchedAreas, matched)
+		matched = ps.filterMuted(matched, matchedAreas, mute.Event{GymID: gymID})
 
 		if len(matched) > 0 {
 			metrics.MatchedEvents.WithLabelValues("gym").Inc()
@@ -102,7 +104,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 			l.Infof("Gym %s changed %s -> %s areas(%s) and %d humans cared",
 				gym.Name, ps.teamName(oldTeamID), ps.teamName(teamID), areaNames(matchedAreas), len(matched))
 
-			mode := ps.tileMode("gym", matched)
+			mode := ps.tileMode("gym", matched, gymID)
 			enrichmentData, tilePending := ps.enricher.Gym(gym.Latitude, gym.Longitude, teamID, oldTeamID, gym.SlotsAvailable, oldSlotsAvailable, inBattle, false, gymID, mode)
 
 			// Compute per-language translated enrichment
@@ -110,7 +112,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 			if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
 				perLang = make(map[string]map[string]any)
 				for _, lang := range distinctLanguages(matched, ps.cfg.General.Locale) {
-					perLang[lang] = ps.enricher.GymTranslate(enrichmentData, teamID, oldTeamID, oldLastOwnerID, lang)
+					perLang[lang] = ps.enricher.GymTranslate(enrichmentData, gym.Latitude, gym.Longitude, teamID, oldTeamID, oldLastOwnerID, lang)
 				}
 			}
 
@@ -120,6 +122,7 @@ func (ps *ProcessorService) ProcessGym(raw json.RawMessage) error {
 			webhookFields := parseWebhookFields(raw)
 
 			ps.renderCh <- RenderJob{
+				AlertType:         "gym",
 				TemplateType:      "gym",
 				Enrichment:        enrichmentData,
 				PerLangEnrichment: perLang,

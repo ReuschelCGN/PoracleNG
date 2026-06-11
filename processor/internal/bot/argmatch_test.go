@@ -688,3 +688,92 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// newAreaLocationTestMatcher extends the standard test matcher with
+// arg.prefix.area and arg.prefix.location translation keys.
+func newAreaLocationTestMatcher() *ArgMatcher {
+	bundle := i18n.NewBundle()
+	bundle.AddTranslator(i18n.NewTranslator("en", map[string]string{
+		"arg.prefix.area":     "area",
+		"arg.prefix.location": "location",
+		"arg.prefix.template": "template",
+	}))
+	return NewArgMatcher(bundle, &gamedata.GameData{Util: &gamedata.UtilData{}}, nil, []string{"en"})
+}
+
+func TestArgMatch_AreaMultiple(t *testing.T) {
+	am := newAreaLocationTestMatcher()
+	args := []string{"area:berlin", "area:munich,hamburg", "area:Frankfurt"}
+	parsed := am.Match(args, []ParamDef{
+		{Type: ParamPrefixStringList, Key: "arg.prefix.area"},
+	}, "en")
+	got := parsed.StringLists["area"]
+	want := []string{"berlin", "munich", "hamburg", "frankfurt"} // lowercased + comma-split
+	if !equalStringSlices(got, want) {
+		t.Fatalf("area list: got %v, want %v", got, want)
+	}
+}
+
+func TestArgMatch_LocationSingle(t *testing.T) {
+	am := newAreaLocationTestMatcher()
+	args := []string{"location:Home"}
+	parsed := am.Match(args, []ParamDef{
+		{Type: ParamPrefixString, Key: "arg.prefix.location"},
+	}, "en")
+	if parsed.Strings["location"] != "Home" {
+		t.Fatalf("location: got %q", parsed.Strings["location"])
+	}
+}
+
+func newMeganiumMatcher() *ArgMatcher {
+	bundle := i18n.NewBundle()
+	bundle.AddTranslator(i18n.NewTranslator("en", map[string]string{
+		"arg.prefix.mega": "mega",
+		"arg.mega":        "mega",
+		"poke_25":         "Pikachu",
+		"poke_154":        "Meganium",
+	}))
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 25, Form: 0}:  {PokemonID: 25},
+			{ID: 154, Form: 0}: {PokemonID: 154},
+		},
+	}
+	resolver := NewPokemonResolver(gd, bundle, []string{"en"}, nil)
+	return NewArgMatcher(bundle, gd, resolver, []string{"en"})
+}
+
+// A string-prefix (here `mega`) must NOT swallow a token that is a known
+// pokemon. `meganium` (154) was matched as mega+"nium" before the fix.
+func TestPrefixDoesNotSwallowKnownPokemon(t *testing.T) {
+	am := newMeganiumMatcher()
+	params := []ParamDef{
+		{Type: ParamPrefixString, Key: "arg.prefix.mega"},
+		{Type: ParamKeyword, Key: "arg.mega"},
+		{Type: ParamPokemonName},
+	}
+
+	t.Run("meganium_resolves_as_pokemon", func(t *testing.T) {
+		p := am.Match([]string{"meganium"}, params, "en")
+		if p.Strings["mega"] != "" {
+			t.Fatalf("meganium wrongly consumed as mega prefix (val=%q)", p.Strings["mega"])
+		}
+		if len(p.Pokemon) != 1 || p.Pokemon[0].PokemonID != 154 {
+			t.Fatalf("meganium should resolve to pokemon 154; got %+v", p.Pokemon)
+		}
+	})
+
+	t.Run("mega_colon_x_still_works", func(t *testing.T) {
+		p := am.Match([]string{"mega:x"}, params, "en")
+		if p.Strings["mega"] != "x" {
+			t.Fatalf("mega:x should set mega=x; got %q", p.Strings["mega"])
+		}
+	})
+
+	t.Run("bare_mega_keyword_still_works", func(t *testing.T) {
+		p := am.Match([]string{"mega"}, params, "en")
+		if !p.HasKeyword("arg.mega") {
+			t.Fatalf("bare mega should set the arg.mega keyword")
+		}
+	})
+}

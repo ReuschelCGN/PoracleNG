@@ -303,7 +303,7 @@ var knownPrefixKeys = []string{
 	// can't add weight constraints.
 	"arg.prefix.rarity", "arg.prefix.maxrarity",
 	"arg.prefix.size", "arg.prefix.maxsize",
-	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap",
+	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap", "arg.prefix.mega",
 	"arg.prefix.form", "arg.prefix.template", "arg.prefix.move", "arg.prefix.language",
 	"arg.prefix.gym",
 	"arg.prefix.stardust", "arg.prefix.energy", "arg.prefix.candy",
@@ -311,6 +311,7 @@ var knownPrefixKeys = []string{
 	"arg.prefix.great", "arg.prefix.greathigh", "arg.prefix.greatcp",
 	"arg.prefix.ultra", "arg.prefix.ultrahigh", "arg.prefix.ultracp",
 	"arg.prefix.little", "arg.prefix.littlehigh", "arg.prefix.littlecp",
+	"arg.prefix.area", "arg.prefix.location",
 }
 
 // knownKeywordKeys lists all arg.* keyword keys used by any command.
@@ -318,7 +319,7 @@ var knownKeywordKeys = []string{
 	"arg.remove", "arg.everything", "arg.individually",
 	"arg.clean", "arg.edit", "arg.summary", "arg.shiny", "arg.ex",
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
-	"arg.gmax",
+	"arg.gmax", "arg.mega",
 	"arg.pokestop", "arg.gym", "arg.station", "arg.location", "arg.new", "arg.removal", "arg.photo", "arg.name", "arg.description", "arg.include_empty",
 	"arg.stardust", "arg.energy", "arg.candy",
 	"arg.slot_changes", "arg.battle_changes",
@@ -357,6 +358,16 @@ func (am *ArgMatcher) Match(tokens []string, params []ParamDef, lang string) *Pa
 
 	// For collecting types: match ALL unmatched tokens, not just one
 	for _, param := range params {
+		if param.Type == ParamPrefixStringList {
+			for i, tok := range tokens {
+				if consumed[i] {
+					continue
+				}
+				if am.tryPrefixStringList(tok, param.Key, lang, result) {
+					consumed[i] = true
+				}
+			}
+		}
 		if param.Type == ParamRemoveUID {
 			for i, tok := range tokens {
 				if consumed[i] {
@@ -424,6 +435,8 @@ func (am *ArgMatcher) tryMatch(tok string, param ParamDef, lang string, result *
 		return am.tryPrefixSingle(tok, param.Key, lang, result)
 	case ParamPrefixString:
 		return am.tryPrefixString(tok, param.Key, lang, result)
+	case ParamPrefixStringList:
+		return am.tryPrefixStringList(tok, param.Key, lang, result)
 	case ParamKeyword:
 		return am.tryKeyword(tok, param.Key, lang, result)
 	case ParamTeam:
@@ -579,8 +592,24 @@ func (am *ArgMatcher) tryPrefixSingle(tok, key, lang string, result *ParsedArgs)
 	return false
 }
 
+// tokenIsKnownPokemon reports whether the whole token resolves to a pokemon.
+// Used to stop open-valued string prefixes (mega:, form:, move:, …) from
+// swallowing a token that is actually a pokemon name via the no-colon
+// concatenation form — e.g. "meganium" would otherwise match the "mega"
+// prefix as mega+"nium", leaving no pokemon to resolve. Colon forms like
+// "mega:x" never resolve to a pokemon, so this guard doesn't affect them.
+func (am *ArgMatcher) tokenIsKnownPokemon(tok, lang string) bool {
+	if am.resolver == nil {
+		return false
+	}
+	return len(am.resolver.Resolve(tok, lang)) > 0
+}
+
 // tryPrefixString matches patterns like "form:alola" or "formalola", "template:2", "move:hydro pump".
 func (am *ArgMatcher) tryPrefixString(tok, key, lang string, result *ParsedArgs) bool {
+	if am.tokenIsKnownPokemon(tok, lang) {
+		return false
+	}
 	prefix := am.cachedPrefix(key, lang)
 	for _, p := range prefix {
 		if val, ok := stripPrefix(tok, p); ok {
@@ -588,6 +617,35 @@ func (am *ArgMatcher) tryPrefixString(tok, key, lang string, result *ParsedArgs)
 			result.Strings[shortKey] = val
 			return true
 		}
+	}
+	return false
+}
+
+// tryPrefixStringList matches patterns like "area:berlin", "area:X,Y,Z".
+// Values are comma-split and lowercased; calling this multiple times on
+// different tokens accumulates all values in result.StringLists[shortKey].
+func (am *ArgMatcher) tryPrefixStringList(tok, key, lang string, result *ParsedArgs) bool {
+	if am.tokenIsKnownPokemon(tok, lang) {
+		return false
+	}
+	prefixes := am.cachedPrefix(key, lang)
+	for _, p := range prefixes {
+		val, ok := stripPrefix(tok, p)
+		if !ok {
+			continue
+		}
+		shortKey := strings.TrimPrefix(key, "arg.prefix.")
+		if result.StringLists == nil {
+			result.StringLists = make(map[string][]string)
+		}
+		for _, v := range strings.Split(val, ",") {
+			v = strings.TrimSpace(strings.ToLower(v))
+			if v == "" {
+				continue
+			}
+			result.StringLists[shortKey] = append(result.StringLists[shortKey], v)
+		}
+		return true
 	}
 	return false
 }

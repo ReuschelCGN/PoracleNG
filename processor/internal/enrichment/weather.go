@@ -7,7 +7,7 @@ import (
 )
 
 // Weather builds enrichment fields for a weather change event.
-func (e *Enricher) Weather(lat, lon float64, gameplayCondition int, coords [][2]float64, showAlteredPokemonStaticMap bool, tileMode int) (map[string]any, *staticmap.TilePending) {
+func (e *Enricher) Weather(lat, lon float64, gameplayCondition int, coords [][2]float64, showAlteredPokemonStaticMap bool, tileMode int, ref string) (map[string]any, *staticmap.TilePending) {
 	m := make(map[string]any)
 
 	// Store lat/lon and coords for use by per-language enrichment
@@ -50,7 +50,7 @@ func (e *Enricher) Weather(lat, lon float64, gameplayCondition int, coords [][2]
 		if len(coords) > 0 {
 			webhookFields["coords"] = coords
 		}
-		pending = e.addStaticMap(m, "weather", lat, lon, webhookFields, tileMode)
+		pending = e.addStaticMap(m, "weather", lat, lon, webhookFields, tileMode, ref)
 	}
 
 	e.setFallbackImg(m, e.FallbackImgWeather)
@@ -59,12 +59,15 @@ func (e *Enricher) Weather(lat, lon float64, gameplayCondition int, coords [][2]
 }
 
 // WeatherTranslate adds per-language translated fields for a weather change.
-func (e *Enricher) WeatherTranslate(base map[string]any, oldWeatherID, newWeatherID int, activePokemons []webhook.ActivePokemonEntry, lang string, showAlteredPokemonStaticMap bool, tileMode int) (map[string]any, *staticmap.TilePending) {
+func (e *Enricher) WeatherTranslate(base map[string]any, oldWeatherID, newWeatherID int, activePokemons []webhook.ActivePokemonEntry, lang string, showAlteredPokemonStaticMap bool, tileMode int, ref string) (map[string]any, *staticmap.TilePending) {
 	if e.GameData == nil || e.Translations == nil {
 		return nil, nil
 	}
 
-	m := make(map[string]any, 10) // only translated fields; caller merges base + perLang
+	m := make(map[string]any, 20) // only translated fields; caller merges base + perLang
+	lat, _ := base["latitude"].(float64)
+	lon, _ := base["longitude"].(float64)
+	defer e.addLocalizedGeoResult(m, lat, lon, lang)
 
 	gd := e.GameData
 	tr := e.Translations.For(lang)
@@ -118,9 +121,7 @@ func (e *Enricher) WeatherTranslate(base map[string]any, oldWeatherID, newWeathe
 		// all other base fields for the tileserver payload.
 		if showAlteredPokemonStaticMap {
 			m["activePokemons"] = enrichedPokemon
-			lat, _ := base["latitude"].(float64)
-			lon, _ := base["longitude"].(float64)
-			pending = e.addStaticMap(m, "weather", lat, lon, base, tileMode)
+			pending = e.addStaticMap(m, "weather", lat, lon, base, tileMode, ref)
 		}
 	}
 

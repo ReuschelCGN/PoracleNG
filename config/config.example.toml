@@ -44,7 +44,12 @@ cache_dir = ".cache/geofences"           # shared cache directory for downloaded
 
 [pvp]
 level_caps = [50]                        # level caps to include in rank calculations, eg [50, 51]
-include_mega_evolution = false           # whether to include mega evolutions in rank calculations
+# include_mega_evolution - server default for PVP rules that do NOT specify a
+# mega keyword (i.e. pvp_ranking_evolution = 0). false: those rules match base
+# forms only; true: they also match mega/temporary-evolution ranks. Per-rule
+# `mega` / `mega:x` / `mega:y` keywords always override this regardless of the
+# flag.
+include_mega_evolution = false
 evolution_direct_tracking = false
 filter_by_track = false                  # whether PVP listings are auto-filtered by user's track requirements
 # filter_* - minimums on the track command to help users get PVP tracking right
@@ -320,6 +325,45 @@ admin_channel_id = ""
 # accessible. 0 disables. Max 168 (7 days, Discord's archive ceiling).
 thread_keep_alive_interval_hours = 24
 
+# ---- Discord slash commands (optional, additive surface) ----
+#
+# When enabled, Poracle registers Discord slash commands alongside the
+# existing ! text commands. Both surfaces keep working — slash is for
+# users who prefer Discord's native autocomplete UI; ! is for users who
+# already know the text grammar.
+#
+# Recommended for testing: register_globally=false + a guilds list so
+# changes propagate to clients in seconds. Switch to register_globally=
+# true for production; global updates can take up to an hour to appear
+# in Discord clients. Switching between modes leaves stale registrations;
+# run once with `-clear-global-slash-commands` or
+# `-clear-guild-slash-commands` to clean up.
+
+[discord.slash_commands]
+# Master switch. When false, no slash commands are registered or routed.
+enabled = false
+
+# Global registration: a single set of commands available across every
+# guild the bot is in, plus DMs. Discord caches these aggressively, so
+# changes can take up to an hour to appear in users' clients. Defaults
+# off so flipping enabled=true never silently pushes commands to every
+# server the bot has ever been invited to — opt in explicitly.
+register_globally = false
+
+# Per-guild registration list. Used when register_globally is false.
+# Updates appear within seconds, which makes this the right choice for
+# testing and most single-server deployments. If both this list is empty
+# and register_globally is false, no commands are registered (the sync
+# logs a warning).
+guilds = []
+
+# Optional allow-list of canonical short names to expose. Empty = all
+# commands this build supports. Use this to hide commands rather than
+# disable categories outright. Names always reference the canonical
+# English short form regardless of any i18n renaming.
+# enable = ["track", "tracked", "raid", "untrack", "area", "profile", "location", "start", "stop"]
+enable = []
+
 # ---- Telegram ----
 
 [telegram]
@@ -492,7 +536,12 @@ shame_channel = ""                       # name and shame stopped/disabled users
 everything_flag_permissions = "allow-any"
 default_distance = 0                     # default distance for distance-only tracking (no areas)
 max_distance = 0                         # max tracking circle radius (0 = no limit)
-enable_gym_battle = false                # allow "battle_changes" option in !gym
+# enable_gym_battle - allow the "battle_changes" keyword on !gym tracking.
+# Off by default: a gym emits an in-battle webhook whenever it's attacked, so
+# battle tracking can be very chatty. While false, "!gym battle_changes" is
+# rejected with "Battle changes tracking is not enabled". (Note: the tracking
+# API / web editor sets battle_changes directly and is not gated by this flag.)
+enable_gym_battle = false
 default_user_tracking_level_cap = 0      # default pvp tracking level cap (0 = all levels)
 # Pokemon change tracking — when on, post-encounter changes (form, species,
 # gender, weather-boost shift) and the non-IV → IV transition for users with
@@ -628,3 +677,14 @@ max_age = 1                              # days to keep old log files
 max_backups = 12                         # number of old rotated files to keep (~12 hours at hourly rotation)
 compress = true                          # gzip compress rotated log files
 rotate_interval = 60                     # minutes between forced rotations (0 = size-based only)
+
+# Snapshots — opt-in on-disk store of per-delivery enrichment views. The
+# substrate for interactive buttons and post-alert lookups (mute commands
+# can reference rules muted via buttons, button clicks re-render templates
+# against the stored view, etc.). Disabled by default so operators get no
+# disk usage and no buttons unless they opt in.
+[snapshots]
+enabled = false
+# path                = "config/.cache/snapshots"   # relative to BaseDir
+# max_age_days        = 7                           # safety-sweep grace period
+# sweep_interval_mins = 60                          # background sweep cadence

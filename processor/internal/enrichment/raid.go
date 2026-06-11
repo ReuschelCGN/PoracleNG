@@ -127,7 +127,7 @@ func (e *Enricher) Raid(raid *webhook.RaidWebhook, firstNotification bool, tileM
 		"teamId":     raid.TeamID,
 		"evolution":  raid.Evolution,
 		"costume":    raid.Costume,
-	}, tileMode)
+	}, tileMode, raid.GymID)
 
 	// Game data enrichment
 	if e.GameData != nil {
@@ -205,7 +205,8 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 		return nil
 	}
 
-	m := make(map[string]any, 15) // only translated fields; caller merges base + perLang
+	m := make(map[string]any, 25) // only translated fields; caller merges base + perLang
+	defer e.addLocalizedGeoResult(m, raid.Latitude, raid.Longitude, lang)
 
 	gd := e.GameData
 	tr := e.Translations.For(lang)
@@ -216,6 +217,7 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 	// Weather
 	gameWeatherID := toInt(base["gameWeatherId"])
 	m["gameWeatherName"] = TranslateWeatherName(tr, gameWeatherID)
+	m["gameWeatherNameEng"] = TranslateWeatherName(e.Translations.For("en"), gameWeatherID)
 	if gameWeatherID > 0 {
 		if wInfo, ok := gd.Util.Weather[gameWeatherID]; ok {
 			m["gameWeatherEmojiKey"] = wInfo.Emoji
@@ -270,7 +272,7 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 
 		// Weather boost
 		weather := toInt(base["gameWeatherId"])
-		addWeatherFields(m, gd, tr, monster.Types, weather)
+		addWeatherFields(m, gd, tr, enTr, monster.Types, weather)
 
 		// Generation
 		addGenerationFields(m, gd, tr, e.Translations.For("en"), raid.PokemonID, raid.Form)

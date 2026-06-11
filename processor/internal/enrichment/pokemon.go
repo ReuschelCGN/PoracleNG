@@ -35,6 +35,9 @@ func (e *Enricher) Pokemon(pokemon *webhook.PokemonWebhook, processed *matching.
 			bestRank := 4096
 			bestCP := 0
 			for _, r := range ranks {
+				if r.Evolution != 0 {
+					continue // headline best-rank is the base form; megas are matched/displayed separately
+				}
 				if r.Rank < bestRank {
 					bestRank = r.Rank
 					bestCP = r.CP
@@ -199,7 +202,7 @@ func (e *Enricher) Pokemon(pokemon *webhook.PokemonWebhook, processed *matching.
 		"confirmedTime":      pokemon.DisappearTimeVerified || pokemon.Verified,
 		"weather":            weather,
 		"seen_type":          pokemon.SeenType,
-	}, tileMode)
+	}, tileMode, pokemon.EncounterID)
 
 	e.setFallbackImg(m, e.FallbackImgURL)
 	return m, pending
@@ -330,7 +333,8 @@ func (e *Enricher) PokemonTranslate(base map[string]any, pokemon *webhook.Pokemo
 		return nil
 	}
 
-	m := make(map[string]any, 20) // only translated fields; caller merges base + perLang
+	m := make(map[string]any, 30) // only translated fields; caller merges base + perLang
+	defer e.addLocalizedGeoResult(m, pokemon.Latitude, pokemon.Longitude, lang)
 
 	gd := e.GameData
 	tr := e.Translations.For(lang)
@@ -360,9 +364,10 @@ func (e *Enricher) PokemonTranslate(base map[string]any, pokemon *webhook.Pokemo
 	if weather == 0 {
 		weather = pokemon.Weather
 	}
-	addWeatherFields(m, gd, tr, monster.Types, weather)
+	addWeatherFields(m, gd, tr, enTr, monster.Types, weather)
 	gameWeatherID := toInt(base["gameWeatherId"])
 	m["gameWeatherName"] = TranslateWeatherName(tr, gameWeatherID)
+	m["gameWeatherNameEng"] = TranslateWeatherName(enTr, gameWeatherID)
 	if gameWeatherID > 0 {
 		if wInfo, ok := gd.Util.Weather[gameWeatherID]; ok {
 			m["gameWeatherEmojiKey"] = wInfo.Emoji

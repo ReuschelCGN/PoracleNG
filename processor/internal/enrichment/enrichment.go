@@ -2,6 +2,7 @@ package enrichment
 
 import (
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
@@ -159,11 +160,40 @@ func normalizeTrailingSlash(url string) string {
 // addGeoResult performs a reverse geocode lookup and adds address fields to the
 // enrichment map. This should be called BEFORE addStaticMap so that static map
 // templates can reference address fields.
+//
+// Passes e.DefaultLocale as the language so the base result is genuinely the
+// operator's configured default-locale address. This pairs with
+// addLocalizedGeoResult's skip-when-lang-equals-default optimization: a user
+// whose `language` matches the operator default deliberately skips the
+// per-language lookup because the base already covers them. Without the
+// explicit default-locale here the provider's blank-language behaviour
+// kicks in (Nominatim returns the local language for the place,
+// Google falls back to server geolocation, etc.) — fine for some
+// deployments but wrong for cross-border setups (operator in DE serving
+// EN users would silently get German addresses for English users).
 func (e *Enricher) addGeoResult(m map[string]any, lat, lon float64) {
 	if e.Geocoder == nil {
 		return
 	}
-	addr := e.Geocoder.GetAddress(lat, lon)
+	lang := strings.ToLower(strings.TrimSpace(e.DefaultLocale))
+	addr := e.Geocoder.GetAddressForLanguage(lat, lon, lang)
+	e.addAddressFields(m, addr)
+}
+
+// addLocalizedGeoResult writes per-language address fields into m using the
+// localized reverse-geocode result. The base enrichment already fetched the
+// default-locale address, so blank/default language is a no-op.
+func (e *Enricher) addLocalizedGeoResult(m map[string]any, lat, lon float64, lang string) {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	defaultLocale := strings.ToLower(strings.TrimSpace(e.DefaultLocale))
+	if e.Geocoder == nil || lang == "" || lang == defaultLocale {
+		return
+	}
+	addr := e.Geocoder.GetAddressForLanguage(lat, lon, lang)
+	e.addAddressFields(m, addr)
+}
+
+func (e *Enricher) addAddressFields(m map[string]any, addr *geocoding.Address) {
 	if addr == nil {
 		return
 	}
@@ -196,7 +226,7 @@ const (
 // directly and returns nil.
 // tileMode controls whether to skip (0), generate inline bytes (1), or generate
 // a fetchable URL (2).
-func (e *Enricher) addStaticMap(m map[string]any, maptype string, lat, lon float64, webhookFields map[string]any, tileMode int) *staticmap.TilePending {
+func (e *Enricher) addStaticMap(m map[string]any, maptype string, lat, lon float64, webhookFields map[string]any, tileMode int, ref string) *staticmap.TilePending {
 	if e.StaticMap == nil || tileMode == TileModeSkip {
 		return nil
 	}
@@ -228,8 +258,8 @@ func (e *Enricher) addStaticMap(m map[string]any, maptype string, lat, lon float
 		// Inline mode POSTs without pregenerate=true — the tileserver returns
 		// image bytes directly. Assumes tileservercache with POST-body support.
 		filtered := filterFields(merged, pregenKeys)
-		e.StaticMap.AddNearbyStops(filtered, merged, maptype)
-		return e.StaticMap.SubmitTileInline(maptype, filtered, e.StaticMap.GetStaticMapType(maptype), m)
+		e.StaticMap.AddNearbyStops(filtered, merged, maptype, ref)
+		return e.StaticMap.SubmitTileInline(maptype, filtered, e.StaticMap.GetStaticMapType(maptype), m, ref)
 	}
 
 	if tileMode == TileModeURLWithBytes {
@@ -238,12 +268,12 @@ func (e *Enricher) addStaticMap(m map[string]any, maptype string, lat, lon float
 		// the bytes once via internal_url so Discord-upload destinations in
 		// the same batch don't each re-fetch the public URL.
 		filtered := filterFields(merged, pregenKeys)
-		e.StaticMap.AddNearbyStops(filtered, merged, maptype)
-		return e.StaticMap.SubmitTileBoth(maptype, filtered, e.StaticMap.GetStaticMapType(maptype), m)
+		e.StaticMap.AddNearbyStops(filtered, merged, maptype, ref)
+		return e.StaticMap.SubmitTileBoth(maptype, filtered, e.StaticMap.GetStaticMapType(maptype), m, ref)
 	}
 
 	// TileModeURL — current flow
-	url, pending := e.StaticMap.GetStaticMapURLAsync(maptype, merged, keys, pregenKeys, m)
+	url, pending := e.StaticMap.GetStaticMapURLAsync(maptype, merged, keys, pregenKeys, m, ref)
 	if pending != nil {
 		// Tile will be resolved async by the sender
 		return pending

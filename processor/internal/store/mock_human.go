@@ -2,6 +2,8 @@ package store
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 )
 
@@ -14,6 +16,10 @@ type MockHumanStore struct {
 
 	// Calls records method names called (for assertion).
 	Calls []string
+
+	Locations       map[string][]UserLocation
+	LocationRefs    map[string][]ReferencingRule // keyed by id|lowercased-label
+	PrunedAreaCalls map[string]map[string]bool   // humanID → permitted set, for test assertions
 }
 
 // NewMockHumanStore creates a new empty MockHumanStore.
@@ -281,7 +287,7 @@ func (m *MockHumanStore) LookupWebhookByName(name string) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, h := range m.humans {
-		if h.Type == "webhook" && h.Name == name {
+		if h.Name == name && slices.Contains(NamedTargetTypes, h.Type) {
 			return h.ID, nil
 		}
 	}
@@ -391,5 +397,74 @@ func (m *MockHumanStore) UpdateProfileHours(id string, profileNo int, activeHour
 			break
 		}
 	}
+	return nil
+}
+
+func (m *MockHumanStore) ListLocations(id string) ([]UserLocation, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]UserLocation(nil), m.Locations[id]...), nil
+}
+
+func (m *MockHumanStore) GetLocation(id, label string) (*UserLocation, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	low := strings.ToLower(label)
+	for i := range m.Locations[id] {
+		if strings.ToLower(m.Locations[id][i].Label) == low {
+			r := m.Locations[id][i]
+			return &r, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockHumanStore) AddLocation(loc UserLocation) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	low := strings.ToLower(loc.Label)
+	for i := range m.Locations[loc.ID] {
+		if strings.ToLower(m.Locations[loc.ID][i].Label) == low {
+			return 0, fmt.Errorf("%w: %q for user %q", ErrDuplicateLocation, loc.Label, loc.ID)
+		}
+	}
+	if m.Locations == nil {
+		m.Locations = map[string][]UserLocation{}
+	}
+	loc.UID = int64(len(m.Locations[loc.ID]) + 1)
+	m.Locations[loc.ID] = append(m.Locations[loc.ID], loc)
+	return loc.UID, nil
+}
+
+func (m *MockHumanStore) DeleteLocation(id, label string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	low := strings.ToLower(label)
+	in := m.Locations[id]
+	out := in[:0]
+	for _, l := range in {
+		if strings.ToLower(l.Label) != low {
+			out = append(out, l)
+		}
+	}
+	m.Locations[id] = out
+	return nil
+}
+
+func (m *MockHumanStore) CountLocationReferences(id, label string) ([]ReferencingRule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	key := id + "|" + strings.ToLower(label)
+	return append([]ReferencingRule(nil), m.LocationRefs[key]...), nil
+}
+
+func (m *MockHumanStore) PruneOverrideAreas(humanID string, permitted map[string]bool) error {
+	m.record("PruneOverrideAreas")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.PrunedAreaCalls == nil {
+		m.PrunedAreaCalls = map[string]map[string]bool{}
+	}
+	m.PrunedAreaCalls[humanID] = permitted
 	return nil
 }

@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/matching"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
+	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -61,6 +63,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 		matched, matchedAreas := ps.nestMatcher.Match(data, st)
 		matched = ps.filterBlocked(matched)
 		matched = ps.filterValidation("nest", raw, matchedAreas, matched)
+		matched = ps.filterMuted(matched, matchedAreas, mute.Event{PokemonID: nest.PokemonID})
 
 		if len(matched) > 0 {
 			metrics.MatchedEvents.WithLabelValues("nest").Inc()
@@ -70,7 +73,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 			l.Infof("Nest %s (avg %.1f/hr) areas(%s) and %d humans cared",
 				ps.pokemonName(nest.PokemonID, nest.Form), nest.PokemonAvg, areaNames(matchedAreas), len(matched))
 
-			mode := ps.tileMode("nest", matched)
+			mode := ps.tileMode("nest", matched, strconv.FormatInt(nest.NestID, 10))
 			enrichmentData, tilePending := ps.enricher.Nest(&nest, mode)
 
 			// Compute per-language translated enrichment
@@ -78,7 +81,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 			if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
 				perLang = make(map[string]map[string]any)
 				for _, lang := range distinctLanguages(matched, ps.cfg.General.Locale) {
-					perLang[lang] = ps.enricher.NestTranslate(enrichmentData, nest.PokemonID, nest.Form, lang)
+					perLang[lang] = ps.enricher.NestTranslate(enrichmentData, &nest, lang)
 				}
 			}
 
@@ -88,6 +91,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 			webhookFields := parseWebhookFields(raw)
 
 			ps.renderCh <- RenderJob{
+				AlertType:         "nest",
 				TemplateType:      "nest",
 				Enrichment:        enrichmentData,
 				PerLangEnrichment: perLang,

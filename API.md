@@ -137,6 +137,32 @@ curl -X POST -H "X-Poracle-Secret: secret" -H "Content-Type: application/json" \
 }
 ```
 
+**Per-rule location and area overrides** (all tracking types):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `override_location_label` | string or null | Label of a saved location to use as the distance anchor instead of the user's default. Requires `distance > 0`. |
+| `override_areas` | []string or null | Area names to restrict this rule to, overriding the user's default areas. Mutually exclusive with distance-based tracking. |
+
+Server-side validation rules:
+- `override_location_label` + `distance == 0` → 400 "override_location_label requires distance > 0"
+- `override_areas` + `distance > 0` → 400 "override_areas and distance are mutually exclusive"
+- `override_location_label` + `override_areas` → 400 "override_location_label and override_areas are mutually exclusive"
+- `override_location_label` references unknown saved location → 400 "unknown location label"
+- `override_areas` contains area outside user's permitted set → 400 "area not permitted"
+
+Example with override location:
+
+```json
+[{"pokemon_id": 1, "min_iv": 90, "distance": 1000, "override_location_label": "Work"}]
+```
+
+Example with override areas:
+
+```json
+[{"pokemon_id": 1, "min_iv": 90, "override_areas": ["city_centre", "park"]}]
+```
+
 ### DELETE /api/tracking/{type}/{id}/byUid/{uid}
 
 Delete a single tracking rule by its unique ID.
@@ -214,6 +240,7 @@ Force a state reload (same as POST /api/reload).
 | `pvp_ranking_best` / `pvp_ranking_worst` | int | | PVP rank range |
 | `pvp_ranking_min_cp` | int | 0 | Minimum CP for PVP |
 | `pvp_ranking_cap` | int | 0 | Level cap for PVP |
+| `pvp_ranking_evolution` | int | 0 | Mega/temporary-evolution discriminator: `0`=base only (or base+mega when `[pvp] include_mega_evolution=true`), `1`=any mega, `2`=Mega X, `3`=Mega Y. Set via the `mega` / `mega:x` / `mega:y` keywords on `!track`. |
 | `distance` | int | 0 | Distance in metres (0 = use area) |
 | `template` | string | config default | DTS template name |
 | `clean` | bool | false | Auto-delete message after TTH |
@@ -450,6 +477,20 @@ Toggle admin disable flag.
 {"state": true}
 ```
 
+### POST /api/humans/{id}/language
+
+Set a user's alert and bot-response language. If `[general.available_languages]` is configured, `language` must be one of those configured language codes; otherwise any non-empty language code is accepted.
+
+```bash
+curl -X POST -H "X-Poracle-Secret: secret" -H "Content-Type: application/json" \
+  http://localhost:3030/api/humans/123456789/language \
+  -d '{"language": "de"}'
+```
+
+```json
+{"status": "ok", "language": "de"}
+```
+
 ### POST /api/humans/{id}/setLocation/{lat}/{lon}
 
 Update user location. Validates against area restrictions if area security is enabled.
@@ -474,6 +515,44 @@ curl -X POST -H "X-Poracle-Secret: secret" -H "Content-Type: application/json" \
 
 ```json
 {"status": "ok", "setAreas": ["canterbury", "dover"]}
+```
+
+### GET /api/humans/{id}/locations
+
+List the user's saved locations plus the default.
+
+```json
+{"status": "ok", "locations": {"default": {"latitude": 51.28, "longitude": 1.08}, "named": [{"label": "Home", "latitude": 51.28, "longitude": 1.08}]}}
+```
+
+### GET /api/humans/{id}/locations/{label}
+
+Show one saved location by case-insensitive label. Returns 404 if the label is not found.
+
+```json
+{"status": "ok", "location": {"label": "Home", "latitude": 51.28, "longitude": 1.08}}
+```
+
+### POST /api/humans/{id}/locations/add
+
+Create one or more saved locations. Body is a single object or array of `{label, latitude, longitude}`. The `place` field is accepted but server-side geocoding is deferred — clients should resolve coordinates before calling this endpoint.
+
+```json
+[{"label": "Home", "latitude": 51.28, "longitude": 1.08}]
+```
+
+Returns per-row results:
+
+```json
+{"status": "ok", "results": [{"label": "Home", "error": null}]}
+```
+
+### POST /api/humans/{id}/locations/{label}/delete
+
+Delete a saved location by label. Returns 409 if any tracking rule currently references it, with a list of referencing rules:
+
+```json
+{"status": "conflict", "referencing_rules": [{"type": "pokemon", "uid": 42}]}
 ```
 
 ### POST /api/humans/{id}/switchProfile/{profile}
@@ -1429,6 +1508,18 @@ All invasion grunt types.
 ---
 
 ## Geocoding
+
+Reverse geocoding for alert templates is locale-aware. The processor performs a base reverse-geocode lookup that populates the default-locale address fields, then performs per-language lookups for matched user languages that shadow those fields in the per-language DTS layer. Existing DTS fields such as `{{addr}}`, `{{city}}`, `{{streetName}}`, and `{{formattedAddress}}` automatically resolve to the user's localized geocoder result when the provider supports it.
+
+Supported reverse-geocode language parameters:
+
+| Provider | Parameter |
+|----------|-----------|
+| Nominatim | `accept-language` |
+| Photon | `lang` |
+| Google | `language` |
+
+Reverse geocode cache keys include the language code for localized lookups, so cached German and English address results do not overwrite each other.
 
 ### GET /api/geocode/forward?q={query}
 

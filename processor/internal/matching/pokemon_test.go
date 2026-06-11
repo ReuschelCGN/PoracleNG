@@ -771,6 +771,150 @@ func TestPokemonMatchProfileFilter(t *testing.T) {
 	}
 }
 
+// makePVPMonster returns a MonsterTracking for a PVP great-league rule with
+// permissive stat filters, suitable for evolution-filter tests.
+func makePVPMonster(id string, pokemonID int, pvpEvolution int) *db.MonsterTracking {
+	return &db.MonsterTracking{
+		ID:                   id,
+		ProfileNo:            1,
+		PokemonID:            pokemonID,
+		Form:                 0,
+		MinIV:                -1,
+		MaxIV:                100,
+		MinCP:                0,
+		MaxCP:                defaultMaxCP,
+		MinLevel:             0,
+		MaxLevel:             defaultMaxLevel,
+		ATK:                  0,
+		DEF:                  0,
+		STA:                  0,
+		MaxATK:               15,
+		MaxDEF:               15,
+		MaxSTA:               15,
+		Gender:               0,
+		MinWeight:            0,
+		MaxWeight:            defaultMaxWeight,
+		MinTime:              0,
+		Rarity:               -1,
+		MaxRarity:            6,
+		Size:                 -1,
+		MaxSize:              6,
+		Template:             "1",
+		PVPRankingLeague:     1500,
+		PVPRankingBest:       1,
+		PVPRankingWorst:      100,
+		PVPRankingMinCP:      0,
+		PVPRankingCap:        0,
+		PVPRankingEvolution:  pvpEvolution,
+	}
+}
+
+// TestMatch_Evolution tests the mega/temporary evolution discriminator in the
+// PVP filter path.  Four behaviours are tested:
+//
+//  1. rule Evo=0, matcher.IncludeMegaEvolution=false, entry Evo=2 → 0 matched
+//  2. rule Evo=0, matcher.IncludeMegaEvolution=true,  entry Evo=2 → 1 matched
+//  3. rule Evo=1 (any mega), entry Evo=0 → 0; entry Evo=3 → 1
+//  4. rule Evo=2 (Mega X),   entry Evo=2 → 1; entry Evo=3 → 0
+func TestMatch_Evolution(t *testing.T) {
+	human := makeHuman("user1")
+
+	// Helper: build a ProcessedPokemon for Charizard (id=6, form=178) in great
+	// league with exactly one LeagueRank entry at rank 5, evolution = evo.
+	makePokemon := func(evo int) *ProcessedPokemon {
+		return &ProcessedPokemon{
+			PokemonID:   6,
+			Form:        178,
+			IV:          100,
+			CP:          1480,
+			Level:       20,
+			ATK:         15,
+			DEF:         15,
+			STA:         15,
+			Gender:      0,
+			Weight:      1.0,
+			Size:        1,
+			RarityGroup: 1,
+			TTHSeconds:  600,
+			Latitude:    51.0,
+			Longitude:   0.0,
+			Encountered: true,
+			PVPBestRank: map[int][]pvp.LeagueRank{
+				1500: {{Rank: 5, CP: 1480, Caps: []int{50}, Evolution: evo}},
+			},
+			PVPEvoData: make(map[int]map[int][]pvp.LeagueRank),
+		}
+	}
+
+	t.Run("evo0_flagOff_megaEntry_noMatch", func(t *testing.T) {
+		// Rule: no per-rule preference (Evo=0), server default off → base only.
+		// Pokemon has a Mega X entry (Evo=2) → should NOT match.
+		monster := makePVPMonster("user1", 6, 0)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100, IncludeMegaEvolution: false}
+		matched, _ := matcher.Match(makePokemon(2), st)
+		if len(matched) != 0 {
+			t.Errorf("expected 0 matched users, got %d", len(matched))
+		}
+	})
+
+	t.Run("evo0_flagOn_megaEntry_match", func(t *testing.T) {
+		// Rule: Evo=0, server default ON → match any evolution.
+		// Pokemon has a Mega X entry (Evo=2) → should match.
+		monster := makePVPMonster("user1", 6, 0)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100, IncludeMegaEvolution: true}
+		matched, _ := matcher.Match(makePokemon(2), st)
+		if len(matched) != 1 {
+			t.Errorf("expected 1 matched user, got %d", len(matched))
+		}
+	})
+
+	t.Run("evo1_anyMega_baseEntry_noMatch", func(t *testing.T) {
+		// Rule: Evo=1 (any mega) → base-form entry (Evo=0) must NOT match.
+		monster := makePVPMonster("user1", 6, 1)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100}
+		matched, _ := matcher.Match(makePokemon(0), st)
+		if len(matched) != 0 {
+			t.Errorf("expected 0 matched users for base entry with Evo=1 rule, got %d", len(matched))
+		}
+	})
+
+	t.Run("evo1_anyMega_megaYEntry_match", func(t *testing.T) {
+		// Rule: Evo=1 (any mega) → Mega Y entry (Evo=3) must match.
+		monster := makePVPMonster("user1", 6, 1)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100}
+		matched, _ := matcher.Match(makePokemon(3), st)
+		if len(matched) != 1 {
+			t.Errorf("expected 1 matched user for Mega Y entry with Evo=1 rule, got %d", len(matched))
+		}
+	})
+
+	t.Run("evo2_megaX_megaXEntry_match", func(t *testing.T) {
+		// Rule: Evo=2 (Mega X) → Mega X entry (Evo=2) must match.
+		monster := makePVPMonster("user1", 6, 2)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100}
+		matched, _ := matcher.Match(makePokemon(2), st)
+		if len(matched) != 1 {
+			t.Errorf("expected 1 matched user for Mega X entry with Evo=2 rule, got %d", len(matched))
+		}
+	})
+
+	t.Run("evo2_megaX_megaYEntry_noMatch", func(t *testing.T) {
+		// Rule: Evo=2 (Mega X) → Mega Y entry (Evo=3) must NOT match.
+		monster := makePVPMonster("user1", 6, 2)
+		st := makeTestState([]*db.MonsterTracking{monster}, map[string]*db.Human{"user1": human})
+		matcher := &PokemonMatcher{PVPQueryMaxRank: 100}
+		matched, _ := matcher.Match(makePokemon(3), st)
+		if len(matched) != 0 {
+			t.Errorf("expected 0 matched users for Mega Y entry with Evo=2 rule, got %d", len(matched))
+		}
+	})
+}
+
 // TestPokemonMatch_MultiProfileWithStrictArea guards the combination of
 // multiple profiles, strict-area mode, and area restriction. With two rules
 // for the same user on different profiles, only the rule whose profile

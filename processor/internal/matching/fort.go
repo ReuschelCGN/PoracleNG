@@ -43,7 +43,7 @@ func (m *FortMatcher) Match(data *FortData, st *state.State) ([]webhook.MatchedU
 	for _, f := range st.Forts {
 		// fort_type match OR 'everything'
 		ft := strings.ToLower(f.FortType)
-		if !(ft == strings.ToLower(data.FortType) || ft == "everything") {
+		if ft != strings.ToLower(data.FortType) && ft != "everything" {
 			continue
 		}
 
@@ -60,12 +60,15 @@ func (m *FortMatcher) Match(data *FortData, st *state.State) ([]webhook.MatchedU
 		}
 
 		trackings = append(trackings, trackingUserData{
-			HumanID:   f.ID,
-			ProfileNo: f.ProfileNo,
-			Distance:  f.Distance,
-			Template:  f.Template,
-			Clean:     0, // forts table doesn't have clean
-			Ping:      f.Ping,
+			HumanID:               f.ID,
+			ProfileNo:             f.ProfileNo,
+			Distance:              f.Distance,
+			Template:              f.Template,
+			Clean:                 0, // forts table doesn't have clean
+			Ping:                  f.Ping,
+			UID:                   f.UID,
+			OverrideLocationLabel: f.OverrideLocationLabel,
+			OverrideAreas:         f.OverrideAreas,
 		})
 	}
 

@@ -62,12 +62,25 @@ func ValidateHumans(
 			continue
 		}
 
+		// PVP-specific blocked-alert gate. When the rule has a PVP
+		// filter (PVPRankingLeague != 0) and the user has "pvp" in
+		// blocked_alerts — typically derived from
+		// [discord.command_security] pvp by reconciliation when the
+		// user lost the required role — drop the match. Mirrors
+		// PoracleJS monster.js:102 which folds the same NOT LIKE
+		// '%pvp%' clause into the SQL on the PVP-filtered branch.
+		if monster.PVPRankingLeague != 0 && human.BlockedAlertsSet["pvp"] {
+			continue
+		}
+
+		anchorLat, anchorLon, effectiveAreas := resolveOverride(monster.OverrideLocationLabel, monster.OverrideAreas, human)
+
 		// Lazy haversine: compute once when first needed, cache for reuse.
 		var dist int
 		distComputed := false
 		haversine := func() int {
 			if !distComputed {
-				dist = HaversineDistance(human.Latitude, human.Longitude, monsterLat, monsterLon)
+				dist = HaversineDistance(anchorLat, anchorLon, monsterLat, monsterLon)
 				distComputed = true
 				haversineCount++
 			}
@@ -80,7 +93,7 @@ func ValidateHumans(
 				continue
 			}
 		} else {
-			if !areaOverlap(human.Area, areas) {
+			if !areaOverlap(effectiveAreas, areas) {
 				continue
 			}
 		}
@@ -93,15 +106,15 @@ func ValidateHumans(
 
 		// Reuse cached haversine (or compute now for area-based users).
 		actualDist := haversine()
-		bearing := Bearing(human.Latitude, human.Longitude, monsterLat, monsterLon)
+		bearing := Bearing(anchorLat, anchorLon, monsterLat, monsterLon)
 
 		result = append(result, webhook.MatchedUser{
 			ID:                human.ID,
 			Name:              human.Name,
 			Type:              human.Type,
 			Language:          human.Language,
-			Latitude:          human.Latitude,
-			Longitude:         human.Longitude,
+			Latitude:          anchorLat,
+			Longitude:         anchorLon,
 			Template:          monster.Template,
 			Distance:          actualDist,
 			Clean:             monster.Clean,
@@ -113,6 +126,7 @@ func ValidateHumans(
 			PVPRankingLeague:  monster.PVPRankingLeague,
 			PVPRankingWorst:   monster.PVPRankingWorst,
 			TrackDistance:     monster.Distance,
+			RuleUID:           monster.UID,
 		})
 	}
 	return result
@@ -153,12 +167,14 @@ func ValidateHumansForRaid(
 			continue
 		}
 
+		anchorLat, anchorLon, effectiveAreas := resolveOverride(td.OverrideLocationLabel, td.OverrideAreas, human)
+
 		// Lazy haversine: compute once when first needed, cache for reuse.
 		var dist int
 		distComputed := false
 		haversine := func() int {
 			if !distComputed {
-				dist = HaversineDistance(human.Latitude, human.Longitude, raidLat, raidLon)
+				dist = HaversineDistance(anchorLat, anchorLon, raidLat, raidLon)
 				distComputed = true
 				haversineCount++
 			}
@@ -177,7 +193,7 @@ func ValidateHumansForRaid(
 					continue
 				}
 			} else {
-				if !areaOverlap(human.Area, areas) {
+				if !areaOverlap(effectiveAreas, areas) {
 					continue
 				}
 			}
@@ -198,15 +214,15 @@ func ValidateHumansForRaid(
 
 		// Reuse cached haversine (or compute now for area-based users).
 		actualDist := haversine()
-		bearing := Bearing(human.Latitude, human.Longitude, raidLat, raidLon)
+		bearing := Bearing(anchorLat, anchorLon, raidLat, raidLon)
 
 		result = append(result, webhook.MatchedUser{
 			ID:                human.ID,
 			Name:              human.Name,
 			Type:              human.Type,
 			Language:          human.Language,
-			Latitude:          human.Latitude,
-			Longitude:         human.Longitude,
+			Latitude:          anchorLat,
+			Longitude:         anchorLon,
 			Template:          td.Template,
 			Distance:          actualDist,
 			Clean:             td.Clean,
@@ -215,20 +231,24 @@ func ValidateHumansForRaid(
 			CardinalDirection: CardinalDirection(bearing),
 			RSVPChanges:       td.RSVPChanges,
 			TrackDistance:     td.Distance,
+			RuleUID:           td.UID,
 		})
 	}
 	return result
 }
 
 type raidUserData struct {
-	HumanID         string
-	ProfileNo       int
-	Distance        int
-	Template        string
-	Clean           int
-	Ping            string
-	RSVPChanges     int
-	IsSpecificMatch bool
+	HumanID               string
+	ProfileNo             int
+	Distance              int
+	Template              string
+	Clean                 int
+	Ping                  string
+	RSVPChanges           int
+	UID                   int64 // database UID of the matched raid/egg rule — surfaced on MatchedUser.RuleUID
+	IsSpecificMatch       bool
+	OverrideLocationLabel string
+	OverrideAreas         []string
 }
 
 func areaOverlap(humanAreas []string, matchedAreas map[string]bool) bool {

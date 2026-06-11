@@ -50,7 +50,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	if nest.PolyPath != "" {
 		var rawPolygons [][][2]float64
 		if err := json.Unmarshal([]byte(nest.PolyPath), &rawPolygons); err != nil {
-			log.Debugf("nest: failed to parse poly_path: %s", err)
+			log.Debugf("[%d] nest: failed to parse poly_path: %s", nest.NestID, err)
 		} else {
 			var polygons [][]staticmap.LatLon
 			for _, rawPoly := range rawPolygons {
@@ -93,7 +93,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 		"pokemon_id":      nest.PokemonID,
 		"form":            nest.Form,
 		"pokemonSpawnAvg": nest.PokemonAvg,
-	}, tileMode)
+	}, tileMode, strconv.FormatInt(nest.NestID, 10))
 
 	// Pokemon identity
 	m["pokemonId"] = nest.PokemonID
@@ -125,12 +125,15 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 }
 
 // NestTranslate adds per-language translated fields.
-func (e *Enricher) NestTranslate(base map[string]any, pokemonID, form int, lang string) map[string]any {
-	if e.GameData == nil || e.Translations == nil {
+func (e *Enricher) NestTranslate(base map[string]any, nest *webhook.NestWebhook, lang string) map[string]any {
+	if e.GameData == nil || e.Translations == nil || nest == nil {
 		return nil
 	}
 
-	m := make(map[string]any, 5) // only translated fields; caller merges base + perLang
+	m := make(map[string]any, 15) // only translated fields; caller merges base + perLang
+	defer e.addLocalizedGeoResult(m, nest.Lat, nest.Lon, lang)
+	pokemonID := nest.PokemonID
+	form := nest.Form
 
 	tr := e.Translations.For(lang)
 	TranslateMonsterNamesEng(m, e.GameData, tr, e.Translations, pokemonID, form, 0)

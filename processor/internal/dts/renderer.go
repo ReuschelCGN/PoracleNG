@@ -2,7 +2,9 @@ package dts
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	raymond "github.com/mailgun/raymond/v2"
@@ -55,6 +57,50 @@ type Renderer struct {
 	// stable key (suitable for throttling) and the human-readable
 	// message.
 	errorNoticer ErrorNoticer
+
+	// buttonsEnabled gates Discord component emission. When false the
+	// renderer doesn't attempt to attach buttons even if the resolved
+	// entry has them — equivalent to [snapshots] disabled in the host,
+	// because buttons require a snapshot at click time.
+	buttonsEnabled bool
+
+	// isAdminRecipient reports whether a DM-destination human ID is in
+	// the operator's admin list. Used to hide visible_to=admin buttons
+	// at render time on DMs (channel destinations can't be filtered
+	// per-viewer). Nil means "treat no one as admin" — admin buttons
+	// stay click-gated everywhere.
+	isAdminRecipient func(humanID string) bool
+}
+
+// SetButtonsEnabled toggles Discord button component emission. Buttons
+// require a snapshot at click time, so the host wires this from the
+// [snapshots] config: true only when the snapshot store is open.
+//
+// Operators can leave Buttons[] in their DTS entries when snapshots are
+// disabled — the loader still validates them, but the renderer just
+// doesn't emit the components block.
+func (r *Renderer) SetButtonsEnabled(v bool) {
+	r.buttonsEnabled = v
+}
+
+// SetAdminRecipientCheck wires the host's admin-list predicate. The
+// renderer calls it for each DM destination to decide whether
+// visible_to=admin buttons should be emitted on that user's alert. Pass
+// nil to disable render-time admin hiding (the click-time gate still
+// fires).
+func (r *Renderer) SetAdminRecipientCheck(fn func(humanID string) bool) {
+	r.isAdminRecipient = fn
+}
+
+// recipientIsAdmin returns whether the given user is an admin. Only
+// meaningful for DM-typed destinations — channels/webhooks don't have a
+// single recipient. Returns false when no admin check is wired (the
+// click-time gate still enforces).
+func (r *Renderer) recipientIsAdmin(userType, userID string) bool {
+	if r.isAdminRecipient == nil || userType != "discord:user" {
+		return false
+	}
+	return r.isAdminRecipient(userID)
 }
 
 // ErrorNoticer routes renderer errors to a host-side notification sink
@@ -358,7 +404,7 @@ func (r *Renderer) renderForUsers(
 			result, err := safeExecWith(tmpl, view, df)
 			metrics.TemplateDuration.WithLabelValues(templateType).Observe(time.Since(tStart).Seconds())
 			if err != nil {
-				log.Errorf("dts: render %s for user %s: %v", templateType, user.ID, err)
+				log.Errorf("[%s] dts: render %s for user %s: %v", logReference, templateType, user.ID, err)
 				r.notice(
 					fmt.Sprintf("dts.render:%s:%s:%s:%s", templateType, platform, language, templateID),
 					fmt.Sprintf(":warning: DTS template `%s/%s/%s/%s` render error: %v — falling back to default message.", templateType, platform, language, templateID, err),
@@ -377,7 +423,7 @@ func (r *Renderer) renderForUsers(
 		// Validate rendered JSON
 		rawMessage := json.RawMessage(rendered)
 		if !json.Valid(rawMessage) {
-			log.Errorf("dts: invalid rendered JSON for user %s (raw: %.200s)", user.ID, rendered)
+			logInvalidRenderedJSON(logReference, fmt.Sprintf("user %s", user.ID), rendered)
 			r.notice(
 				fmt.Sprintf("dts.invalid:%s:%s:%s:%s", templateType, platform, language, templateID),
 				fmt.Sprintf(":warning: DTS template `%s/%s/%s/%s` produced invalid JSON — falling back to default message.", templateType, platform, language, templateID),
@@ -390,6 +436,16 @@ func (r *Renderer) renderForUsers(
 			rawMessage = appendPingToRaw(rawMessage, user.Ping)
 		}
 
+		// Attach interactive button components (#109). Only Discord
+		// supports the component shape we emit; Telegram clicks would
+		// need a different bytes path and are deferred (#112).
+		if r.buttonsEnabled && platform == "discord" {
+			defs := r.templates.GetButtons(templateType, platform, templateID, language)
+			if len(defs) > 0 {
+				rawMessage = InjectDiscordComponents(rawMessage, defs, view, deliveryTargetType(user.Type), r.recipientIsAdmin(user.Type, user.ID), r.evalShowIf, logReference)
+			}
+		}
+
 		emojiSlice := extractEmojiSlice(view)
 
 		// h. Compute edit key
@@ -400,22 +456,74 @@ func (r *Renderer) renderForUsers(
 
 		// i. Build DeliveryJob
 		jobs = append(jobs, webhook.DeliveryJob{
-			Lat:          lat,
-			Lon:          lon,
-			Message:      rawMessage,
-			Target:       user.ID,
-			Type:         user.Type,
-			Name:         user.Name,
-			TTH:          tthMap,
-			Clean:        user.Clean,
-			Emoji:        emojiSlice,
-			LogReference: logReference,
-			Language:     language,
-			EditKey:      editKey,
+			Lat:               lat,
+			Lon:               lon,
+			Message:           rawMessage,
+			Target:            user.ID,
+			Type:              user.Type,
+			Name:              user.Name,
+			TTH:               tthMap,
+			Clean:             user.Clean,
+			Emoji:             emojiSlice,
+			LogReference:      logReference,
+			Language:          language,
+			EditKey:           editKey,
+			TemplateType:      templateType,
+			TemplateRequested: user.Template,
+			TemplateSelected:  templateID,
 		})
 	}
 
 	return jobs
+}
+
+// evalShowIf compiles and runs a button's show_if expression against the
+// resolved view. Truthy means attach the button; falsy means drop it.
+//
+// The expression is wrapped in `{{...}}` so operators can write either
+// `{{pvpAvailable}}` or just `pvpAvailable`. Output is considered truthy
+// when non-empty AND not literally "false" / "0". This matches
+// Handlebars' own truthiness model for {{#if}}.
+//
+// Errors are surfaced to the caller (InjectDiscordComponents) which
+// logs them and drops the button — silent acceptance would attach
+// buttons the operator didn't intend.
+func (r *Renderer) evalShowIf(expr string, view any) (bool, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return true, nil
+	}
+	tmpl := expr
+	if !strings.HasPrefix(tmpl, "{{") {
+		tmpl = "{{" + tmpl + "}}"
+	}
+	parsed, err := raymond.Parse(tmpl)
+	if err != nil {
+		return false, fmt.Errorf("parse show_if %q: %w", expr, err)
+	}
+	out, err := safeExecWith(parsed, view, raymond.NewDataFrame())
+	if err != nil {
+		return false, fmt.Errorf("exec show_if %q: %w", expr, err)
+	}
+	out = strings.TrimSpace(out)
+	return out != "" && out != "false" && out != "0", nil
+}
+
+// deliveryTargetType maps a webhook user.Type ("discord:user", etc.) to
+// the short noun the button schema uses for applies_to: "dm" / "channel"
+// / "webhook". Mirrors the helper in cmd/processor; duplicated here to
+// avoid an import cycle.
+func deliveryTargetType(userType string) string {
+	switch userType {
+	case "discord:user", "telegram:user":
+		return "dm"
+	case "discord:channel", "discord:thread", "telegram:group", "telegram:channel":
+		return "channel"
+	case "webhook":
+		return "webhook"
+	default:
+		return ""
+	}
 }
 
 // renderGroupKey identifies a unique (template, platform, language) combination.
@@ -502,7 +610,7 @@ func (r *Renderer) renderGrouped(
 			result, err := safeExecWith(tmpl, view, df)
 			metrics.TemplateDuration.WithLabelValues(templateType).Observe(time.Since(tStart).Seconds())
 			if err != nil {
-				log.Errorf("dts: render %s for group (%s/%s/%s): %v", templateType, key.platform, key.templateID, key.language, err)
+				log.Errorf("[%s] dts: render %s for group (%s/%s/%s): %v", logReference, templateType, key.platform, key.templateID, key.language, err)
 				r.notice(
 					fmt.Sprintf("dts.render:%s:%s:%s:%s", templateType, key.platform, key.language, key.templateID),
 					fmt.Sprintf(":warning: DTS template `%s/%s/%s/%s` render error: %v — falling back to default message.", templateType, key.platform, key.language, key.templateID, err),
@@ -519,7 +627,7 @@ func (r *Renderer) renderGrouped(
 
 		rawMessage := json.RawMessage(rendered)
 		if !json.Valid(rawMessage) {
-			log.Errorf("dts: invalid rendered JSON for group (%s/%s/%s) (raw: %.200s)", key.platform, key.templateID, key.language, rendered)
+			logInvalidRenderedJSON(logReference, fmt.Sprintf("group (%s/%s/%s)", key.platform, key.templateID, key.language), rendered)
 			r.notice(
 				fmt.Sprintf("dts.invalid:%s:%s:%s:%s", templateType, key.platform, key.language, key.templateID),
 				fmt.Sprintf(":warning: DTS template `%s/%s/%s/%s` produced invalid JSON — falling back to default message.", templateType, key.platform, key.language, key.templateID),
@@ -544,18 +652,21 @@ func (r *Renderer) renderGrouped(
 			}
 
 			jobs = append(jobs, webhook.DeliveryJob{
-				Lat:          lat,
-				Lon:          lon,
-				Message:      userMessage,
-				Target:       user.ID,
-				Type:         user.Type,
-				Name:         user.Name,
-				TTH:          tthMap,
-				Clean:        user.Clean,
-				Emoji:        emojiSlice,
-				LogReference: logReference,
-				Language:     key.language,
-				EditKey:      editKey,
+				Lat:               lat,
+				Lon:               lon,
+				Message:           userMessage,
+				Target:            user.ID,
+				Type:              user.Type,
+				Name:              user.Name,
+				TTH:               tthMap,
+				Clean:             user.Clean,
+				Emoji:             emojiSlice,
+				LogReference:      logReference,
+				Language:          key.language,
+				EditKey:           editKey,
+				TemplateType:      templateType,
+				TemplateRequested: user.Template,
+				TemplateSelected:  key.templateID,
 			})
 		}
 	}
@@ -713,17 +824,6 @@ func fallbackMessageRaw(templateType, platform, templateID, language string) jso
 	return b
 }
 
-func mapKeys(m map[string]map[string]any) []string {
-	if m == nil {
-		return nil
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // safeExecWith wraps raymond Template.ExecWith with panic recovery.
 // Malformed templates can cause panics in raymond (e.g. nil Options in helpers).
 // This converts those panics into errors so a bad template doesn't crash the process.
@@ -734,4 +834,32 @@ func safeExecWith(tmpl *raymond.Template, ctx any, df *raymond.DataFrame) (resul
 		}
 	}()
 	return tmpl.ExecWith(ctx, df)
+}
+
+// logInvalidRenderedJSON emits an error log for a template that produced
+// invalid JSON. When json.Unmarshal returns a *json.SyntaxError we include
+// the byte offset of the parse failure and a 50-char window around it so
+// the cause is visible at a glance without scrolling through KB of output.
+// The full raw output is always appended for context.
+//
+// who is the target identifier (user ID for per-user renders, "group ..."
+// for the group renderer). logReference correlates the failure with the
+// originating webhook event (encounter_id, gym_id, etc.).
+func logInvalidRenderedJSON(logReference, who, rendered string) {
+	var syntaxErr *json.SyntaxError
+	if err := json.Unmarshal([]byte(rendered), &struct{}{}); errors.As(err, &syntaxErr) {
+		offset := int(syntaxErr.Offset)
+		lo := offset - 50
+		if lo < 0 {
+			lo = 0
+		}
+		hi := offset + 50
+		if hi > len(rendered) {
+			hi = len(rendered)
+		}
+		log.Errorf("[%s] dts: invalid rendered JSON for %s — parse error at byte %d: %q (full raw: %s)",
+			logReference, who, offset, rendered[lo:hi], rendered)
+		return
+	}
+	log.Errorf("[%s] dts: invalid rendered JSON for %s (raw: %s)", logReference, who, rendered)
 }

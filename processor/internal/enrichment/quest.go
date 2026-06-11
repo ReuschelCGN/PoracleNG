@@ -75,7 +75,7 @@ func (e *Enricher) Quest(lat, lon float64, pokestopID, pokestopURL string, rewar
 	e.addGeoResult(m, lat, lon)
 
 	// Static map tile
-	pending := e.addStaticMap(m, "quest", lat, lon, nil, tileMode)
+	pending := e.addStaticMap(m, "quest", lat, lon, nil, tileMode, pokestopID)
 
 	// Future event check
 	if e.EventChecker != nil {
@@ -163,7 +163,8 @@ func (e *Enricher) QuestTranslate(base map[string]any, quest *webhook.QuestWebho
 		return nil
 	}
 
-	m := make(map[string]any, 20) // only translated fields; caller merges base + perLang
+	m := make(map[string]any, 30) // only translated fields; caller merges base + perLang
+	defer e.addLocalizedGeoResult(m, quest.Latitude, quest.Longitude, lang)
 
 	tr := e.Translations.For(lang)
 	enTr := e.Translations.For("en")

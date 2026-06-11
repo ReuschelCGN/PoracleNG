@@ -10,6 +10,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/dts"
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
 	"github.com/pokemon/poracleng/processor/internal/store"
 	"github.com/stretchr/testify/assert"
@@ -72,6 +73,45 @@ func runTrack(t *testing.T, ctx *bot.CommandContext, input string) []bot.Reply {
 	cmd := &TrackCommand{}
 	args := strings.Fields(input)
 	return cmd.Run(ctx, args)
+}
+
+// TestTrack_PVP_RoleAllowed pins the regression: a user with
+// command_security.pvp role-gated MUST pass the check when ctx.UserRoles
+// contains a matching role. Before the fix, track.go passed nil for
+// userRoles to CheckFeaturePermission and the role match never fired.
+func TestTrack_PVP_RoleAllowed(t *testing.T) {
+	ctx := trackCtx(t)
+	ctx.Platform = "discord"
+	ctx.UserID = "u1"
+	ctx.UserRoles = []string{"role-a"}
+	ctx.Config.Discord.CommandSecurity = map[string][]string{
+		"pvp": {"role-a"}, // role allow list — must match ctx.UserRoles
+	}
+
+	replies := runTrack(t, ctx, "25 great5")
+	require.NotEmpty(t, replies)
+	if replies[0].React != "✅" {
+		t.Errorf("expected ✅ for pvp-role-allowed user, got %q (text=%q)", replies[0].React, replies[0].Text)
+	}
+}
+
+// TestTrack_PVP_RoleDenied: same config, user lacks the role → denied.
+// Without the fix this passed by accident (role list was ignored, fell
+// through to user-ID-only check), masking the role-restriction intent.
+func TestTrack_PVP_RoleDenied(t *testing.T) {
+	ctx := trackCtx(t)
+	ctx.Platform = "discord"
+	ctx.UserID = "u1"
+	ctx.UserRoles = []string{"some-other-role"}
+	ctx.Config.Discord.CommandSecurity = map[string][]string{
+		"pvp": {"role-a"},
+	}
+
+	replies := runTrack(t, ctx, "25 great5")
+	require.NotEmpty(t, replies)
+	if replies[0].React != "🙅" {
+		t.Errorf("expected 🙅 for pvp-role-denied user, got %q (text=%q)", replies[0].React, replies[0].Text)
+	}
 }
 
 // --- PVP min CP floor ---
@@ -320,6 +360,25 @@ func TestTrack_WithIVFilter(t *testing.T) {
 	assert.Equal(t, 100, rows[0].MaxIV)
 }
 
+// TestTrack_NonPVP_RankDefaults verifies that a non-PVP !track stores the
+// no-constraint PVP rank defaults (best 1 / worst 4096), matching the DB column
+// defaults and the v1/v2 API — not the zero-value 0/0 the base entry used to
+// store, which broke dedup parity with API-created rows and surfaced as 0/0
+// (instead of null) in the v2 API response.
+func TestTrack_NonPVP_RankDefaults(t *testing.T) {
+	ctx := trackCtx(t)
+	replies := runTrack(t, ctx, "25")
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Monsters.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 0, rows[0].PVPRankingLeague, "non-PVP rule has no league")
+	assert.Equal(t, 1, rows[0].PVPRankingBest, "non-PVP rule should default best rank to 1")
+	assert.Equal(t, 4096, rows[0].PVPRankingWorst, "non-PVP rule should default worst rank to 4096")
+}
+
 func TestTrack_WithDistance(t *testing.T) {
 	ctx := trackCtx(t)
 	ctx.HasLocation = true
@@ -449,4 +508,284 @@ func TestTrack_RarityRange_PreservesMax(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, 1, rows[0].Rarity)
 	assert.Equal(t, 3, rows[0].MaxRarity, "explicit range max must be preserved")
+}
+
+// --- Override params (location: / area:) ---
+
+// newTestTrackCtx builds a CommandContext for !track override tests.
+// It extends trackCtx with AreaLogic that permits "london" and "paris",
+// and returns the underlying MockHumanStore so callers can seed locations.
+func newTestTrackCtx(t *testing.T) (*bot.CommandContext, *store.MockHumanStore) {
+	t.Helper()
+
+	// Get the human store directly from testCtx so we can return it.
+	ctx, mock := testCtx(t)
+
+	// Apply the same config as trackCtx.
+	ctx.Config = &config.Config{
+		PVP: config.PVPConfig{
+			PVPFilterMaxRank:     100,
+			PVPFilterGreatMinCP:  1400,
+			PVPFilterUltraMinCP:  2350,
+			PVPFilterLittleMinCP: 450,
+			LevelCaps:            []int{50},
+			DisplayMaxRank:       10,
+			DisplayGreatMinCP:    1400,
+			DisplayUltraMinCP:    2350,
+			DisplayLittleMinCP:   450,
+		},
+		Area: config.AreaConfig{Enabled: false},
+	}
+
+	monsters := store.NewMockTrackingStore[db.MonsterTrackingAPI](
+		store.MonsterGetUID, store.MonsterSetUID,
+	)
+	ctx.Tracking = &store.TrackingStores{
+		Monsters: monsters,
+	}
+
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 1, Form: 0}:  {PokemonID: 1, FormID: 0},
+			{ID: 25, Form: 0}: {PokemonID: 25, FormID: 0},
+		},
+		Moves: map[int]*gamedata.Move{},
+		Types: map[int]*gamedata.TypeInfo{},
+	}
+
+	resolver := bot.NewPokemonResolver(gd, ctx.Translations, []string{"en"}, nil)
+	ctx.Resolver = resolver
+	ctx.ArgMatcher = bot.NewArgMatcher(ctx.Translations, gd, resolver, []string{"en"})
+	ctx.GameData = gd
+	ctx.RowText = &rowtext.Generator{
+		GD:                  gd,
+		Translations:        ctx.Translations,
+		DefaultTemplateName: "1",
+	}
+	ctx.HasArea = true
+
+	// Wire up AreaLogic with london/paris as selectable fences.
+	fences := []geofence.Fence{
+		{Name: "london", Group: "UK", UserSelectable: true},
+		{Name: "paris", Group: "FR", UserSelectable: true},
+	}
+	ctx.AreaLogic = bot.NewAreaLogic(fences, ctx.Config)
+
+	return ctx, mock
+}
+
+// anyReact returns true if any reply has the given React emoji.
+func anyReact(replies []bot.Reply, want string) bool {
+	for _, r := range replies {
+		if r.React == want {
+			return true
+		}
+	}
+	return false
+}
+
+// anyContains returns true if any reply Text contains the given substring.
+func anyContains(replies []bot.Reply, sub string) bool {
+	for _, r := range replies {
+		if strings.Contains(r.Text, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTrack_AcceptsLocationOverride(t *testing.T) {
+	ctx, mock := newTestTrackCtx(t)
+	ctx.HasLocation = true
+	if _, err := mock.AddLocation(store.UserLocation{
+		ID: ctx.TargetID, Label: "Home", Latitude: 51.5, Longitude: -0.1,
+	}); err != nil {
+		t.Fatalf("seed location: %v", err)
+	}
+
+	cmd := &TrackCommand{}
+	replies := cmd.Run(ctx, []string{"25", "iv100", "d:500", "location:Home"})
+	if anyReact(replies, "🙅") {
+		t.Fatalf("valid command rejected: %+v", replies)
+	}
+	rules, _ := ctx.Tracking.Monsters.SelectByIDProfile(ctx.TargetID, ctx.ProfileNo)
+	if len(rules) == 0 || rules[0].OverrideLocationLabel != "Home" {
+		t.Fatalf("override not stored: %+v", rules)
+	}
+}
+
+func TestTrack_RejectsLocationWithoutDistance(t *testing.T) {
+	ctx, mock := newTestTrackCtx(t)
+	if _, err := mock.AddLocation(store.UserLocation{
+		ID: ctx.TargetID, Label: "Home", Latitude: 51.5, Longitude: -0.1,
+	}); err != nil {
+		t.Fatalf("seed location: %v", err)
+	}
+
+	cmd := &TrackCommand{}
+	replies := cmd.Run(ctx, []string{"25", "iv100", "location:Home"})
+	if !anyContains(replies, "needs a `d:`") {
+		t.Fatalf("expected requires-distance rejection, got %+v", replies)
+	}
+}
+
+// TestTrack_AreaWithDefaultDistance_NoMutualExclusion guards the bug where a
+// configured [tracking] default_distance made `!track X area:Y` (no explicit
+// d:) wrongly trip the area-vs-distance mutual-exclusion check: enforceDistance
+// injected the default into filters.distance, so parseOverride saw distance>0.
+// In area-mode the default must not apply — and the stored rule must keep
+// distance 0 so the matcher honours override_areas (distance>0 ⇒ haversine).
+func TestTrack_AreaWithDefaultDistance_NoMutualExclusion(t *testing.T) {
+	ctx, _ := newTestTrackCtx(t)
+	ctx.Config.Tracking.DefaultDistance = 1000
+
+	cmd := &TrackCommand{}
+	replies := cmd.Run(ctx, []string{"25", "iv100", "area:london"})
+
+	if anyContains(replies, "mutually exclusive") {
+		t.Fatalf("default_distance must not force area→distance exclusion; got %+v", replies)
+	}
+	if !anyReact(replies, "✅") {
+		t.Fatalf("expected success react, got %+v", replies)
+	}
+	rows := ctx.Tracking.Monsters.(*store.MockTrackingStore[db.MonsterTrackingAPI]).AllRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 stored rule, got %d", len(rows))
+	}
+	if rows[0].Distance != 0 {
+		t.Fatalf("area-mode rule must store distance 0 (not default_distance), got %d", rows[0].Distance)
+	}
+	if len(rows[0].OverrideAreas) == 0 {
+		t.Fatalf("expected override_areas set on the stored rule, got %+v", rows[0].OverrideAreas)
+	}
+}
+
+func TestTrack_RejectsAreaWithDistance(t *testing.T) {
+	ctx, _ := newTestTrackCtx(t)
+	ctx.HasLocation = true
+
+	cmd := &TrackCommand{}
+	replies := cmd.Run(ctx, []string{"25", "iv100", "d:500", "area:london"})
+	if !anyContains(replies, "mutually exclusive") {
+		t.Fatalf("expected a+d rejection, got %+v", replies)
+	}
+}
+
+// trackCtxWithMega builds a CommandContext that includes Venusaur (ID 3, single
+// Mega only) and Charizard (ID 6, Mega X + Mega Y) for mega-warning tests.
+func trackCtxWithMega(t *testing.T) *bot.CommandContext {
+	t.Helper()
+	ctx, _ := testCtx(t)
+	ctx.Config = &config.Config{
+		PVP: config.PVPConfig{
+			PVPFilterMaxRank:     100,
+			PVPFilterGreatMinCP:  1400,
+			PVPFilterUltraMinCP:  2350,
+			PVPFilterLittleMinCP: 450,
+			LevelCaps:            []int{50},
+			DisplayMaxRank:       10,
+			DisplayGreatMinCP:    1400,
+			DisplayUltraMinCP:    2350,
+			DisplayLittleMinCP:   450,
+		},
+	}
+
+	monsters := store.NewMockTrackingStore[db.MonsterTrackingAPI](
+		store.MonsterGetUID, store.MonsterSetUID,
+	)
+	ctx.Tracking = &store.TrackingStores{
+		Monsters: monsters,
+	}
+
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 1, Form: 0}:  {PokemonID: 1, FormID: 0},
+			{ID: 25, Form: 0}: {PokemonID: 25, FormID: 0},
+			// Venusaur: only Mega (tempEvoID=1), no X/Y
+			{ID: 3, Form: 0}: {
+				PokemonID: 3,
+				FormID:    0,
+				TempEvolutions: []gamedata.TempEvolution{
+					{TempEvoID: 1},
+				},
+			},
+			// Charizard: Mega X (2) and Mega Y (3)
+			{ID: 6, Form: 0}: {
+				PokemonID: 6,
+				FormID:    0,
+				TempEvolutions: []gamedata.TempEvolution{
+					{TempEvoID: 2},
+					{TempEvoID: 3},
+				},
+			},
+		},
+		Moves: map[int]*gamedata.Move{},
+		Types: map[int]*gamedata.TypeInfo{},
+	}
+
+	resolver := bot.NewPokemonResolver(gd, ctx.Translations, []string{"en"}, nil)
+	ctx.Resolver = resolver
+	ctx.ArgMatcher = bot.NewArgMatcher(ctx.Translations, gd, resolver, []string{"en"})
+	ctx.GameData = gd
+	ctx.RowText = &rowtext.Generator{
+		GD:                  gd,
+		Translations:        ctx.Translations,
+		DefaultTemplateName: "1",
+	}
+	ctx.HasArea = true
+
+	return ctx
+}
+
+func TestExecute_WarnsNoMegaForm(t *testing.T) {
+	// Pokemon 3 (Venusaur) has only Mega (tempEvoID=1), NOT Mega X (2) or Mega Y (3).
+	// Tracking with mega:x should succeed but include a warning.
+	ctx := trackCtxWithMega(t)
+	replies := runTrack(t, ctx, "3 great5 mega:x") // 3 = Venusaur
+
+	require.NotEmpty(t, replies)
+	// Rule is still created — non-blocking warning
+	assert.Equal(t, "✅", replies[0].React, "pokemon 3 mega:x should still be tracked: %s", replies[0].Text)
+
+	joined := replies[0].Text
+	if !strings.Contains(joined, "no Mega X") {
+		t.Fatalf("expected a no-Mega-X warning for pokemon 3, got: %q", joined)
+	}
+}
+
+func TestExecute_NoWarnMegaFormExists(t *testing.T) {
+	// Pokemon 6 (Charizard) has both Mega X and Mega Y — no warning expected.
+	ctx := trackCtxWithMega(t)
+	replies := runTrack(t, ctx, "6 great5 mega:x") // 6 = Charizard
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "pokemon 6 mega:x should be tracked cleanly: %s", replies[0].Text)
+
+	if strings.Contains(replies[0].Text, "no Mega") {
+		t.Fatalf("unexpected no-Mega warning for pokemon 6 (which has Mega X): %q", replies[0].Text)
+	}
+}
+
+func TestParsePVP_MegaKeywords(t *testing.T) {
+	cases := []struct {
+		args string
+		want int
+	}{
+		{"great5", 0},
+		{"great5 mega", 1},
+		{"great5 mega:x", 2},
+		{"great5 mega:y", 3},
+	}
+	for _, tc := range cases {
+		ctx := trackCtx(t)
+		params := trackParams(ctx)
+		parsed := ctx.ArgMatcher.Match(strings.Fields(tc.args), params, "en")
+		entries := (&TrackCommand{}).parsePVP(ctx, parsed)
+		if len(entries) != 1 {
+			t.Fatalf("%q: expected 1 pvp entry, got %d", tc.args, len(entries))
+		}
+		if entries[0].Evolution != tc.want {
+			t.Errorf("%q: Evolution = %d, want %d", tc.args, entries[0].Evolution, tc.want)
+		}
+	}
 }

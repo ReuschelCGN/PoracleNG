@@ -21,6 +21,8 @@ var gymParams = []bot.ParamDef{
 	{Type: bot.ParamPrefixSingle, Key: "arg.prefix.d"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.gym"},
+	{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
+	{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 	{Type: bot.ParamKeyword, Key: "arg.remove"},
 	{Type: bot.ParamKeyword, Key: "arg.everything"},
 	{Type: bot.ParamKeyword, Key: "arg.clean"},
@@ -31,6 +33,10 @@ var gymParams = []bot.ParamDef{
 
 func (c *GymCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
+
+	if reply := RouteToMuteFromType(ctx, "gym", args); reply != nil {
+		return reply
+	}
 
 	// Extract @mention pings before parsing
 	pings, args := extractPings(args)
@@ -56,6 +62,12 @@ func (c *GymCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	if block != nil {
 		return []bot.Reply{*block}
 	}
+
+	override, overrideReply := parseOverride(ctx, parsed.Strings["location"], parsed.StringLists["area"], common.Distance)
+	if overrideReply != nil {
+		return []bot.Reply{*overrideReply}
+	}
+
 	slotChanges := parsed.HasKeyword("arg.slot_changes")
 
 	battleChanges := false
@@ -94,8 +106,20 @@ func (c *GymCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	// gym. Caller must wrap multi-word names in quotes, e.g.
 	// `!gym mystic "gym:Town Hall"` so the bot parser keeps it as one
 	// token before splitParamPrefix sees it.
+	//
+	// PoracleJS never accepted gym:<id> from the command at all —
+	// specific-gym tracking was created exclusively via third-party
+	// tools (web editor, API). PoracleNG exposes the parsing for
+	// convenience but gates it behind the same command_security feature
+	// key the legacy delivery-time blocked_alerts check used:
+	// "specificgym". Without that key configured all users can use the
+	// pin (existing PoracleNG behaviour preserved); with the key set,
+	// only users in the allow list (by ID or role) can.
 	var gymIDPtr *string
 	if raw := strings.TrimSpace(parsed.Strings["gym"]); raw != "" {
+		if !bot.CheckFeaturePermission(ctx.Config, ctx.Platform, "specificgym", ctx.UserID, ctx.UserRoles) {
+			return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_permission")}}
+		}
 		id, abort := resolveGymRef(ctx, raw)
 		if abort != nil {
 			return []bot.Reply{*abort}
@@ -106,16 +130,18 @@ func (c *GymCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	insert := make([]db.GymTrackingAPI, 0, len(teams))
 	for _, team := range teams {
 		insert = append(insert, db.GymTrackingAPI{
-			ID:            ctx.TargetID,
-			ProfileNo:     ctx.ProfileNo,
-			Ping:          pings,
-			Template:      common.Template,
-			Distance:      common.Distance,
-			Team:          team,
-			Clean:         common.Clean,
-			SlotChanges:   db.IntBool(slotChanges),
-			BattleChanges: db.IntBool(battleChanges),
-			GymID:         gymIDPtr,
+			ID:                    ctx.TargetID,
+			ProfileNo:             ctx.ProfileNo,
+			Ping:                  pings,
+			Template:              common.Template,
+			Distance:              common.Distance,
+			Team:                  team,
+			Clean:                 common.Clean,
+			SlotChanges:           db.IntBool(slotChanges),
+			BattleChanges:         db.IntBool(battleChanges),
+			GymID:                 gymIDPtr,
+			OverrideLocationLabel: override.LocationLabel,
+			OverrideAreas:         override.Areas,
 		})
 	}
 

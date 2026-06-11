@@ -21,6 +21,8 @@ var nestParams = []bot.ParamDef{
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
 	{Type: bot.ParamPrefixSingle, Key: "arg.prefix.gen"},
 	{Type: bot.ParamPrefixSingle, Key: "arg.prefix.minspawn"},
+	{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
+	{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 	{Type: bot.ParamKeyword, Key: "arg.remove"},
 	{Type: bot.ParamKeyword, Key: "arg.everything"},
 	{Type: bot.ParamKeyword, Key: "arg.clean"},
@@ -30,6 +32,10 @@ var nestParams = []bot.ParamDef{
 
 func (c *NestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
+
+	if reply := RouteToMuteFromType(ctx, "nest", args); reply != nil {
+		return reply
+	}
 
 	// Extract @mention pings before parsing
 	pings, args := extractPings(args)
@@ -51,10 +57,26 @@ func (c *NestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*warn}
 	}
 
+	// `remove id:N` is unambiguous — no pokemon required. Hoist this above the
+	// pokemon-resolution below so a UID-only removal (e.g. from /untrack nest)
+	// doesn't trip the "no pokemon" reply.
+	if parsed.HasKeyword("arg.remove") && len(parsed.RemoveUIDs) > 0 {
+		return removeByUIDs(ctx, ctx.Tracking.Nests, parsed.RemoveUIDs,
+			store.NestGetUID,
+			func(r *db.NestTrackingAPI) string { return ctx.RowText.NestRowText(tr, nestAPIToTracking(r)) },
+		)
+	}
+
 	common, block := parseCommonTrackFields(ctx, parsed, "nest")
 	if block != nil {
 		return []bot.Reply{*block}
 	}
+
+	override, overrideReply := parseOverride(ctx, parsed.Strings["location"], parsed.StringLists["area"], common.Distance)
+	if overrideReply != nil {
+		return []bot.Reply{*overrideReply}
+	}
+
 	minSpawnAvg := 0
 	if ms, ok := parsed.Singles["minspawn"]; ok {
 		minSpawnAvg = ms
@@ -84,15 +106,17 @@ func (c *NestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	insert := make([]db.NestTrackingAPI, 0, len(monsterList))
 	for _, mon := range monsterList {
 		insert = append(insert, db.NestTrackingAPI{
-			ID:          ctx.TargetID,
-			ProfileNo:   ctx.ProfileNo,
-			Ping:        pings,
-			Template:    common.Template,
-			Distance:    common.Distance,
-			Clean:       common.Clean,
-			PokemonID:   mon.PokemonID,
-			Form:        mon.Form,
-			MinSpawnAvg: minSpawnAvg,
+			ID:                    ctx.TargetID,
+			ProfileNo:             ctx.ProfileNo,
+			Ping:                  pings,
+			Template:              common.Template,
+			Distance:              common.Distance,
+			Clean:                 common.Clean,
+			PokemonID:             mon.PokemonID,
+			Form:                  mon.Form,
+			MinSpawnAvg:           minSpawnAvg,
+			OverrideLocationLabel: override.LocationLabel,
+			OverrideAreas:         override.Areas,
 		})
 	}
 

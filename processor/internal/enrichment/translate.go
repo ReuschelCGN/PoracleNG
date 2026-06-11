@@ -89,6 +89,46 @@ func buildFullName(tr *i18n.Translator, nameKeys gamedata.MonsterNameInfo, name,
 	return fullName
 }
 
+// BuildFullNameWithAlignment composes a localised pokemon display name
+// including the optional Shadow/Purified alignment prefix for non-normal
+// alignments. The base + form + mega composition is delegated to
+// buildFullName; alignment is added as a translated prefix afterward.
+//
+// alignment values: 0 = normal (no prefix), 1 = shadow, 2 = purified.
+// Translation keys tried: alignment_1, alignment_2. Falls back to English
+// "Shadow" / "Purified" if the key isn't present.
+//
+// Examples:
+//
+//	alignment=0 → "Mega Charizard X"
+//	alignment=1 → "Shadow Mega Charizard X"
+//	alignment=2 → "Purified Alolan Vulpix"
+func BuildFullNameWithAlignment(tr *i18n.Translator, nameKeys gamedata.MonsterNameInfo, name, formNormalised string, pokemonID, evolution, alignment int) string {
+	base := buildFullName(tr, nameKeys, name, formNormalised, pokemonID, evolution)
+	if alignment <= 0 {
+		return base
+	}
+	label := ""
+	if tr != nil {
+		key := fmt.Sprintf("alignment_%d", alignment)
+		translated := tr.T(key)
+		if translated != "" && translated != key {
+			label = translated
+		}
+	}
+	if label == "" {
+		switch alignment {
+		case 1:
+			label = "Shadow"
+		case 2:
+			label = "Purified"
+		default:
+			return base
+		}
+	}
+	return label + " " + base
+}
+
 // IsNormalForm returns true if a form name is "Normal" in any common language.
 // The form_0 key typically translates to "Normal" or equivalent.
 func IsNormalForm(name string) bool {
@@ -289,18 +329,20 @@ func translateGenerationName(tr *i18n.Translator, gen int) string {
 }
 
 // addWeatherFields adds weather-related enrichment fields.
-func addWeatherFields(m map[string]any, gd *gamedata.GameData, tr *i18n.Translator, typeIDs []int, weatherID int) {
+func addWeatherFields(m map[string]any, gd *gamedata.GameData, tr, enTr *i18n.Translator, typeIDs []int, weatherID int) {
 	boosted := gd.IsBoostedByWeather(typeIDs, weatherID)
 	m["boosted"] = boosted
 	if boosted {
 		m["boostWeatherId"] = weatherID
 		m["boostWeatherName"] = TranslateWeatherName(tr, weatherID)
+		m["boostWeatherNameEng"] = TranslateWeatherName(enTr, weatherID)
 		if wInfo, ok := gd.Util.Weather[weatherID]; ok {
 			m["boostWeatherEmojiKey"] = wInfo.Emoji
 		}
 	} else {
 		m["boostWeatherId"] = ""
 		m["boostWeatherName"] = ""
+		m["boostWeatherNameEng"] = ""
 		m["boostWeatherEmojiKey"] = ""
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/db"
+	"github.com/pokemon/poracleng/processor/internal/gamedata"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -20,6 +21,10 @@ func (c *TrackCommand) Aliases() []string { return nil }
 
 func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
+
+	if reply := RouteToMuteFromType(ctx, "pokemon", args); reply != nil {
+		return reply
+	}
 
 	// Extract @mention pings before parsing
 	pings, args := extractPings(args)
@@ -81,9 +86,13 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	// Resolve PVP (may return multiple leagues: "great5 ultra10" → 2 entries)
 	pvpEntries := c.parsePVP(ctx, parsed)
 
-	// Check PVP permission if PVP filters are present
+	// Check PVP permission if PVP filters are present. ctx.UserRoles is
+	// populated by the discordbot host with the user's roles (DM-union'd
+	// across configured guilds in DM context). Passing nil here used to
+	// silently bypass the role check — operators with role-gated pvp
+	// security would deny every user lacking a direct user-ID entry.
 	if len(pvpEntries) > 0 {
-		if !bot.CheckFeaturePermission(ctx.Config, ctx.Platform, "pvp", ctx.UserID, nil) {
+		if !bot.CheckFeaturePermission(ctx.Config, ctx.Platform, "pvp", ctx.UserID, ctx.UserRoles) {
 			return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_permission")}}
 		}
 	}
@@ -116,6 +125,12 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		}
 	}
 
+	// Validate per-rule location:/area: overrides.
+	override, overrideReply := parseOverride(ctx, parsed.Strings["location"], parsed.StringLists["area"], filters.distance)
+	if overrideReply != nil {
+		return []bot.Reply{*overrideReply}
+	}
+
 	// If min_iv is still default (-1) but other IV-related filters are set, default to 0
 	if filters.minIV == -1 && (filters.minCP > 0 || filters.minLevel > 0 ||
 		filters.atk > 0 || filters.def > 0 || filters.sta > 0 ||
@@ -124,10 +139,13 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	}
 
 	// Build insert structs — one per pokemon per PVP league
-	// If no PVP, one entry per pokemon with zeroed PVP fields
+	// If no PVP, one entry per pokemon with no PVP league. Best/Worst use the
+	// no-constraint rank defaults (1 / 4096) so non-PVP rows match the DB column
+	// defaults and the API (a zero-value entry would store 0/0, breaking dedup
+	// parity with API-created rows and surfacing 0/0 instead of null in the v2 API).
 	pvpList := pvpEntries
 	if len(pvpList) == 0 {
-		pvpList = []pvpEntry{{}} // single entry with zero PVP
+		pvpList = []pvpEntry{{Best: 1, Worst: 4096}} // single entry, no PVP league
 	}
 	insert := make([]db.MonsterTrackingAPI, 0, len(monsterList)*len(pvpList))
 	for _, mon := range monsterList {
@@ -168,11 +186,14 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				MaxSize:          filters.maxSize,
 				Template:         filters.template,
 				Clean:            filters.clean,
-				PVPRankingLeague: pe.League,
-				PVPRankingBest:   pe.Best,
-				PVPRankingWorst:  pe.Worst,
-				PVPRankingMinCP:  pe.MinCP,
-				PVPRankingCap:    pe.Cap,
+				PVPRankingLeague:      pe.League,
+				PVPRankingBest:        pe.Best,
+				PVPRankingWorst:       pe.Worst,
+				PVPRankingMinCP:       pe.MinCP,
+				PVPRankingCap:         pe.Cap,
+				PVPRankingEvolution:   pe.Evolution,
+				OverrideLocationLabel: override.LocationLabel,
+				OverrideAreas:         override.Areas,
 			})
 		}
 	}
@@ -209,6 +230,24 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	message += trackingWarnings(ctx, filters.distance)
 	if templateWarn != "" {
 		message += "\n⚠️ " + templateWarn
+	}
+
+	// Warn if a specific mega form (mega:x / mega:y) targets a species that
+	// has no such temporary evolution — the rule could never match.
+	if specificEvo := specificMegaEvo(pvpEntries); specificEvo != 0 && ctx.GameData != nil {
+		formLabel := tr.T("tracking.mega_x_label")
+		if specificEvo == 3 {
+			formLabel = tr.T("tracking.mega_y_label")
+		}
+		for _, mon := range monsterList {
+			if mon.PokemonID == 0 {
+				continue // "everything" catch-all — skip
+			}
+			if !speciesHasTempEvo(ctx.GameData, mon.PokemonID, specificEvo) {
+				name := gamedata.PokemonName(tr, mon.PokemonID)
+				message += "\n" + tr.Tf("msg.track.no_mega_form", name, formLabel)
+			}
+		}
 	}
 
 	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 {
@@ -248,8 +287,12 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.t"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.gen"},
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.cap"},
-		{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
-		{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
+		{Type: bot.ParamKeyword, Key: "arg.mega"},
+		{Type: bot.ParamPrefixString,     Key: "arg.prefix.form"},
+		{Type: bot.ParamPrefixString,     Key: "arg.prefix.template"},
+		{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
+		{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 		{Type: bot.ParamKeyword, Key: "arg.remove"},
 		{Type: bot.ParamKeyword, Key: "arg.clean"},
 		{Type: bot.ParamKeyword, Key: "arg.shiny"},
@@ -324,7 +367,7 @@ func (c *TrackCommand) parseFilters(ctx *bot.CommandContext, parsed *bot.ParsedA
 	if d, ok := parsed.Singles["d"]; ok {
 		f.distance = d
 	}
-	f.distance = enforceDistance(ctx, f.distance)
+	f.distance = enforceDistance(ctx, f.distance, len(parsed.StringLists["area"]) > 0)
 
 	// Template
 	if t, ok := parsed.Strings["template"]; ok {
@@ -457,11 +500,12 @@ func (c *TrackCommand) parseFilters(ctx *bot.CommandContext, parsed *bot.ParsedA
 
 // pvpEntry holds resolved PVP parameters for a single league.
 type pvpEntry struct {
-	League int // CP cap: 500, 1500, 2500
-	Best   int
-	Worst  int
-	MinCP  int
-	Cap    int
+	League    int // CP cap: 500, 1500, 2500
+	Best      int
+	Worst     int
+	MinCP     int
+	Cap       int
+	Evolution int // 0 base, 1 any mega, 2 Mega X, 3 Mega Y
 }
 
 // parsePVP resolves all PVP league parameters from parsed args.
@@ -481,6 +525,21 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 	cap := 0
 	if v, ok := parsed.Singles["cap"]; ok {
 		cap = v
+	}
+
+	megaEvo := 0
+	if v, ok := parsed.Strings["mega"]; ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "", "1":
+			megaEvo = 1
+		case "x":
+			megaEvo = 2
+		case "y":
+			megaEvo = 3
+		}
+	}
+	if megaEvo == 0 && parsed.HasKeyword("arg.mega") {
+		megaEvo = 1
 	}
 
 	var entries []pvpEntry
@@ -517,11 +576,12 @@ func (c *TrackCommand) parsePVP(ctx *bot.CommandContext, parsed *bot.ParsedArgs)
 		}
 
 		entries = append(entries, pvpEntry{
-			League: l.cp,
-			Best:   best,
-			Worst:  worst,
-			MinCP:  minCP,
-			Cap:    cap,
+			League:    l.cp,
+			Best:      best,
+			Worst:     worst,
+			MinCP:     minCP,
+			Cap:       cap,
+			Evolution: megaEvo,
 		})
 	}
 
@@ -561,4 +621,31 @@ func (c *TrackCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.Pars
 		return nil, reply
 	}
 	return filterByGenAndType(ctx, monsters, parsed), nil
+}
+
+// specificMegaEvo returns the Evolution ID (2=Mega X, 3=Mega Y) if ALL pvp
+// entries request the same specific mega variant, or 0 otherwise (includes
+// bare mega=1 and mixed variants).
+func specificMegaEvo(entries []pvpEntry) int {
+	for _, e := range entries {
+		if e.Evolution == 2 || e.Evolution == 3 {
+			return e.Evolution
+		}
+	}
+	return 0
+}
+
+// speciesHasTempEvo reports whether a species (form 0) has a temporary
+// evolution with the given tempEvoID in the game master data.
+func speciesHasTempEvo(gd *gamedata.GameData, pokemonID, tempEvoID int) bool {
+	mon := gd.GetMonster(pokemonID, 0)
+	if mon == nil {
+		return false
+	}
+	for _, te := range mon.TempEvolutions {
+		if te.TempEvoID == tempEvoID {
+			return true
+		}
+	}
+	return false
 }
