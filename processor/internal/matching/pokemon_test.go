@@ -773,6 +773,54 @@ func TestPokemonMatchProfileFilter(t *testing.T) {
 
 // makePVPMonster returns a MonsterTracking for a PVP great-league rule with
 // permissive stat filters, suitable for evolution-filter tests.
+// TestPokemonMatchPVPEvolutionDirectMega proves cross-species evolution-direct
+// tracking now fires on mega forms: a Charmander (4) whose Mega Charizard (6,
+// evo 2) would be great-league top-rank matches a Charizard `mega` rule, while
+// the base Charizard rank is too poor to match on its own.
+func TestPokemonMatchPVPEvolutionDirectMega(t *testing.T) {
+	human := makeHuman("user1")
+
+	// Charizard (6) rule with worst rank 100. PVPRankingEvolution = 1 (any mega).
+	megaRule := makePVPMonster("user1", 6, 1)
+	megaRule.PVPRankingLeague = 1500
+	megaRule.PVPRankingWorst = 100
+
+	// EvoData[6] for the spawned Charmander: base Charizard rank 200 (>worst, no
+	// match) + Mega Charizard X (evo 2) rank 3 (<=worst, should match a mega rule).
+	pokemon := &ProcessedPokemon{
+		PokemonID: 4, Form: 0, IV: 100, CP: 400, Level: 20,
+		ATK: 15, DEF: 15, STA: 15, Weight: 1, Size: 1, RarityGroup: 1,
+		TTHSeconds: 600, Latitude: 51.0, Longitude: 0.0, Encountered: true,
+		PVPBestRank: map[int][]pvp.LeagueRank{},
+		PVPEvoData: map[int]map[int][]pvp.LeagueRank{
+			6: {1500: {
+				{Rank: 200, CP: 1500, Caps: []int{50}, Evolution: 0},
+				{Rank: 3, CP: 1480, Caps: []int{50}, Evolution: 2},
+			}},
+		},
+	}
+
+	st := makeTestState([]*db.MonsterTracking{megaRule}, map[string]*db.Human{"user1": human})
+	m := &PokemonMatcher{PVPQueryMaxRank: 100, PVPEvolutionDirectTracking: true}
+	matched, _ := m.Match(pokemon, st)
+	if len(matched) != 1 {
+		t.Fatalf("mega rule should match the Mega Charizard evolution entry; got %d", len(matched))
+	}
+
+	// A base Charizard rule (evo 0), no include_mega, must NOT match: its base
+	// evolution rank (200) is worse than worst, and the mega entry is filtered
+	// out for base rules.
+	baseRule := makePVPMonster("user1", 6, 0)
+	baseRule.PVPRankingLeague = 1500
+	baseRule.PVPRankingWorst = 100
+	stBase := makeTestState([]*db.MonsterTracking{baseRule}, map[string]*db.Human{"user1": human})
+	mBase := &PokemonMatcher{PVPQueryMaxRank: 100, PVPEvolutionDirectTracking: true, IncludeMegaEvolution: false}
+	matchedBase, _ := mBase.Match(pokemon, stBase)
+	if len(matchedBase) != 0 {
+		t.Fatalf("base rule (no include_mega) must not match the mega evolution entry; got %d", len(matchedBase))
+	}
+}
+
 func makePVPMonster(id string, pokemonID int, pvpEvolution int) *db.MonsterTracking {
 	return &db.MonsterTracking{
 		ID:                   id,
