@@ -317,6 +317,7 @@ var knownPrefixKeys = []string{
 // knownKeywordKeys lists all arg.* keyword keys used by any command.
 var knownKeywordKeys = []string{
 	"arg.remove", "arg.everything", "arg.individually",
+	"arg.all_pokemon", "arg.all_items",
 	"arg.clean", "arg.edit", "arg.summary", "arg.shiny", "arg.ex",
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
 	"arg.gmax", "arg.mega",
