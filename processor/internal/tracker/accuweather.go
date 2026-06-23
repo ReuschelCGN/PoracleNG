@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/golang/geo/s2"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/pokemon/poracleng/processor/internal/breaker"
 	"github.com/pokemon/poracleng/processor/internal/logref"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
 )
@@ -32,6 +34,7 @@ type AccuWeatherClient struct {
 	cfg     AccuWeatherConfig
 	tracker *WeatherTracker
 	client  *http.Client
+	breaker *breaker.Gate // guards both AccuWeather endpoints (one service)
 
 	mu            sync.Mutex
 	keyUsage      map[string]int // date-key -> count
@@ -73,6 +76,7 @@ func NewAccuWeatherClient(cfg AccuWeatherConfig, tracker *WeatherTracker) *AccuW
 		cfg:           cfg,
 		tracker:       tracker,
 		client:        &http.Client{Timeout: 15 * time.Second},
+		breaker:       breaker.NewGate(breaker.Config{Name: "accuweather"}),
 		keyUsage:      make(map[string]int),
 		cellMutexes:   make(map[string]*sync.Mutex),
 		cellLocations: make(map[string]string),
@@ -160,27 +164,38 @@ func (aw *AccuWeatherClient) fetchForecast(cellID string, currentHour int64) {
 	url := fmt.Sprintf("https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/%s?apikey=%s&details=true&metric=true", locationKey, apiKey)
 	logref.Debugf(cellID, "AccuWeather: fetching forecast")
 
-	resp, err := aw.client.Get(url)
-	if err != nil {
-		metrics.AccuWeatherRequests.WithLabelValues("forecast", "error").Inc()
-		logref.Errorf(cellID, "AccuWeather: forecast request failed: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	aw.logRateLimitHeaders(resp, "forecast", apiKey)
-
-	if resp.StatusCode != 200 {
-		metrics.AccuWeatherRequests.WithLabelValues("forecast", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
-		logref.Errorf(cellID, "AccuWeather: forecast request returned %d", resp.StatusCode)
-		return
-	}
-
-	metrics.AccuWeatherRequests.WithLabelValues("forecast", "success").Inc()
-
+	// Guard the AccuWeather call with the shared circuit breaker so an outage
+	// doesn't make every weather enrichment wait out the 15s timeout.
 	var forecasts []accuWeatherHourlyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&forecasts); err != nil {
-		logref.Errorf(cellID, "AccuWeather: failed to decode forecast: %v", err)
+	berr := aw.breaker.Do(func() error {
+		resp, err := aw.client.Get(url)
+		if err != nil {
+			metrics.AccuWeatherRequests.WithLabelValues("forecast", "error").Inc()
+			logref.Errorf(cellID, "AccuWeather: forecast request failed: %v", err)
+			return err
+		}
+		defer resp.Body.Close()
+
+		aw.logRateLimitHeaders(resp, "forecast", apiKey)
+
+		if resp.StatusCode != 200 {
+			metrics.AccuWeatherRequests.WithLabelValues("forecast", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
+			logref.Errorf(cellID, "AccuWeather: forecast request returned %d", resp.StatusCode)
+			return fmt.Errorf("accuweather: forecast status %d", resp.StatusCode)
+		}
+
+		metrics.AccuWeatherRequests.WithLabelValues("forecast", "success").Inc()
+
+		if err := json.NewDecoder(resp.Body).Decode(&forecasts); err != nil {
+			logref.Errorf(cellID, "AccuWeather: failed to decode forecast: %v", err)
+			return err
+		}
+		return nil
+	})
+	if berr != nil {
+		if errors.Is(berr, breaker.ErrOpen) {
+			logref.Debugf(cellID, "AccuWeather: circuit open, skipping forecast")
+		}
 		return
 	}
 
@@ -234,25 +249,34 @@ func (aw *AccuWeatherClient) getLocationKey(cellID string) (string, error) {
 	url := fmt.Sprintf("https://dataservice.accuweather.com/locations/v1/cities/geoposition/search?apikey=%s&q=%f%%2C%f", apiKey, lat, lon)
 	logref.Debugf(cellID, "AccuWeather: fetching location (%f, %f)", lat, lon)
 
-	resp, err := aw.client.Get(url)
-	if err != nil {
-		metrics.AccuWeatherRequests.WithLabelValues("location", "error").Inc()
-		return "", fmt.Errorf("location request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	aw.logRateLimitHeaders(resp, "location", apiKey)
-
-	if resp.StatusCode != 200 {
-		metrics.AccuWeatherRequests.WithLabelValues("location", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
-		return "", fmt.Errorf("location request returned %d", resp.StatusCode)
-	}
-
-	metrics.AccuWeatherRequests.WithLabelValues("location", "success").Inc()
-
 	var locResp accuWeatherLocationResponse
-	if err := json.NewDecoder(resp.Body).Decode(&locResp); err != nil {
-		return "", fmt.Errorf("failed to decode location response: %w", err)
+	berr := aw.breaker.Do(func() error {
+		resp, err := aw.client.Get(url)
+		if err != nil {
+			metrics.AccuWeatherRequests.WithLabelValues("location", "error").Inc()
+			return fmt.Errorf("location request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		aw.logRateLimitHeaders(resp, "location", apiKey)
+
+		if resp.StatusCode != 200 {
+			metrics.AccuWeatherRequests.WithLabelValues("location", fmt.Sprintf("http_%d", resp.StatusCode)).Inc()
+			return fmt.Errorf("location request returned %d", resp.StatusCode)
+		}
+
+		metrics.AccuWeatherRequests.WithLabelValues("location", "success").Inc()
+
+		if err := json.NewDecoder(resp.Body).Decode(&locResp); err != nil {
+			return fmt.Errorf("failed to decode location response: %w", err)
+		}
+		return nil
+	})
+	if berr != nil {
+		if errors.Is(berr, breaker.ErrOpen) {
+			return "", fmt.Errorf("accuweather: circuit open")
+		}
+		return "", berr
 	}
 
 	aw.mu.Lock()
