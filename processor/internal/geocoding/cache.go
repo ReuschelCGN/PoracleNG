@@ -31,15 +31,25 @@ type Cache struct {
 	hitsMemory atomic.Uint64
 	hitsDisk   atomic.Uint64
 	misses     atomic.Uint64
+
+	// Intersection-layer counters are kept separate so they don't pollute the
+	// reverse-geocode cache-hit metrics operators tune cache_detail against.
+	isectHitsMemory atomic.Uint64
+	isectHitsDisk   atomic.Uint64
+	isectMisses     atomic.Uint64
 }
 
 // CacheStats is a point-in-time snapshot of geocoder cache health.
 type CacheStats struct {
 	MemoryEntries int    // entries currently in the in-memory layer
-	DiskEntries   int    // entries in the on-disk pogreb layer
-	HitsMemory    uint64 // total memory-layer hits since process start
-	HitsDisk      uint64 // total disk-layer hits since process start
-	Misses        uint64 // total misses since process start
+	DiskEntries   int    // entries in the on-disk pogreb layer (address + intersection share one DB)
+	HitsMemory    uint64 // total address memory-layer hits since process start
+	HitsDisk      uint64 // total address disk-layer hits since process start
+	Misses        uint64 // total address misses since process start
+
+	IsectHitsMemory uint64 // intersection memory-layer hits since process start
+	IsectHitsDisk   uint64 // intersection disk-layer hits since process start
+	IsectMisses     uint64 // intersection misses since process start
 }
 
 // NewCache opens or creates a two-layer cache.
@@ -140,19 +150,24 @@ func (c *Cache) Get(key string) (*Address, bool) {
 // Stats returns a point-in-time snapshot of cache health metrics.
 func (c *Cache) Stats() CacheStats {
 	return CacheStats{
-		MemoryEntries: c.mem.Len(),
-		DiskEntries:   int(c.disk.Count()),
-		HitsMemory:    c.hitsMemory.Load(),
-		HitsDisk:      c.hitsDisk.Load(),
-		Misses:        c.misses.Load(),
+		MemoryEntries:   c.mem.Len() + c.memISect.Len(),
+		DiskEntries:     int(c.disk.Count()),
+		HitsMemory:      c.hitsMemory.Load(),
+		HitsDisk:        c.hitsDisk.Load(),
+		Misses:          c.misses.Load(),
+		IsectHitsMemory: c.isectHitsMemory.Load(),
+		IsectHitsDisk:   c.isectHitsDisk.Load(),
+		IsectMisses:     c.isectMisses.Load(),
 	}
 }
 
-// ClearMemory drops all entries from the in-memory layer. The disk layer is
-// left untouched. Returns the number of entries that were removed.
+// ClearMemory drops all entries from both in-memory layers (address +
+// intersection). The disk layer is left untouched. Returns the number of
+// entries that were removed.
 func (c *Cache) ClearMemory() int {
-	n := c.mem.Len()
+	n := c.mem.Len() + c.memISect.Len()
 	c.mem.DeleteAll()
+	c.memISect.DeleteAll()
 	return n
 }
 
@@ -175,13 +190,13 @@ func (c *Cache) Set(key string, addr *Address) {
 // here") and is returned as ("", true), distinct from a never-stored miss.
 func (c *Cache) GetIntersection(key string) (string, bool) {
 	if item := c.memISect.Get(key); item != nil {
-		c.hitsMemory.Add(1)
+		c.isectHitsMemory.Add(1)
 		return item.Value(), true
 	}
 
 	data, err := c.disk.Get([]byte(key))
 	if err != nil || data == nil {
-		c.misses.Add(1)
+		c.isectMisses.Add(1)
 		return "", false
 	}
 
@@ -190,11 +205,11 @@ func (c *Cache) GetIntersection(key string) (string, bool) {
 	// from "missing".
 	var val string
 	if err := json.Unmarshal(data, &val); err != nil {
-		c.misses.Add(1)
+		c.isectMisses.Add(1)
 		return "", false
 	}
 
-	c.hitsDisk.Add(1)
+	c.isectHitsDisk.Add(1)
 	c.memISect.Set(key, val, ttlcache.DefaultTTL)
 	return val, true
 }

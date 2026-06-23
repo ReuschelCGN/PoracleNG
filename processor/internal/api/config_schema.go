@@ -316,7 +316,7 @@ var configSchema = []ConfigSection{
 			{Name: "provider_url", Type: "string", Default: "", Description: "Nominatim instance URL for address lookups", DependsOn: &ConfigDependency{Field: "provider", Value: "nominatim"}},
 			{Name: "geocoding_key", Type: "string[]", Default: []string{}, Description: "Google Geocoding API keys (rotated through array)", Sensitive: true, HotReload: true, DependsOn: &ConfigDependency{Field: "provider", Value: "google"}},
 			{Name: "cache_detail", Type: "int", Default: 3, Description: "Decimal places of lat/lon for geocoding cache key rounding (3 or 4 for 100x more detail)"},
-			{Name: "intersection_users", Type: "string[]", Default: []string{}, Description: "GeoNames usernames for the {{intersection}} field (nearest street intersection). Empty disables it. Shares the geocoding cache; uses GeoNames credits per uncached lookup", HotReload: true},
+			{Name: "intersection_users", Type: "string[]", Default: []string{}, Description: "GeoNames usernames for the {{intersection}} field (nearest street intersection). Empty disables it. Shares the geocoding cache; uses GeoNames credits per uncached lookup. Requires a restart to take effect", HotReload: false},
 			{Name: "forward_only", Type: "bool", Default: false, Description: "Disable reverse geocoding — only forward lookups will be performed"},
 			{Name: "static_provider", Type: "select", Default: "none", Description: "Static map tile provider for generating map images in alerts", Options: []ConfigSelectOption{
 				{Value: "none", Label: "None", Description: "Disable static map tiles"},

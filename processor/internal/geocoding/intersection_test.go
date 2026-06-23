@@ -124,6 +124,79 @@ func TestIntersection_NoUsernamesReturnsEmpty(t *testing.T) {
 	}
 }
 
+// After FailureThreshold consecutive failures the circuit opens and further
+// lookups return immediately without hitting GeoNames (until cooldown).
+func TestIntersection_CircuitBreakerOpensAfterFailures(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	i := NewIntersection(IntersectionConfig{
+		Usernames:        []string{"demo"},
+		TimeoutMs:        2000,
+		FailureThreshold: 3,
+		CooldownMs:       60000, // long cooldown so the circuit stays open in-test
+	})
+	i.baseURL = srv.URL
+
+	// First 3 calls hit the server and fail, tripping the breaker.
+	for n := 0; n < 3; n++ {
+		if got := i.GetIntersection(float64(n), 0); got != "" {
+			t.Fatalf("call %d: got %q, want empty", n, got)
+		}
+	}
+	// Subsequent calls are short-circuited — no further HTTP.
+	for n := 0; n < 5; n++ {
+		i.GetIntersection(float64(100+n), 0)
+	}
+	if c := calls.Load(); c != 3 {
+		t.Errorf("expected 3 HTTP calls before the circuit opened, got %d", c)
+	}
+}
+
+// A success after failures resets the breaker.
+func TestIntersection_CircuitBreakerResetsOnSuccess(t *testing.T) {
+	var fail atomic.Bool
+	fail.Store(true)
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(`{"intersection":{"street1":"A","street2":"B"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	i := NewIntersection(IntersectionConfig{
+		Usernames:        []string{"demo"},
+		TimeoutMs:        2000,
+		FailureThreshold: 5,
+	})
+	i.baseURL = srv.URL
+
+	// 2 failures (below threshold), then a success resets the counter.
+	i.GetIntersection(1, 0)
+	i.GetIntersection(2, 0)
+	fail.Store(false)
+	if got := i.GetIntersection(3, 0); got != "A & B" {
+		t.Fatalf("recovery call got %q", got)
+	}
+	// Breaker reset: 4 more failures shouldn't open it (counter started over).
+	fail.Store(true)
+	before := calls.Load()
+	for n := 0; n < 4; n++ {
+		i.GetIntersection(float64(10+n), 0)
+	}
+	if c := calls.Load() - before; c != 4 {
+		t.Errorf("expected 4 HTTP calls after reset (circuit still closed), got %d", c)
+	}
+}
+
 func TestIntersection_RespectsTimeout(t *testing.T) {
 	i := newIntersectionWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(200 * time.Millisecond)

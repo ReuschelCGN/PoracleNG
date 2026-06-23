@@ -418,6 +418,10 @@ cache_detail = 3                         # decimal places of lon/lat for caching
 #   intersection. One is picked at random per uncached lookup to spread credit
 #   usage. Empty disables the feature. Results share the geocoding cache above,
 #   but each uncached lookup spends a GeoNames credit, so caching/credits apply.
+#   GeoNames is a separate service from the reverse-geocode provider, so it gets
+#   its own concurrency limiter and circuit breaker (both sized from the
+#   [tuning] geocoding_* values). Peak outbound to external geo services can
+#   therefore reach 2x geocoding_concurrency when both are busy.
 intersection_users = []
 # Styles for different times of day using tileservercache
 # Use style: "#(style)" in templates to utilize these

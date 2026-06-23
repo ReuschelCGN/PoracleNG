@@ -1515,11 +1515,13 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 			sharedCache = geocoder.Cache()
 		}
 		enricher.Intersection = geocoding.NewIntersection(geocoding.IntersectionConfig{
-			Usernames:   cfg.Geocoding.IntersectionUsers,
-			Cache:       sharedCache,
-			CacheDetail: cfg.Geocoding.CacheDetail,
-			TimeoutMs:   cfg.Tuning.GeocodingTimeout,
-			Concurrency: cfg.Tuning.GeocodingConcurrency,
+			Usernames:        cfg.Geocoding.IntersectionUsers,
+			Cache:            sharedCache,
+			CacheDetail:      cfg.Geocoding.CacheDetail,
+			TimeoutMs:        cfg.Tuning.GeocodingTimeout,
+			Concurrency:      cfg.Tuning.GeocodingConcurrency,
+			FailureThreshold: cfg.Tuning.GeocodingFailureThreshold,
+			CooldownMs:       cfg.Tuning.GeocodingCooldownMs,
 		})
 		log.Infof("GeoNames intersection lookups enabled (%d user(s), cache shared=%t)", len(cfg.Geocoding.IntersectionUsers), sharedCache != nil)
 	}
