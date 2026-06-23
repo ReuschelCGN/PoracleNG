@@ -81,8 +81,7 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 	}
 
 	if mb == nil {
-		e.addGeoResult(m, lat, lon)
-		e.addIntersection(m, lat, lon)
+		e.addLocationFields(m, lat, lon)
 		return m, nil
 	}
 
@@ -90,8 +89,7 @@ func (e *Enricher) Maxbattle(lat, lon float64, battleEnd int64, mb *webhook.Maxb
 	e.addMapURLs(m, lat, lon, "stations", mb.ID)
 
 	// Reverse geocoding
-	e.addGeoResult(m, lat, lon)
-	e.addIntersection(m, lat, lon)
+	e.addLocationFields(m, lat, lon)
 
 	// Static map tile
 	pending := e.addStaticMap(m, "maxbattle", lat, lon, map[string]any{

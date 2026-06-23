@@ -117,8 +117,7 @@ func (e *Enricher) Raid(raid *webhook.RaidWebhook, firstNotification bool, tileM
 	m["campfireUrl"] = CampfireURL(raid.Latitude, raid.Longitude, raid.GymID, raid.GymName, raid.GymURL)
 
 	// Reverse geocoding
-	e.addGeoResult(m, raid.Latitude, raid.Longitude)
-	e.addIntersection(m, raid.Latitude, raid.Longitude)
+	e.addLocationFields(m, raid.Latitude, raid.Longitude)
 
 	// Static map tile
 	pending := e.addStaticMap(m, "raid", raid.Latitude, raid.Longitude, map[string]any{

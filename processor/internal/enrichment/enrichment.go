@@ -224,6 +224,16 @@ func (e *Enricher) addIntersection(m map[string]any, lat, lon float64) {
 	m["intersection"] = e.Intersection.GetIntersection(lat, lon)
 }
 
+// addLocationFields populates the geocoding-derived location fields (reverse-
+// geocoded address + nearest street intersection) for a coordinate. Every
+// webhook type funnels through here, so adding a future location field — or
+// adding a new enrichment type — only touches one place instead of every
+// call site. Both sub-steps are no-ops when their provider is disabled.
+func (e *Enricher) addLocationFields(m map[string]any, lat, lon float64) {
+	e.addGeoResult(m, lat, lon)
+	e.addIntersection(m, lat, lon)
+}
+
 // Tile mode constants. Defined here to avoid import cycles with cmd/processor.
 const (
 	TileModeSkip         = 0 // no template uses staticMap → don't generate tile
