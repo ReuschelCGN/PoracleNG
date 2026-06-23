@@ -36,6 +36,7 @@ var commonFields = []FieldDef{
 	{Name: "country", Type: "string", Description: "Country name", Category: "location"},
 	{Name: "countryCode", Type: "string", Description: "Country code", Category: "location"},
 	{Name: "flag", Type: "string", Description: "Country flag emoji", Category: "location"},
+	{Name: "intersection", Type: "string", Description: "Nearest street intersection (\"Street1 & Street2\") from GeoNames; empty when disabled or none nearby", Category: "location"},
 	{Name: "areas", Type: "string", Description: "Comma-separated matched areas", Category: "location"},
 	{Name: "areasList", Type: "array", Description: "Matched areas as array", Category: "location"},
 	{Name: "distance", Type: "number", Description: "Distance from user location", Category: "location"},

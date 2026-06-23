@@ -67,18 +67,19 @@ type Enricher struct {
 	ForecastProvider   ForecastProvider  // optional; triggers AccuWeather fetch
 	ShinyProvider      ShinyRateProvider // optional; provides shiny rates
 	EventChecker       *PogoEventChecker
-	GameData           *gamedata.GameData  // game master data for enrichment
-	Translations       *i18n.Bundle        // translations for per-language enrichment
-	MapConfig          *MapConfig          // map URL configuration
-	IvColors           []string            // Discord IV color hex strings (6 thresholds)
-	PVPDisplay         *PVPDisplayConfig   // PVP display filtering config
-	ImgUicons          *uicons.Uicons      // Primary icon resolver
-	ImgUiconsAlt       *uicons.Uicons      // Alternative icon resolver
-	StickerUicons      *uicons.Uicons      // Sticker icon resolver (webp)
-	DefaultLocale      string              // Fallback locale when user has no language set
-	RequestShinyImages bool                // Whether to request shiny icon variants
-	StaticMap          *staticmap.Resolver // Static map tile resolver (nil = disabled)
-	Geocoder           *geocoding.Geocoder // Reverse geocoder (nil = disabled)
+	GameData           *gamedata.GameData      // game master data for enrichment
+	Translations       *i18n.Bundle            // translations for per-language enrichment
+	MapConfig          *MapConfig              // map URL configuration
+	IvColors           []string                // Discord IV color hex strings (6 thresholds)
+	PVPDisplay         *PVPDisplayConfig       // PVP display filtering config
+	ImgUicons          *uicons.Uicons          // Primary icon resolver
+	ImgUiconsAlt       *uicons.Uicons          // Alternative icon resolver
+	StickerUicons      *uicons.Uicons          // Sticker icon resolver (webp)
+	DefaultLocale      string                  // Fallback locale when user has no language set
+	RequestShinyImages bool                    // Whether to request shiny icon variants
+	StaticMap          *staticmap.Resolver     // Static map tile resolver (nil = disabled)
+	Geocoder           *geocoding.Geocoder     // Reverse geocoder (nil = disabled)
+	Intersection       *geocoding.Intersection // Nearest street intersection lookup (nil = disabled)
 
 	// Fallback icon URLs when uicons are not configured or fail
 	FallbackImgURL      string
@@ -210,6 +211,17 @@ func (e *Enricher) addAddressFields(m map[string]any, addr *geocoding.Address) {
 	m["neighbourhood"] = addr.Neighbourhood
 	m["suburb"] = addr.Suburb
 	m["formattedAddress"] = addr.FormattedAddress
+}
+
+// addIntersection populates the {{intersection}} field with the nearest street
+// intersection ("Street1 & Street2"), or "" when unavailable. No-op when the
+// feature is disabled. Results are cache-backed (shared geocoder pogreb DB),
+// so repeat sightings at a fixed stop don't re-hit GeoNames.
+func (e *Enricher) addIntersection(m map[string]any, lat, lon float64) {
+	if e.Intersection == nil {
+		return
+	}
+	m["intersection"] = e.Intersection.GetIntersection(lat, lon)
 }
 
 // Tile mode constants. Defined here to avoid import cycles with cmd/processor.
