@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/pokemon/poracleng/processor/internal/breaker"
 )
 
 type languageProvider struct {
@@ -49,7 +51,7 @@ func TestGeocoderLanguageAffectsProviderAndCacheKey(t *testing.T) {
 			CooldownMs:       1,
 		},
 		addrTmpl: addrTmpl,
-		sem:      make(chan struct{}, 1),
+		breaker:  breaker.New[*Address](breaker.Config{Name: "test", Concurrency: 1}),
 	}
 
 	if got := g.GetAddressForLanguage(52.517, 13.389, "DE"); got.City != "de" {

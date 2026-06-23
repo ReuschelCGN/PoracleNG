@@ -22,6 +22,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/ringsaturn/tzf v1.2.1
 	github.com/sirupsen/logrus v1.9.4
+	github.com/sony/gobreaker/v2 v2.4.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/rtree v1.10.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
