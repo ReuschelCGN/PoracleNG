@@ -223,6 +223,54 @@ func TestV2Quest_RewardFormAmountRoundTrip(t *testing.T) {
 	}
 }
 
+// TestV2Quest_RewardWildcard pins the "all items / all pokemon" contract (the
+// behaviour PR #152 fixed in the matcher): reward=0 — whether sent explicitly or
+// reached by omitting the field — is the wildcard for that reward_type, and the
+// GET projection reports it back as null (never 0). Without this, a regression
+// that added a `minimum:1` constraint or stopped defaulting reward to 0 would
+// silently break "all items"/"all pokemon" tracking via the v2 API.
+func TestV2Quest_RewardWildcard(t *testing.T) {
+	// Explicit reward:0 and omitted reward must both store 0 (= any) and
+	// project back as null. reward_type 2 = all items, 7 = all pokemon.
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"all_items_explicit_zero", `[{"reward_type":2,"reward":0}]`},
+		{"all_items_omitted", `[{"reward_type":2}]`},
+		{"all_pokemon_explicit_zero", `[{"reward_type":7,"reward":0}]`},
+		{"all_pokemon_omitted", `[{"reward_type":7}]`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, qs, _, restore := newV2QuestTestAPI(t)
+			defer restore()
+
+			w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/quest", tc.body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			rows := qs.AllRows()
+			if len(rows) != 1 || rows[0].Reward != 0 {
+				t.Fatalf("expected 1 stored row with reward=0 (wildcard), got %+v", rows)
+			}
+
+			// Response projects the wildcard as null, not 0.
+			created := v2RulesArray(t, v2DecodeBody(t, w), "created")[0]
+			if rv, present := created["reward"]; present && rv != nil {
+				t.Fatalf("expected reward=null (wildcard) in response, got %v", rv)
+			}
+
+			// GET round-trip projects it as null too.
+			w = v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/quest", "")
+			rule := v2RulesArray(t, v2DecodeBody(t, w), "rules")[0]
+			if rv, present := rule["reward"]; present && rv != nil {
+				t.Fatalf("expected reward=null (wildcard) on GET, got %v", rv)
+			}
+		})
+	}
+}
+
 func TestV2Quest_ShinyRoundTrip(t *testing.T) {
 	r, qs, _, restore := newV2QuestTestAPI(t)
 	defer restore()

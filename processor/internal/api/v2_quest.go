@@ -23,7 +23,7 @@ import (
 // lifecycle bits, all packed into the clean column.
 type v2QuestRule struct {
 	RewardType int   `json:"reward_type" required:"true" doc:"Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required)."`
-	Reward     *int  `json:"reward,omitempty" nullable:"true" doc:"Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard."`
+	Reward     *int  `json:"reward,omitempty" nullable:"true" doc:"Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard."`
 	Form       *int  `json:"form,omitempty" nullable:"true" doc:"Form id (game-master), meaningful when reward_type=7 (pokemon). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
 	Shiny      *bool `json:"shiny,omitempty" nullable:"true" doc:"Match shiny-possible quest rewards only. Omit to match regardless (default false). Returned as null when false."`
 	Amount     *int  `json:"amount,omitempty" nullable:"true" doc:"Minimum reward amount, meaningful for reward_type 2/4/12. Omit to impose no minimum (stored as 0 = any). Returned as null when at its wildcard."`

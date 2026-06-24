@@ -103,7 +103,7 @@ The sentinels (verified against the matcher's "match any" semantics):
 | `100` / `55` / `15` / `6` / `5` | the ceiling of the range, i.e. "no upper bound" | pokemon `max_iv` (100), `max_level` (55), `max_atk`/`max_def`/`max_sta` (15), `max_rarity` (6), `max_size` (5) |
 | `4096` | "no upper rank limit" (PVP ranks never exceed it) | pokemon `pvp_ranking_worst` |
 | `9000000` | "no upper weight" | pokemon `max_weight` |
-| `0` | context-dependent "any / none / no floor" — e.g. `form` 0 = any form, `pvp_ranking_league` 0 = IV-mode (no PVP), nest `pokemon_id`/`min_spawn_avg` 0 = any | most types |
+| `0` | context-dependent "any / none / no floor" — e.g. `form` 0 = any form, `pvp_ranking_league` 0 = IV-mode (no PVP), nest `pokemon_id`/`min_spawn_avg` 0 = any, quest `reward` 0 = all items/pokemon/candy/mega-energy of that `reward_type` | most types |
 | `0` (distance) | **NOT zero metres** — `distance` 0 means "match by the profile's geofence AREAS instead of a radius". A positive `distance` switches to a haversine radius. | common field, all types |
 
 **raid / maxbattle `level` is derived from `pokemon_id`** (the matcher reads `level` only in by-level mode — `matching/raid.go:65`, `matching/maxbattle.go:48`):
@@ -157,7 +157,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 
 **egg** — `level` (int), `team` (enum), `exclusive` (bool), `gym_id` (string), `rsvp_changes` (enum).
 
-**quest** — `reward_type`* (int — proto id: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon, `12`=mega_energy), `reward` (int — the rewarded item/pokemon id), `amount` (int), `form` (int — for pokemon-reward forms), `shiny` (bool).
+**quest** — `reward_type`* (int — proto id: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon, `12`=mega_energy), `reward` (int — the rewarded item/pokemon id; **omit or send 0 to match ANY reward of that category**, e.g. `{reward_type:2}` = all items, `{reward_type:7}` = all pokemon — the v2 equivalent of `!quest all items`/`all pokemon`), `amount` (int), `form` (int — for pokemon-reward forms), `shiny` (bool).
 
 **invasion** (Rocket grunts) — target via **exactly one** mode per rule: `type_id` (int, grunt poke-type — `gender` (enum `any|male|female`) applies only here) | `grunt_id` (int, the exact grunt character, implies type+gender) | `everything` (bool) | `boss` (bool).
 
