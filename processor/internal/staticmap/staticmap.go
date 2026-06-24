@@ -190,9 +190,11 @@ type Resolver struct {
 	done      chan struct{}    // signals tile workers to stop
 	wg        sync.WaitGroup   // tracks tile worker goroutines
 
-	// breaker guards tileserver POSTs (pregenerate + inline). Concurrency is
-	// already bounded by the tile worker pool, so the breaker itself is
-	// unlimited.
+	// breaker guards tileserver POSTs (pregenerate + inline). It has no
+	// concurrency limit — matching the prior hand-rolled breaker. The async
+	// tile path is bounded by the worker pool, but synchronous callers (tile
+	// API, !location/!area, quest summary) are not, so this is not a global
+	// concurrency cap.
 	breaker *breaker.Gate
 
 	// Stats counters for periodic logging
@@ -774,6 +776,15 @@ func (r *Resolver) GetPregeneratedTileURL(maptype string, data map[string]any, s
 func (r *Resolver) pregenerateID(maptype string, data map[string]any, staticMapType, ref string) (result, mapPath string) {
 	l := reflog(ref)
 
+	// Open circuit: skip URL building and the (potentially large) enrichment-map
+	// marshal entirely — Do would only throw them away. Half-open returns false
+	// so the single probe still proceeds.
+	if r.breaker.IsOpen() {
+		metrics.TileTotal.WithLabelValues("circuit_break").Inc()
+		l.Debugf("staticmap: circuit breaker open for %s, skipping tile", maptype)
+		return "", ""
+	}
+
 	mapPath = "staticmap"
 	templateType := ""
 	if strings.EqualFold(staticMapType, "multistaticmap") {
@@ -921,6 +932,13 @@ func (r *Resolver) downloadTileBytes(fetchURL, ref string) []byte {
 func (r *Resolver) GenerateInlineTile(maptype string, data map[string]any, staticMapType, ref string) []byte {
 	l := reflog(ref)
 
+	// Open circuit: skip URL building and the enrichment-map marshal entirely.
+	// Half-open returns false so the single probe still proceeds.
+	if r.breaker.IsOpen() {
+		metrics.TileTotal.WithLabelValues("circuit_break").Inc()
+		return nil
+	}
+
 	mapPath := "staticmap"
 	templateType := ""
 	if strings.EqualFold(staticMapType, "multistaticmap") {
@@ -1027,7 +1045,6 @@ func (r *Resolver) AddNearbyStops(target, data map[string]any, maptype, ref stri
 func (r *Resolver) GetStaticMapType(maptype string) string {
 	return r.getConfigForTileType(maptype).Type
 }
-
 
 // limits converts pixel coordinates to lat/lon using the Web Mercator projection.
 // Returns [minLat, minLon, maxLat, maxLon].

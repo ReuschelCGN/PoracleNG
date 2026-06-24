@@ -151,16 +151,14 @@ func TestGate_ResultViaClosure(t *testing.T) {
 	}
 }
 
-func TestBreaker_IsSuccessfulSuppressesTrip(t *testing.T) {
-	// An error classified as "successful" must not trip the breaker.
-	b := New[int](Config{
-		Name: "t", FailureThreshold: 2, Cooldown: time.Minute,
-		IsSuccessful: func(err error) bool { return errors.Is(err, errBoom) },
-	})
-	for n := 0; n < 5; n++ {
-		_, err := b.Do(func() (int, error) { return 0, errBoom })
-		if errors.Is(err, ErrOpen) {
-			t.Fatalf("call %d ErrOpen — errBoom should be treated as success", n)
-		}
+func TestBreaker_IsOpenReflectsState(t *testing.T) {
+	b := New[int](Config{Name: "t", FailureThreshold: 2, Cooldown: time.Minute})
+	if b.IsOpen() {
+		t.Fatal("fresh breaker should not be open")
+	}
+	b.Do(func() (int, error) { return 0, errBoom })
+	b.Do(func() (int, error) { return 0, errBoom })
+	if !b.IsOpen() {
+		t.Fatal("breaker should be open after threshold failures")
 	}
 }

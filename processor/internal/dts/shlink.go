@@ -57,6 +57,13 @@ func (s *ShlinkShortener) Shorten(longURL string) string {
 		metrics.ShlinkTotal.WithLabelValues("disabled").Inc()
 		return longURL
 	}
+
+	// Open circuit: skip the marshal/request build entirely and fall back to the
+	// long URL. (Half-open returns false so the single probe still runs.)
+	if s.breaker.IsOpen() {
+		metrics.ShlinkTotal.WithLabelValues("circuit_break").Inc()
+		return longURL
+	}
 	start := time.Now()
 
 	reqBody := shlinkRequest{
@@ -104,23 +111,27 @@ func (s *ShlinkShortener) Shorten(longURL string) string {
 			return fmt.Errorf("shlink: status %d", resp.StatusCode)
 		}
 
+		// Past this point Shlink responded with a 2xx — it is reachable. A bad
+		// body just means we fall back to the long URL for this call; it is NOT
+		// a connectivity failure, so return nil and don't let it trip the
+		// breaker (which would suppress shortening globally for 30s).
 		respBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Warnf("shlink: read response: %v", err)
 			metrics.ShlinkTotal.WithLabelValues("error").Inc()
-			return err
+			return nil
 		}
 
 		var result shlinkResponse
 		if err := json.Unmarshal(respBytes, &result); err != nil {
 			log.Warnf("shlink: parse response: %v", err)
 			metrics.ShlinkTotal.WithLabelValues("error").Inc()
-			return err
+			return nil
 		}
 
 		if result.ShortURL == "" {
 			metrics.ShlinkTotal.WithLabelValues("error").Inc()
-			return fmt.Errorf("shlink: empty short url")
+			return nil
 		}
 		metrics.ShlinkTotal.WithLabelValues("ok").Inc()
 		short = result.ShortURL

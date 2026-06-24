@@ -172,10 +172,15 @@ func (g *Geocoder) GetAddressForLanguage(lat, lon float64, language string) *Add
 		if rerr != nil || a == nil {
 			g.statErrors.Add(1)
 			metrics.GeocodeTotal.WithLabelValues("error").Inc()
-			if rerr == nil {
+			// Log only a genuine provider error; a (nil, nil) "no address found"
+			// was silent before the refactor — keep it silent to avoid flooding
+			// the warn log in high-volume unresolvable areas. It still trips the
+			// breaker (parity with the old recordError path) via errNilAddress.
+			if rerr != nil {
+				log.Warnf("Geocode %f,%f failed: %s", lat, lon, rerr)
+			} else {
 				rerr = errNilAddress
 			}
-			log.Warnf("Geocode %f,%f failed: %s", lat, lon, rerr)
 			return nil, rerr
 		}
 

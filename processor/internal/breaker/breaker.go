@@ -41,10 +41,6 @@ type Config struct {
 	// OnHealthChange fires on state transitions: false when the circuit opens,
 	// true when it closes. Drives a health gauge. Nil disables.
 	OnHealthChange func(healthy bool)
-	// IsSuccessful classifies a call's returned error; return true to count it
-	// as a success that won't trip the breaker. Nil treats any non-nil error
-	// as a failure.
-	IsSuccessful func(err error) bool
 }
 
 // Breaker guards calls to an external dependency that returns a T.
@@ -71,7 +67,6 @@ func New[T any](cfg Config) *Breaker[T] {
 		ReadyToTrip: func(c gobreaker.Counts) bool {
 			return c.ConsecutiveFailures >= uint32(threshold)
 		},
-		IsSuccessful: cfg.IsSuccessful,
 	}
 	if cfg.OnHealthChange != nil {
 		onHealth := cfg.OnHealthChange
@@ -125,6 +120,13 @@ func (b *Breaker[T]) State() string {
 	return b.cb.State().String()
 }
 
+// IsOpen reports whether the circuit is fully open, so callers can cheaply
+// skip expensive request preparation (marshaling, key selection) that Do would
+// then throw away. Half-open returns false so the single probe still proceeds.
+func (b *Breaker[T]) IsOpen() bool {
+	return b.cb.State() == gobreaker.StateOpen
+}
+
 // Gate is a circuit breaker for calls whose result the caller handles itself
 // (typically via a closure), so only success/failure matters to the breaker.
 // It's the right choice when one breaker guards several call sites with
@@ -153,4 +155,9 @@ func (g *Gate) Do(fn func() error) error {
 // State returns the current breaker state for diagnostics.
 func (g *Gate) State() string {
 	return g.b.State()
+}
+
+// IsOpen reports whether the circuit is fully open (see Breaker.IsOpen).
+func (g *Gate) IsOpen() bool {
+	return g.b.IsOpen()
 }
