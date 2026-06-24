@@ -16,8 +16,9 @@ import (
 
 // defaultIntersectionBaseURL is the GeoNames OSM intersection endpoint. The
 // OSM variant (vs the US-only findNearestIntersectionJSON used by PoracleJS)
-// gives worldwide coverage.
-const defaultIntersectionBaseURL = "https://api.geonames.org/findNearestIntersectionOSMJSON"
+// gives worldwide coverage. HTTPS is served from the secure.geonames.org host —
+// api.geonames.org does not answer over TLS.
+const defaultIntersectionBaseURL = "https://secure.geonames.org/findNearestIntersectionOSMJSON"
 
 // IntersectionConfig configures intersection lookups.
 type IntersectionConfig struct {
