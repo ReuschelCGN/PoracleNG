@@ -80,7 +80,7 @@ func (e *Enricher) Nest(nest *webhook.NestWebhook, tileMode int) (map[string]any
 	e.addMapURLs(m, nest.Lat, nest.Lon, "nests", strconv.FormatInt(nest.NestID, 10))
 
 	// Reverse geocoding
-	e.addGeoResult(m, nest.Lat, nest.Lon)
+	e.addLocationFields(m, nest.Lat, nest.Lon)
 
 	// Static map tile — use autopositioned center if available, else original coords
 	mapLat, mapLon := nest.Lat, nest.Lon

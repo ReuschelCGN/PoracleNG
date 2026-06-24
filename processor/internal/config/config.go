@@ -643,6 +643,10 @@ type GeocodingConfig struct {
 	GeocodingKey []string `toml:"geocoding_key"` // google API keys
 	CacheDetail  int      `toml:"cache_detail"`  // decimal places for cache key rounding (default 3)
 	ForwardOnly  bool     `toml:"forward_only"`  // if true, skip reverse geocoding
+	// IntersectionUsers is a pool of GeoNames usernames for nearest-street-
+	// intersection lookups (the {{intersection}} DTS field). Empty disables
+	// the feature. Results share the reverse-geocode pogreb cache.
+	IntersectionUsers []string `toml:"intersection_users"`
 
 	// Static map tile provider
 	StaticProvider    string `toml:"static_provider"`

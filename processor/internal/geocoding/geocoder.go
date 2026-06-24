@@ -258,6 +258,13 @@ func (g *Geocoder) CacheStats() CacheStats {
 	return g.cache.Stats()
 }
 
+// Cache returns the geocoder's two-layer cache so other geocoding features
+// (e.g. intersection lookups) can share the same pogreb DB. Returns nil when
+// no cache is configured.
+func (g *Geocoder) Cache() *Cache {
+	return g.cache
+}
+
 // ClearCache drops all entries from the in-memory cache layer.
 // Returns the number of entries cleared. Safe to call when no cache is configured.
 func (g *Geocoder) ClearCache() int {

@@ -210,6 +210,7 @@ These fields are available in every template:
 | `neighbourhood` | string | Neighbourhood name |
 | `suburb` | string | Suburb name |
 | `flag` | string | Country flag emoji |
+| `intersection` | string | Nearest street intersection (`Street1 & Street2`) from GeoNames; empty when disabled (`[geocoding] intersection_users`) or none nearby |
 | `staticMap` | string | Static map tile image URL |
 | `staticmap` | string | *Deprecated* — alias for `staticMap` |
 | `imgUrl` | string | Primary icon URL |
