@@ -6450,7 +6450,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6564,7 +6564,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6678,7 +6678,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8514,7 +8514,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -10481,7 +10481,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -11519,7 +11519,7 @@
             ]
           },
           "reward": {
-            "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit to match any reward of that category (stored as 0 = any). Returned as null when at its wildcard.",
+            "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
             "format": "int64",
             "type": [
               "integer",
