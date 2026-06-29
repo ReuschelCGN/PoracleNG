@@ -262,6 +262,55 @@ func (as *autocreateSyncer) ruleLock(name string) *sync.Mutex {
 	return m
 }
 
+// purgeThreadsUnderParent removes every cached thread whose host channel is
+// parentID from every rule/fence in the cache, persisting the result to
+// cachePath. Returns the number of thread entries removed. Used by the
+// thread keep-alive sweeper when a parent channel is confirmed gone in
+// Discord — the threads under it can never be revived, so leaving their
+// stale cache entries would keep the sweeper walking a dead parent (and
+// re-warning) every pass. A thread's host channel is fs.ChannelIDs[name],
+// falling back to fs.ChannelID for legacy single-channel caches — the same
+// resolution the sweeper uses when building its parent map.
+func (as *autocreateSyncer) purgeThreadsUnderParent(parentID, cachePath string) (int, error) {
+	if parentID == "" {
+		return 0, nil
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	removed := 0
+	for _, ruleState := range as.cache {
+		if ruleState == nil {
+			continue
+		}
+		for _, fs := range ruleState.Fences {
+			if fs == nil || len(fs.ThreadIDs) == 0 {
+				continue
+			}
+			for chName, labelMap := range fs.ThreadIDs {
+				host := fs.ChannelIDs[chName]
+				if host == "" {
+					host = fs.ChannelID
+				}
+				if host != parentID {
+					continue
+				}
+				removed += len(labelMap)
+				delete(fs.ThreadIDs, chName)
+			}
+			if len(fs.ThreadIDs) == 0 {
+				fs.ThreadIDs = nil
+			}
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := saveAutocreateCache(cachePath, as.cache); err != nil {
+		return removed, err
+	}
+	return removed, nil
+}
+
 // loadCache reads the on-disk cache into as.cache. Missing file is benign.
 // Must be called with as.mu held.
 func (as *autocreateSyncer) loadCache(baseDir string) error {

@@ -78,6 +78,8 @@ var questParams = []bot.ParamDef{
 	{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 	{Type: bot.ParamKeyword, Key: "arg.remove"},
 	{Type: bot.ParamKeyword, Key: "arg.everything"},
+	{Type: bot.ParamKeyword, Key: "arg.all_pokemon"}, // all pokemon (reward_type 7, wildcard reward=0)
+	{Type: bot.ParamKeyword, Key: "arg.all_items"},   // all items (reward_type 2, wildcard reward=0)
 	{Type: bot.ParamKeyword, Key: "arg.clean"},
 	{Type: bot.ParamKeyword, Key: "arg.summary"},
 	{Type: bot.ParamKeyword, Key: "arg.shiny"},
@@ -153,6 +155,23 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	amountVal := 0
 	if amountSet {
 		amountVal = questParseInt(amountStr)
+	}
+
+	// Bulk wildcard keywords (everything / all pokemon / all items) are
+	// gated behind everything_flag_permissions for non-admins, mirroring
+	// PoracleJS. "all pokemon" → reward_type 7 wildcard (reward=0);
+	// "all items" → reward_type 2 wildcard (reward=0). Both combine with
+	// each other and with the reward-specific keywords below.
+	wantsAllPokemon := parsed.HasKeyword("arg.all_pokemon")
+	wantsAllItems := parsed.HasKeyword("arg.all_items")
+	if (wantsAllPokemon || wantsAllItems || parsed.HasKeyword("arg.everything")) && !questBulkAllowed(ctx) {
+		return []bot.Reply{{React: "🙅", Text: tr.T("msg.quest.bulk_not_permitted")}}
+	}
+	if wantsAllPokemon {
+		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 7, 0, 0, 0))
+	}
+	if wantsAllItems {
+		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, 0, 0, amountVal))
 	}
 
 	if stardustVal, ok := parsed.Strings["stardust"]; ok {
@@ -247,7 +266,9 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		// Consume matched item tokens from Unrecognized
 		parsed.Unrecognized = nil
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, itemID, 0, amountVal))
-	} else {
+	} else if len(insert) == 0 {
+		// No reward-specific branch matched and no bulk wildcard was
+		// pre-appended above — nothing to track.
 		return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_quest_type")}}
 	}
 
@@ -334,6 +355,16 @@ func (c *QuestCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.Pars
 	return applyFormFilter(ctx, parsed.Pokemon, parsed)
 }
 
+// questBulkAllowed reports whether the user may use bulk wildcard keywords
+// (everything / all pokemon / all items). Mirrors PoracleJS: gated behind
+// everything_flag_permissions for non-admins, always allowed for admins.
+func questBulkAllowed(ctx *bot.CommandContext) bool {
+	if ctx.IsAdmin {
+		return true
+	}
+	return strings.ToLower(ctx.Config.Tracking.EverythingFlagPermissions) != "deny"
+}
+
 // handleRemove handles !quest remove variants. Must be called before reward type detection.
 func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedArgs, common *commonTrackFields, shiny bool, pings string) []bot.Reply {
 	if len(parsed.RemoveUIDs) > 0 {
@@ -351,6 +382,14 @@ func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedA
 		// remove everything — match all reward types
 		for _, rt := range []int{7, 3, 12, 4, 2} {
 			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rt, 0, 0, 0))
+		}
+	} else if parsed.HasKeyword("arg.all_pokemon") || parsed.HasKeyword("arg.all_items") {
+		// remove the "all pokemon" / "all items" wildcard rows (reward=0)
+		if parsed.HasKeyword("arg.all_pokemon") {
+			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 7, 0, 0, 0))
+		}
+		if parsed.HasKeyword("arg.all_items") {
+			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 2, 0, 0, 0))
 		}
 	} else if stardustVal, ok := parsed.Strings["stardust"]; ok {
 		amount := questParseInt(stardustVal)

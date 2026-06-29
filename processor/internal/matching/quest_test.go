@@ -94,6 +94,24 @@ func TestSingleRewardMatchesPokemon(t *testing.T) {
 			&QuestRewardData{Type: 7, PokemonID: 25, Shiny: true},
 			true,
 		},
+		{
+			"all pokemon wildcard (reward=0) matches any pokemon",
+			&db.QuestTracking{RewardType: 7, Reward: 0},
+			&QuestRewardData{Type: 7, PokemonID: 25},
+			true,
+		},
+		{
+			"all pokemon wildcard (reward=0) matches a different pokemon",
+			&db.QuestTracking{RewardType: 7, Reward: 0},
+			&QuestRewardData{Type: 7, PokemonID: 566},
+			true,
+		},
+		{
+			"all pokemon wildcard still honours shiny filter",
+			&db.QuestTracking{RewardType: 7, Reward: 0, Shiny: true},
+			&QuestRewardData{Type: 7, PokemonID: 25, Shiny: false},
+			false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -156,6 +174,18 @@ func TestSingleRewardMatchesItem(t *testing.T) {
 			&db.QuestTracking{RewardType: 2, Reward: 701},
 			&QuestRewardData{Type: 2, ItemID: 701, Amount: 3},
 			true,
+		},
+		{
+			"all items wildcard (reward=0) matches any item",
+			&db.QuestTracking{RewardType: 2, Reward: 0},
+			&QuestRewardData{Type: 2, ItemID: 701, Amount: 3},
+			true,
+		},
+		{
+			"all items wildcard still honours amount filter",
+			&db.QuestTracking{RewardType: 2, Reward: 0, Amount: 5},
+			&QuestRewardData{Type: 2, ItemID: 701, Amount: 3},
+			false,
 		},
 	}
 

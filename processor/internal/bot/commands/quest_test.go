@@ -157,6 +157,53 @@ func TestQuest_Everything(t *testing.T) {
 	assert.Len(t, rows, 5, "everything should create 5 reward types")
 }
 
+// !quest all_pokemon → single "all pokemon" token after underscore
+// replacement → wildcard pokemon rule (reward_type 7, reward 0).
+func TestQuest_AllPokemon(t *testing.T) {
+	ctx := questCtx(t)
+	cmd := &QuestCommand{}
+	replies := cmd.Run(ctx, []string{"all pokemon"})
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 7, rows[0].RewardType, "pokemon quest reward type")
+	assert.Equal(t, 0, rows[0].Reward, "all pokemon = wildcard reward 0")
+}
+
+// !quest all_items → wildcard item rule (reward_type 2, reward 0).
+func TestQuest_AllItems(t *testing.T) {
+	ctx := questCtx(t)
+	cmd := &QuestCommand{}
+	replies := cmd.Run(ctx, []string{"all items"})
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 2, rows[0].RewardType, "item quest reward type")
+	assert.Equal(t, 0, rows[0].Reward, "all items = wildcard reward 0")
+}
+
+// Non-admins are blocked from bulk wildcards when everything_flag_permissions
+// is "deny".
+func TestQuest_AllPokemon_DeniedForNonAdmin(t *testing.T) {
+	ctx := questCtx(t)
+	ctx.Config.Tracking.EverythingFlagPermissions = "deny"
+	ctx.IsAdmin = false
+	cmd := &QuestCommand{}
+	replies := cmd.Run(ctx, []string{"all pokemon"})
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "🙅", replies[0].React)
+
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	assert.Empty(t, rows, "denied bulk wildcard should track nothing")
+}
+
 func TestQuest_SummaryKeyword(t *testing.T) {
 	ctx := questCtx(t)
 	replies := runQuest(t, ctx, "25 summary")

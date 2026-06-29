@@ -120,7 +120,9 @@ func singleRewardMatches(q *db.QuestTracking, r *QuestRewardData) bool {
 
 	switch r.Type {
 	case 7: // pokemon
-		if q.Reward != r.PokemonID {
+		// reward==0 is the "all pokemon" wildcard (e.g. !quest all pokemon,
+		// !quest everything) — match any pokemon reward.
+		if q.Reward != 0 && q.Reward != r.PokemonID {
 			return false
 		}
 		if q.Form != 0 && q.Form != r.FormID {
@@ -132,7 +134,9 @@ func singleRewardMatches(q *db.QuestTracking, r *QuestRewardData) bool {
 		return true
 
 	case 2: // item
-		if q.Reward != r.ItemID {
+		// reward==0 is the "all items" wildcard (e.g. !quest all items,
+		// !quest everything) — match any item reward.
+		if q.Reward != 0 && q.Reward != r.ItemID {
 			return false
 		}
 		if q.Amount > 0 && r.Amount < q.Amount {

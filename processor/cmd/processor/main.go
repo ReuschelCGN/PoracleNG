@@ -1505,6 +1505,27 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 		}
 	}
 
+	// Nearest-street-intersection lookups (GeoNames). Shares the reverse-
+	// geocoder's pogreb cache when one exists, so intersection results live in
+	// the same on-disk DB (separate key namespace) and repeat sightings at a
+	// fixed stop don't re-hit GeoNames.
+	if len(cfg.Geocoding.IntersectionUsers) > 0 {
+		var sharedCache *geocoding.Cache
+		if geocoder != nil {
+			sharedCache = geocoder.Cache()
+		}
+		enricher.Intersection = geocoding.NewIntersection(geocoding.IntersectionConfig{
+			Usernames:        cfg.Geocoding.IntersectionUsers,
+			Cache:            sharedCache,
+			CacheDetail:      cfg.Geocoding.CacheDetail,
+			TimeoutMs:        cfg.Tuning.GeocodingTimeout,
+			Concurrency:      cfg.Tuning.GeocodingConcurrency,
+			FailureThreshold: cfg.Tuning.GeocodingFailureThreshold,
+			CooldownMs:       cfg.Tuning.GeocodingCooldownMs,
+		})
+		log.Infof("GeoNames intersection lookups enabled (%d user(s), cache shared=%t)", len(cfg.Geocoding.IntersectionUsers), sharedCache != nil)
+	}
+
 	// Stats tracker (rarity + shiny, shared rolling window)
 	statsTracker := tracker.NewStatsTracker(tracker.StatsConfig{
 		MinSampleSize:       cfg.Stats.MinSampleSize,
