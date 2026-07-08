@@ -122,8 +122,12 @@ func (c *RaidCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	var insert []db.RaidTrackingAPI
 
 	if len(parsed.Pokemon) > 0 {
+		monsters, formReply := applyFormFilter(ctx, parsed.Pokemon, parsed)
+		if formReply != nil {
+			return []bot.Reply{*formReply}
+		}
 		// Track specific pokemon
-		for _, mon := range parsed.Pokemon {
+		for _, mon := range monsters {
 			insert = append(insert, db.RaidTrackingAPI{
 				ID:                    ctx.TargetID,
 				ProfileNo:             ctx.ProfileNo,
@@ -232,6 +236,10 @@ func (c *RaidCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 }
 
 func (c *RaidCommand) removeRaids(ctx *bot.CommandContext, parsed *bot.ParsedArgs) []bot.Reply {
+	if reply := rejectFormOnRemove(ctx, parsed); reply != nil {
+		return []bot.Reply{*reply}
+	}
+
 	if len(parsed.RemoveUIDs) > 0 {
 		tr := ctx.Tr()
 		return removeByUIDs(ctx, ctx.Tracking.Raids, parsed.RemoveUIDs,

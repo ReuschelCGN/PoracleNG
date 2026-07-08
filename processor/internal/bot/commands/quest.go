@@ -367,6 +367,10 @@ func questBulkAllowed(ctx *bot.CommandContext) bool {
 
 // handleRemove handles !quest remove variants. Must be called before reward type detection.
 func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedArgs, common *commonTrackFields, shiny bool, pings string) []bot.Reply {
+	if reply := rejectFormOnRemove(ctx, parsed); reply != nil {
+		return []bot.Reply{*reply}
+	}
+
 	if len(parsed.RemoveUIDs) > 0 {
 		tr := ctx.Tr()
 		return removeByUIDs(ctx, ctx.Tracking.Quests, parsed.RemoveUIDs,

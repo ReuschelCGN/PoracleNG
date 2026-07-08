@@ -57,6 +57,12 @@ func (c *NestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*warn}
 	}
 
+	if parsed.HasKeyword("arg.remove") {
+		if reply := rejectFormOnRemove(ctx, parsed); reply != nil {
+			return []bot.Reply{*reply}
+		}
+	}
+
 	// `remove id:N` is unambiguous — no pokemon required. Hoist this above the
 	// pokemon-resolution below so a UID-only removal (e.g. from /untrack nest)
 	// doesn't trip the "no pokemon" reply.
