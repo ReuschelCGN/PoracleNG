@@ -1,6 +1,7 @@
 package enrichment
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,6 +162,51 @@ func TestInvasionBaseGruntTypeRegular(t *testing.T) {
 }
 
 // --- Test 3: Translate grunt name (English) ---
+
+// TestInvasionTranslateShowcaseLeaderboard verifies the showcase payoff: fed the
+// exact inputs ProcessShowcase passes (gruntTypeID=0, showcase_rankings raw), the
+// enrichment populates showcasePresent + the translated top-3 leaderboard. This
+// confirms the synthesised display_type=9 path renders real showcase content.
+func TestInvasionTranslateShowcaseLeaderboard(t *testing.T) {
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 679, Form: 3042}: {PokemonID: 679, FormID: 3042},
+			{ID: 51, Form: 62}:    {PokemonID: 51, FormID: 62},
+			{ID: 809, Form: 0}:    {PokemonID: 809, FormID: 0},
+		},
+		Grunts: map[int]*gamedata.Grunt{},
+		Types:  map[int]*gamedata.TypeInfo{},
+		Util:   &gamedata.UtilData{Genders: map[int]gamedata.GenderInfo{}, MegaName: map[int]string{}},
+	}
+	bundle := newInvasionBundle(t, map[string]map[string]string{
+		"en": {
+			"poke_679": "Honedge", "poke_51": "Dugtrio", "poke_809": "Melmetal",
+			"form_3042": "Normal", "form_62": "Alolan", "form_0": "Normal",
+		},
+	})
+	e := newInvasionEnricher(t, gd, bundle)
+
+	rankings := json.RawMessage(`{"total_entries":3,"last_update":1784062072,"contest_entries":[` +
+		`{"rank":1,"pokemon_id":679,"form":3042,"score":1032.5,"gender":1},` +
+		`{"rank":2,"pokemon_id":51,"form":62,"score":1032.2,"gender":1},` +
+		`{"rank":3,"pokemon_id":809,"form":0,"score":789.8,"gender":3,"shiny":true}]}`)
+
+	m := e.InvasionTranslate(map[string]any{"gameWeatherId": 0}, 0, 0, 0, nil, rankings, "en")
+
+	if m["showcasePresent"] != true {
+		t.Fatalf("showcasePresent = %v, want true", m["showcasePresent"])
+	}
+	if m["showcaseTotalEntries"] != 3 {
+		t.Errorf("showcaseTotalEntries = %v, want 3", m["showcaseTotalEntries"])
+	}
+	sc, ok := m["showcase"].([]map[string]any)
+	if !ok || len(sc) != 3 {
+		t.Fatalf("showcase leaderboard not populated: %#v", m["showcase"])
+	}
+	if m["showcaseFirst"] == nil {
+		t.Error("showcaseFirst (winner) must be set")
+	}
+}
 
 func TestInvasionTranslateGruntName(t *testing.T) {
 	gd := &gamedata.GameData{

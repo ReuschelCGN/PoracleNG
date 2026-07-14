@@ -67,6 +67,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestMaxbattle(raw, matchedUser)
 	case "pokestop":
 		return ps.processTestPokestop(raw, matchedUser)
+	case "showcase":
+		return ps.processTestShowcase(raw, matchedUser)
 	default:
 		return fmt.Errorf("unsupported test webhook type: %s", webhookType)
 	}
@@ -197,6 +199,45 @@ func (ps *ProcessorService) processTestInvasion(raw json.RawMessage, target webh
 	ps.renderCh <- RenderJob{
 		AlertType:         "invasion",
 		TemplateType:      "invasion",
+		Enrichment:        enrichmentData,
+		PerLangEnrichment: perLang,
+		WebhookFields:     webhookFields,
+		MatchedUsers:      matched,
+		MatchedAreas:      []webhook.MatchedArea{},
+		TileGate:          ps.newTileGate(tilePending),
+		LogReference:      "test",
+	}
+	return nil
+}
+
+func (ps *ProcessorService) processTestShowcase(raw json.RawMessage, target webhook.MatchedUser) error {
+	var sc webhook.ShowcaseWebhook
+	if err := json.Unmarshal(raw, &sc); err != nil {
+		return fmt.Errorf("parse showcase: %w", err)
+	}
+
+	// Showcases render through the incident template with a synthesised
+	// display_type=9 — mirrors ProcessShowcase.
+	enrichmentData, tilePending := ps.enricher.Invasion(
+		sc.Latitude, sc.Longitude, sc.ShowcaseExpiry, sc.PokestopID, sc.URL,
+		0, showcaseDisplayType, 0, enrichment.TileModeURL)
+	matched := []webhook.MatchedUser{target}
+
+	var perLang map[string]map[string]any
+	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
+		perLang = map[string]map[string]any{
+			target.Language: ps.enricher.InvasionTranslate(
+				enrichmentData, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, target.Language),
+		}
+	}
+
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+	webhookFields := parseWebhookFields(raw)
+	ps.renderCh <- RenderJob{
+		AlertType:         "incident",
+		TemplateType:      "incident",
 		Enrichment:        enrichmentData,
 		PerLangEnrichment: perLang,
 		WebhookFields:     webhookFields,
@@ -459,6 +500,8 @@ func resolveDTSTypeFromRaw(webhookType string, raw json.RawMessage) string {
 		return "fort-update"
 	case "max_battle":
 		return "maxbattle"
+	case "showcase":
+		return "incident"
 	default:
 		return webhookType
 	}

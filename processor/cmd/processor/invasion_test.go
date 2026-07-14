@@ -46,6 +46,22 @@ func TestProcessInvasion_GatesOnExpiration(t *testing.T) {
 	}
 }
 
+// TestProcessInvasion_SuppressesContentlessShowcase — Golbat also emits a bare
+// display_type=9 invasion envelope for contests (no rankings); the real showcase
+// arrives on the pokéstop webhook. The invasion handler must drop the empty one
+// so trackers don't get a duplicate empty showcase card.
+func TestProcessInvasion_SuppressesContentlessShowcase(t *testing.T) {
+	src, err := os.ReadFile("invasion.go")
+	if err != nil {
+		t.Fatalf("read invasion.go: %v", err)
+	}
+	n := strings.Join(strings.Fields(string(src)), " ")
+	want := "displayType == showcaseDisplayType && len(inv.ShowcaseRankings) == 0"
+	if !strings.Contains(n, want) {
+		t.Fatalf("invasion.go must suppress content-less showcase invasions (%q)", want)
+	}
+}
+
 // TestInvasion_TemplateType_Incident checks that the invasion handler emits
 // TemplateType="incident" for event-only pokestop webhooks (gruntTypeID == 0 &&
 // displayType >= 7), and TemplateType="invasion" for real grunt invasions.

@@ -105,6 +105,7 @@ var configSchema = []ConfigSection{
 			{Name: "disable_gym", Type: "bool", Default: false, Description: "Disable gym webhook processing", HotReload: false},
 			{Name: "disable_max_battle", Type: "bool", Default: false, Description: "Disable max battle webhook processing", HotReload: false},
 			{Name: "disable_fort_update", Type: "bool", Default: false, Description: "Disable fort update webhook processing", HotReload: false},
+			{Name: "disable_showcase", Type: "bool", Default: false, Description: "Disable Showcase (pokestop contest) webhook processing", HotReload: false},
 		},
 	},
 
