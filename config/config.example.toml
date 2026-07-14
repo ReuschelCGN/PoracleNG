@@ -659,11 +659,12 @@ suggest_on_dm = false                    # when true, DMs that don't match a com
 
 
 # ---- Logging ----
-# Log levels: silly, debug, verbose, info, warn
-# Suggestion: start at verbose; info is a bit less logging; debug has more detail
+# Log levels (most to least verbose): trace, debug, info, warn
+# Suggestion: start at info; debug adds hot-path detail; trace is everything.
+# Legacy names are still accepted: "verbose" maps to info, "silly" to trace.
 
 [logging]
-level = "verbose"                        # log level: debug, verbose, info, warn
+level = "info"                           # log level: trace, debug, info, warn
 file_logging_enabled = true              # write logs to file
 filename = "logs/processor.log"          # log file path
 max_size = 50                            # max log file size in megabytes
