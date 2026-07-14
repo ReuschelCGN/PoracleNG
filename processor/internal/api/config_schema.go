@@ -544,10 +544,10 @@ var configSchema = []ConfigSection{
 		Name:  "logging",
 		Title: "Logging",
 		Fields: []ConfigFieldDef{
-			{Name: "level", Type: "select", Default: "verbose", Description: "Log verbosity level", Options: []ConfigSelectOption{
-				{Value: "debug", Label: "Debug", Description: "Most verbose — includes internal debug details"},
-				{Value: "verbose", Label: "Verbose", Description: "Recommended starting point — detailed operational logging"},
-				{Value: "info", Label: "Info", Description: "Standard operational messages only"},
+			{Name: "level", Type: "select", Default: "info", Description: "Log verbosity level. (Legacy 'verbose' maps to info, 'silly' to trace.)", Options: []ConfigSelectOption{
+				{Value: "trace", Label: "Trace", Description: "Most verbose — every internal step, very noisy"},
+				{Value: "debug", Label: "Debug", Description: "Detailed debug output, including hot-path details"},
+				{Value: "info", Label: "Info", Description: "Recommended — standard operational messages"},
 				{Value: "warn", Label: "Warn", Description: "Warnings and errors only"},
 			}},
 			{Name: "file_logging_enabled", Type: "bool", Default: true, Description: "Write log output to a file in addition to console"},
