@@ -208,6 +208,10 @@ func (c *MaxbattleCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.
 }
 
 func (c *MaxbattleCommand) removeMaxbattles(ctx *bot.CommandContext, parsed *bot.ParsedArgs) []bot.Reply {
+	if reply := rejectFormOnRemove(ctx, parsed); reply != nil {
+		return []bot.Reply{*reply}
+	}
+
 	if len(parsed.RemoveUIDs) > 0 {
 		tr := ctx.Tr()
 		return removeByUIDs(ctx, ctx.Tracking.Maxbattles, parsed.RemoveUIDs,
