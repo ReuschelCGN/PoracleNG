@@ -225,8 +225,23 @@ func normalizeLanguage(language string) string {
 }
 
 // Forward performs a forward geocode (address search). Results are not cached.
+//
+// Failures and empty result sets are logged at WARN. Forward geocoding is
+// user-initiated and low-frequency (the !location command and the
+// /api/geocode/forward endpoint), and the bot surfaces only a generic "could
+// not understand the location" to the user — so this log is the only place the
+// real cause (unreachable URL, HTTP status, unfinished import, out-of-region
+// query) is visible to an operator.
 func (g *Geocoder) Forward(query string) ([]ForwardResult, error) {
-	return g.provider.Forward(query)
+	results, err := g.provider.Forward(query)
+	if err != nil {
+		log.Warnf("Forward geocode %q failed: %s", query, err)
+		return results, err
+	}
+	if len(results) == 0 {
+		log.Warnf("Forward geocode %q returned no results — provider reachable but no match; check the import has finished and the query falls within the imported area", query)
+	}
+	return results, nil
 }
 
 // GetStats returns the current geocoder statistics.
