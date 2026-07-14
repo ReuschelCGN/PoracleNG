@@ -12,6 +12,13 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
+// incidentExpired reports whether a resolved incident expiration is known and
+// already in the past. A zero/unknown expiration is treated as not-expired so
+// incidents whose expiry Golbat didn't send still process.
+func incidentExpired(expiration, now int64) bool {
+	return expiration > 0 && expiration <= now
+}
+
 func (ps *ProcessorService) ProcessInvasion(raw json.RawMessage) error {
 	if ps.cfg.General.DisableInvasion {
 		return nil
@@ -45,6 +52,16 @@ func (ps *ProcessorService) ProcessInvasion(raw json.RawMessage) error {
 		expiration := inv.IncidentExpiration
 		if expiration == 0 {
 			expiration = inv.IncidentExpireTimestamp
+		}
+
+		// Drop already-expired incidents. Golbat re-emits a stop's unified
+		// webhook when its lure changes, which can carry a stale incident
+		// (e.g. a showcase whose window already ended); alerting on those
+		// would be spurious. A zero/unknown expiration is left to process —
+		// we can't prove it's stale.
+		if incidentExpired(expiration, time.Now().Unix()) {
+			l.Debugf("Skipping expired incident: expiration=%d", expiration)
+			return
 		}
 
 		// Duplicate check
