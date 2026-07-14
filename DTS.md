@@ -875,6 +875,13 @@ These fields are only populated for **Showcase** incidents (`displayType == 9`).
 | `showcaseLastUpdateFormatted` | string | `showcaseLastUpdate` formatted using the operator's configured time layout. |
 | `showcase` | array | Up to 3 enriched contestant entries (see per-entry fields below). Empty array when no data. |
 | `showcaseFirst` | object | Convenience alias for `showcase[0]` (the winner). `nil` when no contestants. |
+| `showcaseFocusPresent` | bool | `true` when the contest's featured focus was decoded. Guard focus blocks with `{{#if showcaseFocusPresent}}`. |
+| `showcaseFocusType` | string | Raw focus class: `pokemon`, `type`, `alignment`, `class`, `family`, `buddy`, `generation`, `hatched`, `mega`, `shiny`. |
+| `showcaseFocusCategory` | string | Translated focus category label, e.g. `Type`, `Buddy`. |
+| `showcaseFocusName` | string | Translated featured value, e.g. `Steel` (type focus) or `3+` (buddy focus). Empty for flag focuses (`hatched`/`shiny`/`mega`) — the category conveys it. |
+| `showcaseFocusEmoji` | string | Optional emoji key for the focus category (from `util.json` `showcaseFocus`). |
+
+The focus tells you *what the contest is featuring* (e.g. "Type: Steel"), separate from the `showcase` leaderboard of *who is winning*. Example: `{{#if showcaseFocusPresent}}Featuring {{showcaseFocusCategory}}: {{showcaseFocusName}}{{/if}}`.
 
 #### Per-entry fields (each item in `{{#each showcase}}`)
 

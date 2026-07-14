@@ -208,6 +208,66 @@ func TestInvasionTranslateShowcaseLeaderboard(t *testing.T) {
 	}
 }
 
+// TestShowcaseFocusTranslate covers the "what's featured" descriptor across the
+// focus classes — especially alignment and generation, whose game-proto enums do
+// NOT line up with the gamelocale key numbering (verified against Golbat source).
+func TestShowcaseFocusTranslate(t *testing.T) {
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{{ID: 25, Form: 0}: {PokemonID: 25}},
+		Types:    map[int]*gamedata.TypeInfo{},
+		Util: &gamedata.UtilData{
+			ShowcaseFocus: map[string]gamedata.ShowcaseFocusInfo{
+				"type": {}, "buddy": {}, "alignment": {}, "generation": {}, "class": {},
+			},
+		},
+	}
+	bundle := newInvasionBundle(t, map[string]map[string]string{
+		"en": {
+			"showcase_focus_type":       "Type",
+			"showcase_focus_buddy":      "Buddy",
+			"showcase_focus_alignment":  "Alignment",
+			"showcase_focus_generation": "Generation",
+			"showcase_focus_class":      "Class",
+			"poke_type_9":               "Steel",
+			"alignment_1":               "Shadow",
+			"alignment_2":               "Purified",
+			"generation_9":              "Paldea",
+			"legendary":                 "Legendary",
+		},
+	})
+	e := newInvasionEnricher(t, gd, bundle)
+
+	cases := []struct {
+		name         string
+		focus        string
+		wantCategory string
+		wantValue    string
+	}{
+		{"type", `{"type":"type","pokemon_type_1":9}`, "Type", "Steel"},
+		{"buddy", `{"type":"buddy","min_level":3}`, "Buddy", "3+"},
+		// Contest alignment 1 == PURIFIED (proto), which is gamelocale alignment_2.
+		{"alignment purified", `{"type":"alignment","pokemon_alignment":1}`, "Alignment", "Purified"},
+		// Contest alignment 2 == SHADOW (proto), which is gamelocale alignment_1.
+		{"alignment shadow", `{"type":"alignment","pokemon_alignment":2}`, "Alignment", "Shadow"},
+		// Proto generation 10 == GEN9 == Paldea == gamelocale generation_9.
+		{"generation paldea", `{"type":"generation","generation":10}`, "Generation", "Paldea"},
+		// Proto class 1 == LEGENDARY.
+		{"class legendary", `{"type":"class","pokemon_class":1}`, "Class", "Legendary"},
+	}
+	for _, c := range cases {
+		m := e.ShowcaseFocusTranslate([]byte(c.focus), "en")
+		if m["showcaseFocusPresent"] != true {
+			t.Errorf("%s: showcaseFocusPresent = %v, want true", c.name, m["showcaseFocusPresent"])
+		}
+		if m["showcaseFocusCategory"] != c.wantCategory {
+			t.Errorf("%s: category = %q, want %q", c.name, m["showcaseFocusCategory"], c.wantCategory)
+		}
+		if m["showcaseFocusName"] != c.wantValue {
+			t.Errorf("%s: name = %q, want %q", c.name, m["showcaseFocusName"], c.wantValue)
+		}
+	}
+}
+
 func TestInvasionTranslateGruntName(t *testing.T) {
 	gd := &gamedata.GameData{
 		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{},

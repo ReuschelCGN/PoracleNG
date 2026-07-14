@@ -295,6 +295,11 @@ var incidentFields = []FieldDef{
 	{Name: "showcaseLastUpdateFormatted", Type: "string", Description: "Formatted last-update time using the operator's configured time layout.", Category: "showcase"},
 	{Name: "showcase", Type: "array", Description: "Array of up to 3 enriched contestant entries — see Showcase fields in DTS.md for per-entry field list.", Category: "showcase", Preferred: true},
 	{Name: "showcaseFirst", Type: "object", Description: "Convenience alias for showcase[0] (the winner). nil when no contestants.", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusPresent", Type: "bool", Description: "True when the Showcase's featured focus was decoded. Guard focus blocks with {{#if showcaseFocusPresent}}.", Category: "showcase"},
+	{Name: "showcaseFocusType", Type: "string", Description: "Raw focus class: pokemon, type, alignment, class, family, buddy, generation, hatched, mega, shiny.", Category: "showcase"},
+	{Name: "showcaseFocusCategory", Type: "string", Description: "Translated focus category label (e.g. \"Type\", \"Buddy\").", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusName", Type: "string", Description: "Translated featured value (e.g. \"Steel\" for a type focus, \"3+\" for a buddy focus). Empty for flag focuses (hatched/shiny/mega).", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusEmoji", Type: "string", Description: "Optional emoji key for the focus category (from util.json showcaseFocus).", Category: "showcase"},
 }
 
 var incidentSnippets = []Snippet{

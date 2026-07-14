@@ -225,10 +225,12 @@ func (ps *ProcessorService) processTestShowcase(raw json.RawMessage, target webh
 
 	var perLang map[string]map[string]any
 	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
-		perLang = map[string]map[string]any{
-			target.Language: ps.enricher.InvasionTranslate(
-				enrichmentData, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, target.Language),
+		m := ps.enricher.InvasionTranslate(
+			enrichmentData, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, target.Language)
+		for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, target.Language) {
+			m[k] = v
 		}
+		perLang = map[string]map[string]any{target.Language: m}
 	}
 
 	if ps.renderCh == nil {

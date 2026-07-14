@@ -1,6 +1,6 @@
 # Showcase Support — Design & Implementation Plan
 
-Status: Phase 1 implemented (this PR); Phase 2 (focus enrichment) + Phase 3 pending
+Status: Phase 1 + Phase 2 implemented (this PR); Phase 3 pending
 Date: 2026-07-14
 
 ## Summary
@@ -245,21 +245,31 @@ showcase rules and worth documenting as such.
   regression. Lock a real production webhook (the Sephardic Temple sample) like
   `TestHasActiveLure_RealShowcaseStopWithStaleLure`.
 
-### Phase 2 — focus enrichment & display content
+### Phase 2 — focus enrichment & display content — DONE (this PR)
 
-- [ ] **T8. Parse `showcase_focus`** (`internal/enrichment/invasion.go` or a new
-  `showcase.go`). Switch on `focus.type` (all 10). Produce a `showcaseFocus`
-  descriptor + translated name: `pokemon`→pokémon name (+form), `type`→type
-  name(s), `class`/`family`/`generation`/`alignment`→translated labels,
-  `buddy`→"buddy L≥N", `hatched`/`shiny`/`mega`→flag/mega label. Add a
-  `showcaseRankingStandard` label (MIN/MAX).
-- [ ] **T9. DTS field metadata + docs.** Add the focus fields to `incidentFields`
-  (`internal/api/dts_fields.go`) and document them in `DTS.md` under the incident
-  section (the leaderboard fields already exist; add `showcaseFocus*`,
-  `showcaseRankingStandard`).
-- [ ] **T10. Default template.** Ensure the fallback `incident` template renders
-  the focus line + leaderboard when `showcasePresent` (guarded blocks already the
-  convention).
+- [x] **T8. Parse `showcase_focus`** (`internal/enrichment/showcase.go`
+  `ShowcaseFocusTranslate`). All 10 focus classes enumerated in util.json
+  `showcaseFocus`; category labels via i18n `showcase_focus_{type}`; specific
+  value resolved per class.
+- [x] **T9. DTS field metadata.** `showcaseFocusPresent/Type/Category/Name/Emoji`
+  added to `incidentFields` (`internal/api/dts_fields.go`).
+
+**Enum caveat — the values do NOT map by index (verified against Golbat proto).**
+Value resolution deliberately avoids assuming the game-proto enum equals a
+gamelocale key number:
+- **alignment** — `ContestPokemonAlignmentFocusProto`: `0 unset, 1 PURIFIED, 2
+  SHADOW` — **reversed** from gamelocale `alignment_1`=Shadow / `alignment_2`=Purified.
+  Mapped explicitly.
+- **generation** — proto `PokedexGenerationId` (`GEN1=1..GEN8=8, GEN8A=9 Hisui,
+  GEN9=10 Paldea, MELTAN=1002`) doesn't line up with the 1..9 gen numbering.
+  Mapped explicitly (proto 1-8 → gen 1-8, proto 10 → gen 9; Hisui/Meltan → no label).
+- **class** — `HoloPokemonClass` `0 normal, 1 legendary, 2 mythic, 3 ultra beast`.
+- **type / pokemon / family** — proto ids match existing `poke_type_{id}` /
+  `poke_{id}` keys, reused directly.
+
+### Phase 3 — pending
+- [ ] Focus line in the default `incident` template + a `showcaseRankingStandard`
+  (MIN/MAX) label are minor polish left for a follow-up.
 
 ### Phase 3 — optional follow-ups (defer)
 

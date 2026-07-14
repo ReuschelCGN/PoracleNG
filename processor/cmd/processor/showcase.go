@@ -148,8 +148,12 @@ func (ps *ProcessorService) ProcessShowcase(raw json.RawMessage) error {
 		if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
 			perLang = make(map[string]map[string]any)
 			for _, lang := range distinctLanguages(matched, ps.cfg.General.Locale) {
-				perLang[lang] = ps.enricher.InvasionTranslate(
+				m := ps.enricher.InvasionTranslate(
 					baseEnrichment, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, lang)
+				for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, lang) {
+					m[k] = v
+				}
+				perLang[lang] = m
 			}
 		}
 
