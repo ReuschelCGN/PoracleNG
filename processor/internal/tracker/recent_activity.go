@@ -22,6 +22,7 @@ type RecentActivity struct {
 	questXL           map[int]time.Time
 	invasionGrunts    map[int]time.Time
 	costumesByPokemon map[int]map[int]time.Time
+	formsByPokemon    map[int]map[int]time.Time
 	now               func() time.Time
 }
 
@@ -37,6 +38,7 @@ func NewRecentActivity() *RecentActivity {
 		questXL:           make(map[int]time.Time),
 		invasionGrunts:    make(map[int]time.Time),
 		costumesByPokemon: make(map[int]map[int]time.Time),
+		formsByPokemon:    make(map[int]map[int]time.Time),
 		now:               time.Now,
 	}
 }
@@ -79,6 +81,34 @@ func (r *RecentActivity) RecordCostume(pokemonID, costume int) {
 func (r *RecentActivity) RecentCostumes(pokemonID int) []int {
 	r.mu.Lock()
 	inner := r.costumesByPokemon[pokemonID]
+	r.mu.Unlock()
+	if inner == nil {
+		return nil
+	}
+	return r.active(inner) // reuse the existing recency window logic
+}
+
+// RecordForm marks form as recently seen on pokemonID. Form 0 (the "any form"
+// placeholder) is ignored — it is never a trackable value.
+func (r *RecentActivity) RecordForm(pokemonID, form int) {
+	if pokemonID <= 0 || form <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	inner := r.formsByPokemon[pokemonID]
+	if inner == nil {
+		inner = make(map[int]time.Time)
+		r.formsByPokemon[pokemonID] = inner
+	}
+	inner[form] = r.now()
+}
+
+// RecentForms returns the recency-windowed list of form IDs recently seen on
+// pokemonID.
+func (r *RecentActivity) RecentForms(pokemonID int) []int {
+	r.mu.Lock()
+	inner := r.formsByPokemon[pokemonID]
 	r.mu.Unlock()
 	if inner == nil {
 		return nil
