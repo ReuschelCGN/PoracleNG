@@ -863,7 +863,11 @@ These aliases are added on top of the pokestop / location / time / weather field
 
 ### Showcase fields
 
-These fields are only populated for **Showcase** incidents (`displayType == 9`). Always guard showcase blocks with `{{#if showcasePresent}}`.
+**Showcases render via their own `type: "showcase"` template** — a specialised display model (focus + leaderboard), distinct from the plain `incident` card used by Gold-Stop / Kecleon. A bundled default `showcase` template ships in `fallbacks/dts.json`; operators can override it like any other type. (Showcases are still *tracked* as incidents — a `grunt_type="showcase"` incident rule — only the rendered template differs.)
+
+The `showcase` type resolves the pokestop-identity / time / `displayType` fields (shared with `incident`) **plus** the showcase fields below. It does **not** carry the incident-only aliases `incidentTypeName`, `incidentEmoji`, or `color` — the bundled template hardcodes its title/emoji/colour, so those render empty if used in a showcase template.
+
+Always guard the leaderboard with `{{#if showcasePresent}}` and the focus line with `{{#if showcaseFocusPresent}}`.
 
 #### Top-level showcase fields
 
@@ -875,6 +879,13 @@ These fields are only populated for **Showcase** incidents (`displayType == 9`).
 | `showcaseLastUpdateFormatted` | string | `showcaseLastUpdate` formatted using the operator's configured time layout. |
 | `showcase` | array | Up to 3 enriched contestant entries (see per-entry fields below). Empty array when no data. |
 | `showcaseFirst` | object | Convenience alias for `showcase[0]` (the winner). `nil` when no contestants. |
+| `showcaseFocusPresent` | bool | `true` when the contest's featured focus was decoded. Guard focus blocks with `{{#if showcaseFocusPresent}}`. |
+| `showcaseFocusType` | string | Raw focus class: `pokemon`, `type`, `alignment`, `class`, `family`, `buddy`, `generation`, `hatched`, `mega`, `shiny`. |
+| `showcaseFocusCategory` | string | Translated focus category label, e.g. `Type`, `Buddy`. |
+| `showcaseFocusName` | string | Translated featured value, e.g. `Steel` (type focus) or `3+` (buddy focus). Empty for flag focuses (`hatched`/`shiny`/`mega`) — the category conveys it. |
+| `showcaseFocusEmoji` | string | Optional emoji key for the focus category (from `util.json` `showcaseFocus`). |
+
+The focus tells you *what the contest is featuring* (e.g. "Type: Steel"), separate from the `showcase` leaderboard of *who is winning*. Example: `{{#if showcaseFocusPresent}}Featuring {{showcaseFocusCategory}}: {{showcaseFocusName}}{{/if}}`.
 
 #### Per-entry fields (each item in `{{#each showcase}}`)
 

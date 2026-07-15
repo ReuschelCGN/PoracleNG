@@ -302,6 +302,35 @@ type LureWebhook struct {
 	IncidentDisplayType int `json:"incident_display_type"`
 }
 
+// ShowcaseWebhook mirrors the showcase slice of a Golbat pokestop webhook.
+//
+// Showcases (pokéstop contests) arrive on the `pokestop` envelope — the same
+// snapshot that carries lures and power-ups — with NO display_type. The
+// authoritative "is this active" signal is showcase_expiry (unix seconds when
+// the contest ends); Golbat never clears these fields on expiry, so a stale
+// showcase lingers on the snapshot and must be gated on showcase_expiry > now.
+// URL is the pokéstop photo URL (Golbat emits it as `url`, same as the lure
+// envelope). Name is `name` (NOT `pokestop_name`, which the invasion envelope
+// uses).
+type ShowcaseWebhook struct {
+	PokestopID string  `json:"pokestop_id"`
+	Name       string  `json:"name"`
+	URL        string  `json:"url"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	Updated    int64   `json:"updated"`
+	// ShowcaseExpiry is unix seconds when the contest ends. 0 / absent = no
+	// showcase. Nullable in Golbat (null.Int) — JSON null decodes to 0.
+	ShowcaseExpiry int64 `json:"showcase_expiry"`
+	// ShowcaseFocus / ShowcaseRankings are raw JSON objects (not encoded
+	// strings). Focus describes WHAT is featured (Phase 2 enrichment);
+	// rankings is the top-3 leaderboard consumed by translateShowcaseRankings.
+	ShowcaseFocus    json.RawMessage `json:"showcase_focus,omitempty"`
+	ShowcaseRankings json.RawMessage `json:"showcase_rankings,omitempty"`
+	// ShowcaseRankingStandard is the ranking metric enum (1=MIN, 2=MAX).
+	ShowcaseRankingStandard int `json:"showcase_ranking_standard"`
+}
+
 // GymWebhook mirrors Golbat's gym/gym_details webhook message.
 //
 // The URL field is the gym photo URL (Niantic CDN). Per the Golbat

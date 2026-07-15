@@ -276,25 +276,43 @@ var invasionFields = []FieldDef{
 // (Gold Pokestop, Kecleon, Showcase, …). Grunt/reward/gender fields are
 // absent — incidents don't have grunts. Three aliased fields are added for
 // convenience: incidentType, incidentEmoji, color.
+// incidentFields are the pokestop-identity / time / display-type fields shared
+// by the "incident" and "showcase" template types (both resolve them).
 var incidentFields = []FieldDef{
 	{Name: "pokestopName", Type: "string", Description: "Pokestop name", Category: "location", Preferred: true},
 	{Name: "pokestopUrl", Type: "string", Description: "Pokestop image URL", Category: "location"},
 	{Name: "pokestopId", Type: "string", Description: "Pokestop ID", Category: "location"},
-	{Name: "incidentTypeName", Type: "string", Description: "Translated display-type label (e.g. \"Gold Pokéstop\", \"Kecleon\"). Alias for gruntName.", Category: "incident", Preferred: true},
-	{Name: "displayType", Type: "int", Description: "Display type ID — numeric event identifier (e.g. 7=Showcase, 8=Kecleon, 12=Gold Pokestop). Use for dispatch logic: {{#if (eq displayType 8)}}.", Category: "incident", Preferred: true},
-	{Name: "incidentEmoji", Type: "string", Description: "Resolved per-platform emoji for the event icon. Alias for gruntTypeEmoji.", Category: "incident", Preferred: true},
-	{Name: "color", Type: "string", Description: "Event color hex for the embed. Alias for gruntTypeColor.", Category: "incident", Preferred: true},
+	{Name: "displayType", Type: "int", Description: "Display type ID — numeric event identifier (e.g. 7=Gold-Stop, 8=Kecleon, 9=Showcase). Use for dispatch logic: {{#if (eq displayType 8)}}.", Category: "incident", Preferred: true},
 	{Name: "displayTypeId", Type: "int", Description: "Display type ID (raw enrichment field — prefer the displayType alias).", Category: "incident"},
 	{Name: "disappearTime", Type: "string", Description: "Incident expiry time", Category: "time", Preferred: true},
 	{Name: "time", Type: "string", Description: "Expiry time (alias for disappearTime)", Category: "time", Preferred: true},
 	{Name: "expirationTimestamp", Type: "int", Description: "Unix expiry timestamp (for Discord <t:N:R>)", Category: "time"},
-	// Showcase fields (displayType == 9)
-	{Name: "showcasePresent", Type: "bool", Description: "True when showcase_rankings data is present (displayType 9 Showcase only). Guard all showcase blocks with {{#if showcasePresent}}.", Category: "showcase", Preferred: true},
+}
+
+// incidentOnlyFields resolve only for the "incident" template type (Gold-Stop /
+// Kecleon). Showcases hardcode their title and don't alias these, so they are
+// excluded from the showcase field list.
+var incidentOnlyFields = []FieldDef{
+	{Name: "incidentTypeName", Type: "string", Description: "Translated display-type label (e.g. \"Gold Pokéstop\", \"Kecleon\"). Alias for gruntName.", Category: "incident", Preferred: true},
+	{Name: "incidentEmoji", Type: "string", Description: "Resolved per-platform emoji for the event icon. Alias for gruntTypeEmoji.", Category: "incident", Preferred: true},
+	{Name: "color", Type: "string", Description: "Event color hex for the embed. Alias for gruntTypeColor.", Category: "incident", Preferred: true},
+}
+
+// showcaseFields is the extra surface for the dedicated "showcase" template type
+// (a specialised incident display: focus + leaderboard). The showcase type also
+// includes all incidentFields (pokestop identity, time, maps).
+var showcaseFields = []FieldDef{
+	{Name: "showcasePresent", Type: "bool", Description: "True when showcase_rankings data is present. Guard leaderboard blocks with {{#if showcasePresent}}.", Category: "showcase", Preferred: true},
 	{Name: "showcaseTotalEntries", Type: "int", Description: "Total number of contestants in the Showcase.", Category: "showcase", Preferred: true},
 	{Name: "showcaseLastUpdate", Type: "int", Description: "Unix timestamp of the last leaderboard update.", Category: "showcase"},
 	{Name: "showcaseLastUpdateFormatted", Type: "string", Description: "Formatted last-update time using the operator's configured time layout.", Category: "showcase"},
 	{Name: "showcase", Type: "array", Description: "Array of up to 3 enriched contestant entries — see Showcase fields in DTS.md for per-entry field list.", Category: "showcase", Preferred: true},
 	{Name: "showcaseFirst", Type: "object", Description: "Convenience alias for showcase[0] (the winner). nil when no contestants.", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusPresent", Type: "bool", Description: "True when the Showcase's featured focus was decoded. Guard focus blocks with {{#if showcaseFocusPresent}}.", Category: "showcase"},
+	{Name: "showcaseFocusType", Type: "string", Description: "Raw focus class: pokemon, type, alignment, class, family, buddy, generation, hatched, mega, shiny.", Category: "showcase"},
+	{Name: "showcaseFocusCategory", Type: "string", Description: "Translated focus category label (e.g. \"Type\", \"Buddy\").", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusName", Type: "string", Description: "Translated featured value (e.g. \"Steel\" for a type focus, \"3+\" for a buddy focus). Empty for flag focuses (hatched/shiny/mega).", Category: "showcase", Preferred: true},
+	{Name: "showcaseFocusEmoji", Type: "string", Description: "Optional emoji key for the focus category (from util.json showcaseFocus).", Category: "showcase"},
 }
 
 var incidentSnippets = []Snippet{
@@ -303,7 +321,13 @@ var incidentSnippets = []Snippet{
 	{Label: "Countdown", Insert: "<t:{{expirationTimestamp}}:R>", Description: "Discord relative countdown", Category: "incident", Platform: "discord"},
 	{Label: "Kecleon dispatch (numeric)", Insert: "{{#if (eq displayType 8)}}🦎{{else}}✨{{/if}}", Description: "Branch on specific incident type using numeric displayType", Category: "incident"},
 	{Label: "Kecleon dispatch (slug)", Insert: "{{#if (eq gruntType \"kecleon\")}}🦎{{else}}✨{{/if}}", Description: "Branch on specific incident type using gruntType slug", Category: "incident"},
-	{Label: "Showcase leaderboard", Insert: "{{#if showcasePresent}}\n🏆 Top contestants ({{showcaseTotalEntries}} entries):\n{{#each showcase}}{{rank}}. {{fullName}}{{#if shiny}} ✨{{/if}}{{#if costumeName}} ({{costumeName}}){{/if}} — {{scoreFormatted}}\n{{/each}}{{/if}}", Description: "Full leaderboard block — only rendered for Showcase incidents", Category: "showcase"},
+}
+
+// showcaseSnippets are the showcase-only building blocks (the showcase type
+// also inherits incidentSnippets for the title/time lines).
+var showcaseSnippets = []Snippet{
+	{Label: "Showcase focus", Insert: "{{#if showcaseFocusPresent}}🎯 Featuring {{showcaseFocusCategory}}{{#if showcaseFocusName}}: {{showcaseFocusName}}{{/if}}{{/if}}", Description: "What the contest is featuring (e.g. \"Type: Steel\")", Category: "showcase"},
+	{Label: "Showcase leaderboard", Insert: "{{#if showcasePresent}}\n🏆 Top contestants ({{showcaseTotalEntries}} entries):\n{{#each showcase}}{{rank}}. {{fullName}}{{#if shiny}} ✨{{/if}}{{#if costumeName}} ({{costumeName}}){{/if}} — {{scoreFormatted}}\n{{/each}}{{/if}}", Description: "Full leaderboard block", Category: "showcase"},
 	{Label: "Showcase winner only", Insert: "{{#if showcasePresent}}🏆 {{showcaseFirst.fullName}} ({{showcaseFirst.scoreFormatted}}){{/if}}", Description: "Single-line winner entry", Category: "showcase"},
 }
 
@@ -736,7 +760,8 @@ var fieldsByType = map[string]fieldEntry{
 	"quest":          {Fields: append(commonFields, questFields...), Snippets: append(commonSnippets, questSnippets...)},
 	"questSummary":   {Fields: append(commonFields, questSummaryFields...), BlockScopes: questSummaryBlockScopes, Snippets: append(commonSnippets, questSnippets...)},
 	"invasion":       {Fields: append(commonFields, invasionFields...), Snippets: append(commonSnippets, invasionSnippets...)},
-	"incident":       {Fields: append(commonFields, incidentFields...), Snippets: append(commonSnippets, incidentSnippets...)},
+	"incident":       {Fields: append(append(commonFields, incidentFields...), incidentOnlyFields...), Snippets: append(commonSnippets, incidentSnippets...)},
+	"showcase":       {Fields: append(append(commonFields, incidentFields...), showcaseFields...), Snippets: append(append(commonSnippets, incidentSnippets...), showcaseSnippets...)},
 	"lure":           {Fields: append(commonFields, lureFields...), Snippets: append(commonSnippets, lureSnippets...)},
 	"nest":           {Fields: append(commonFields, nestFields...), Snippets: commonSnippets},
 	"gym":            {Fields: append(commonFields, gymFields...), Snippets: commonSnippets},

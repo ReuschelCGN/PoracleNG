@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "gym", "nest", "quest", "fort-update", "max-battle"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "gym", "nest", "quest", "fort-update", "max-battle", "showcase"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -304,6 +304,8 @@ func resolveDTSType(hookType string, webhook map[string]any) string {
 		return "fort-update"
 	case "max_battle":
 		return "maxbattle"
+	case "showcase":
+		return "showcase"
 	default:
 		return hookType // quest, gym, nest, egg, invasion, lure — match 1:1
 	}

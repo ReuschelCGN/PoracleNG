@@ -83,6 +83,16 @@ func (ps *ProcessorService) ProcessInvasion(raw json.RawMessage) error {
 			gruntTypeID = inv.GruntType
 		}
 
+		// Suppress content-less Showcase incidents. Golbat also emits a bare
+		// display_type=9 invasion envelope for contests (no rankings/focus);
+		// the real showcase — with its leaderboard — arrives on the pokestop
+		// webhook and is handled by ProcessShowcase. Rendering this one too
+		// would produce an empty duplicate showcase card.
+		if gruntTypeID == 0 && displayType == showcaseDisplayType && len(inv.ShowcaseRankings) == 0 {
+			l.Debug("Skipping content-less showcase invasion (handled via pokestop webhook)")
+			return
+		}
+
 		// Record the grunt for slash autocomplete recency.
 		if ps.recentActivity != nil {
 			ps.recentActivity.RecordInvasionGrunt(gruntTypeID)

@@ -1251,6 +1251,49 @@
     }
   },
   {
+    "type": "showcase",
+    "test": "type",
+    "location": "current",
+    "webhook": {
+      "pokestop_id": "showcase-type-test.16",
+      "latitude": 51.28,
+      "longitude": 1.08,
+      "name": "Contest Hall",
+      "url": "http://lh3.googleusercontent.com/showcase-type",
+      "updated": 1784062072,
+      "showcase_focus": { "type": "type", "pokemon_type_1": 9 },
+      "showcase_pokemon_type_id": 9,
+      "showcase_ranking_standard": 2,
+      "showcase_expiry": 1784084400,
+      "showcase_rankings": {
+        "total_entries": 3,
+        "last_update": 1784062072,
+        "contest_entries": [
+          { "rank": 1, "score": 1032.54, "pokemon_id": 679, "form": 3042, "costume": 0, "gender": 1, "shiny": false, "temp_evolution": 0, "temp_evolution_finish_ms": 0, "alignment": 0, "badge": 0 },
+          { "rank": 2, "score": 1032.2, "pokemon_id": 51, "form": 62, "costume": 0, "gender": 1, "shiny": false, "temp_evolution": 0, "temp_evolution_finish_ms": 0, "alignment": 0, "badge": 0 },
+          { "rank": 3, "score": 789.8, "pokemon_id": 809, "form": 0, "costume": 0, "gender": 3, "shiny": true, "temp_evolution": 0, "temp_evolution_finish_ms": 0, "alignment": 0, "badge": 0 }
+        ]
+      }
+    }
+  },
+  {
+    "type": "showcase",
+    "test": "buddy",
+    "location": "current",
+    "webhook": {
+      "pokestop_id": "showcase-buddy-test.16",
+      "latitude": 51.29,
+      "longitude": 1.09,
+      "name": "Buddy Contest",
+      "url": "http://lh3.googleusercontent.com/showcase-buddy",
+      "updated": 1784062072,
+      "showcase_focus": { "type": "buddy", "min_level": 3 },
+      "showcase_ranking_standard": 2,
+      "showcase_expiry": 1784084400,
+      "showcase_rankings": { "total_entries": 0, "last_update": 1784062072, "contest_entries": [] }
+    }
+  },
+  {
     "type": "fort_update",
     "test": "edit",
     "location": "current",

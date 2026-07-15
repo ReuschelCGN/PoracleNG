@@ -36,6 +36,31 @@ func TestDuplicateCachePokemon(t *testing.T) {
 	}
 }
 
+func TestDuplicateCacheShowcase(t *testing.T) {
+	dc := NewDuplicateCache()
+	defer dc.Close()
+
+	expiry := time.Now().Unix() + 3600
+
+	// First fire (empty leaderboard) — not a duplicate.
+	if dc.CheckShowcase("stop1", expiry, "0:none") {
+		t.Error("first showcase fire should not be a duplicate")
+	}
+	// Same rank-1 state — duplicate.
+	if !dc.CheckShowcase("stop1", expiry, "0:none") {
+		t.Error("identical showcase state should be a duplicate")
+	}
+	// Rank-1 changed (new fingerprint) — NOT a duplicate, so the edit path
+	// sees the leaderboard update.
+	if dc.CheckShowcase("stop1", expiry, "3:679@1032.5") {
+		t.Error("changed rank-1 fingerprint should not be a duplicate")
+	}
+	// Different contest (new expiry) at the same stop — not a duplicate.
+	if dc.CheckShowcase("stop1", expiry+7200, "0:none") {
+		t.Error("new contest (different expiry) should not be a duplicate")
+	}
+}
+
 func TestDuplicateCacheRaid(t *testing.T) {
 	dc := NewDuplicateCache()
 	defer dc.Close()
