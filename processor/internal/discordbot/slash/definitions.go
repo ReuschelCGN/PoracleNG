@@ -498,6 +498,7 @@ func trackOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 		cleanOpt(bundle, "track", "Auto-delete the alert when the pokemon despawns"),
 		templateOpt(bundle, "track"),
 		stringOpt(bundle, "track.form", "form", "Pokemon form", false, true),
+		stringOpt(bundle, "track.costume", "costume", "Pokemon costume", false, true),
 		{
 			Type:                     discordgo.ApplicationCommandOptionString,
 			Name:                     sizeName,

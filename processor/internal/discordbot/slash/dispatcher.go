@@ -401,6 +401,10 @@ func (d *Dispatcher) routeAutocomplete(cmd, opt, focused, userLang string, ic *d
 	case opt == "form" && cmd == "track":
 		pokemonValue := siblingOptionString(ic, "pokemon")
 		return autocomplete.Form(context.Background(), d.deps, pokemonValue, focused, userLang)
+	// /track costume is a flat, non-species-scoped list (unlike form), so
+	// it doesn't cascade from the selected pokemon option.
+	case opt == "costume" && cmd == "track":
+		return autocomplete.Costume(context.Background(), d.deps, focused, userLang)
 	// Tracker location: autocomplete from the user's saved named locations.
 	// Used by the `location` option on all 10 tracker commands so a user can
 	// pick a saved location by name rather than typing coordinates.
