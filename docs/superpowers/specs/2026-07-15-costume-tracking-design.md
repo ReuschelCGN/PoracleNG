@@ -43,7 +43,8 @@ Two real operator needs:
 | D3 | **Command syntax:** `costume:<name-or-id>`, name resolved via the existing multi-word vocabulary + underscore-substitution (same path as items/moves/forms) — `costume:holiday_2016`, eager-joined `costume:holiday 2016`, or `costume:1`. `costume:0` = no costume. |
 | D4 | **`!info costumes`** lists all costumes (global reference). **`!info <pokemon>`** shows a **recently-seen** costume list for that species, sourced from a `RecentActivity` map (mirrors the slash-autocomplete recency mechanism). |
 | D5 | **Display:** weave the costume into `fullName`, **parenthesised** — `Pikachu (Holiday 2016)` — so every existing `{{fullName}}` template shows it with no edits. Applied to the **spawn's** name only, not PVP/evolution ranking entries. Also add a standalone `costumeName` field. No default-template change required. |
-| D6 | **v2 Pokémon API** gains a nullable `Costume *int` mirroring `Form` (omit/null = wildcard 9000). |
+| D6 | **v2 Pokémon API** gains a nullable `Costume *int` mirroring `Form` (create + update writable; omit/null = wildcard 9000). |
+| D7 | **v1 Pokémon API compatibility:** an absent `costume` must default to **9000 (any)**, not the Go zero-value `0` — otherwise v1 clients (ReactMap/PoracleWeb) that don't send the field would silently create "no costume" rules. Present values pass through verbatim (incl. 9000 / 0 / N). |
 
 ## Components
 
@@ -58,8 +59,11 @@ A `CostumeTranslationKey(id) → "costume_{id}"` helper alongside the existing
 ### 2. DB storage
 - Migration `0000NN_add_monster_costume.{up,down}.sql`:
   `ALTER TABLE monsters ADD COLUMN costume INT NOT NULL DEFAULT 9000;`
+  (existing rows ⇒ 9000 = any, so no behavioural change.)
 - `db.MonsterTracking` gains `Costume int \`db:"costume"\``; `MonsterTrackingAPI`
-  gains `Costume flexInt` (lenient clients). Default 9000 in the API struct.
+  gains a `Costume` field that **defaults to 9000 when absent from the JSON**
+  (see §9 — a parse-time default, not the Go zero-value), so no-costume (`0`) is
+  only ever stored when explicitly requested.
 
 ### 3. Matcher (`matching/pokemon.go`)
 In `matchMonsters`, alongside the existing form check:
@@ -136,7 +140,26 @@ writable and reads back with correct wildcard semantics:
   field therefore round-trips as "match any", consistent with `form`.
 - Doc string states the 9000 / 0 / null semantics explicitly.
 
-### 9. i18n
+### 9. v1 Pokémon tracking API (compatibility — must not regress)
+The lenient v1 API (`/api/tracking/pokemon/*`, used by ReactMap / PoracleWeb)
+parses into the shared `MonsterTrackingAPI`. **Critical:** the wildcard is `9000`,
+not the Go zero-value `0`, and v1 clients will not send a `costume` field — so an
+absent field would default to `0` = "no costume" and silently make every
+v1-created rule match only non-costumed pokémon.
+
+Requirement: **an absent `costume` in a v1 payload must default to 9000 (any).**
+Mechanism: a custom `UnmarshalJSON` on `MonsterTrackingAPI` (or equivalent parse
+default) that pre-sets `Costume = 9000` before decoding, so:
+- field absent ⇒ stays **9000** (any) — existing v1 rules and clients unchanged;
+- field present ⇒ passes through verbatim, including `9000` (any), `0` (no
+  costume), and `N` (specific).
+
+This lets v1 clients that *do* know about costume add/clear it, while never
+accidentally creating "no costume" rules for the clients that don't. A test must
+cover: v1 payload with no `costume` → stored as 9000; `costume:0` → 0;
+`costume:5` → 5.
+
+### 10. i18n
 New keys in `internal/i18n/locale/en.json`: `msg.info.sub.costumes`,
 `msg.info.available_costumes` (header for the per-species section),
 `msg.info.costumes.header` (global list header), `arg.prefix.costume`,
@@ -168,4 +191,5 @@ New keys in `internal/i18n/locale/en.json`: `msg.info.sub.costumes`,
 `bot/argmatch.go` + `bot/commands/{track,untrack,info,tracked}.go` +
 `rowtext/*`, `discordbot/slash/{definitions,mappers/track,autocomplete}.go`,
 `tracker/recent_activity.go` + `cmd/processor/pokemon.go`, `api/v2_pokemon.go`,
-`api/dts_fields.go`, `i18n/locale/en.json`, `DTS.md`.
+`api/tracking.go` + `api/trackingMonster.go` (v1 `MonsterTrackingAPI` costume +
+absent→9000 default), `api/dts_fields.go`, `i18n/locale/en.json`, `DTS.md`.
