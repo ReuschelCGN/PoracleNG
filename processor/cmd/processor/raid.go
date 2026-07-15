@@ -99,6 +99,7 @@ func (ps *ProcessorService) ProcessRaid(raw json.RawMessage) error {
 				GymID:     raid.GymID,
 				PokemonID: raid.PokemonID,
 				Form:      raid.Form,
+				Costume:   raid.Costume,
 				Level:     raid.Level,
 				TeamID:    raid.TeamID,
 				Ex:        ex,
