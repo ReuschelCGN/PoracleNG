@@ -352,6 +352,13 @@ type CommandContext struct {
 	// is configured.
 	Scanner scanner.Scanner
 
+	// RecentActivity tracks recently-seen pokemon/items/grunts/costumes
+	// (6h TTL), mirrored from BotDeps so text commands (e.g. `!info
+	// <pokemon>`) can surface the same recency data slash autocomplete
+	// uses. nil in test contexts that don't wire it up — callers must
+	// guard.
+	RecentActivity *tracker.RecentActivity
+
 	// Reload trigger — called after tracking mutations
 	ReloadFunc func()
 
@@ -403,6 +410,7 @@ func NewCommandContext(deps *BotDeps) *CommandContext {
 		TestProcessor:      deps.TestProcessor,
 		Registry:           deps.Registry,
 		Scanner:            deps.Scanner,
+		RecentActivity:     deps.RecentActivity,
 		ReloadFunc:         deps.ReloadFunc,
 		SummarySchedules:   deps.SummarySchedules,
 		SummaryBuffer:      deps.SummaryBuffer,

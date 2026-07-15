@@ -39,6 +39,8 @@ func (c *InfoCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	}
 
 	switch {
+	case matchSub("msg.info.sub.costumes"):
+		return c.showCostumes(ctx)
 	case matchSub("msg.info.sub.moves"):
 		return c.listMoves(ctx)
 	case matchSub("msg.info.sub.items"):
@@ -299,6 +301,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	// Recently-seen costumes for tracking (costume:<id>)
+	costumes := c.availableCostumes(ctx, pokemonID)
+	if len(costumes) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.available_costumes") + "\n")
+		for _, cst := range costumes {
+			sb.WriteString("  " + cst + "\n")
+		}
+	}
+
 	// Evolutions with requirement text
 	if len(mon.Evolutions) > 0 {
 		sb.WriteByte('\n')
@@ -470,6 +482,71 @@ func (c *InfoCommand) availableForms(ctx *bot.CommandContext, pokemonID int) []s
 		result[i] = e.display
 	}
 	return result
+}
+
+// availableCostumes returns "id — name" display strings for costumes recently
+// seen on pokemonID (via RecentActivity), sorted by id. Returns nil when
+// RecentActivity isn't wired up or nothing has been seen recently.
+func (c *InfoCommand) availableCostumes(ctx *bot.CommandContext, pokemonID int) []string {
+	if ctx.RecentActivity == nil {
+		return nil
+	}
+	ids := ctx.RecentActivity.RecentCostumes(pokemonID)
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Ints(ids)
+
+	tr := ctx.Tr()
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, fmt.Sprintf("%d — %s", id, costumeName(ctx, tr, id)))
+	}
+	return result
+}
+
+// showCostumes lists every known costume (GameData.Costumes), sorted by id,
+// as "id — name" for use with `costume:<id>` in !track. Costume id 0 (the
+// "no costume" wildcard state, see msg.no_costume) is intentionally omitted —
+// it isn't a real trackable costume, it's the absence of one.
+func (c *InfoCommand) showCostumes(ctx *bot.CommandContext) []bot.Reply {
+	tr := ctx.Tr()
+
+	if ctx.GameData == nil || len(ctx.GameData.Costumes) == 0 {
+		return []bot.Reply{{React: "🙅", Text: tr.T("msg.info.no_costume_data")}}
+	}
+
+	ids := make([]int, 0, len(ctx.GameData.Costumes))
+	for id := range ctx.GameData.Costumes {
+		if id == 0 {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	var sb strings.Builder
+	sb.WriteString(tr.T("msg.info.costumes.header") + "\n")
+	for _, id := range ids {
+		fmt.Fprintf(&sb, "%d — %s\n", id, costumeName(ctx, tr, id))
+	}
+
+	return bot.SplitTextReply(sb.String())
+}
+
+// costumeName resolves a costume's display name, preferring the translated
+// costume_{id} key and falling back to the raw CostumeInfo.Name when no
+// translation is loaded for it.
+func costumeName(ctx *bot.CommandContext, tr *i18n.Translator, id int) string {
+	key := gamedata.CostumeTranslationKey(id)
+	name := tr.T(key)
+	if name != key {
+		return name
+	}
+	if info, ok := ctx.GameData.Costumes[id]; ok && info.Name != "" {
+		return info.Name
+	}
+	return name
 }
 
 // calculateCP computes the CP for a pokemon given base stats, IVs, and level.
