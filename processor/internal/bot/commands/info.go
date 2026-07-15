@@ -495,10 +495,11 @@ func (c *InfoCommand) availableForms(ctx *bot.CommandContext, pokemonID int) []s
 	return result
 }
 
-// availableRecentForms returns "id — name" display strings for forms recently
-// seen on pokemonID (via RecentActivity), sorted by id. Mirrors
-// availableCostumes; returns nil when RecentActivity isn't wired or nothing
-// has been seen recently.
+// availableRecentForms returns copy-pasteable "pokemon form:<name>" strings for
+// forms recently seen on pokemonID (via RecentActivity), sorted by id — the
+// same actionable format as availableForms (forms are tracked by name, not id),
+// so a user can paste one straight into a track command. Returns nil when
+// RecentActivity isn't wired or nothing has been seen recently.
 func (c *InfoCommand) availableRecentForms(ctx *bot.CommandContext, pokemonID int) []string {
 	if ctx.RecentActivity == nil {
 		return nil
@@ -511,6 +512,7 @@ func (c *InfoCommand) availableRecentForms(ctx *bot.CommandContext, pokemonID in
 
 	tr := ctx.Tr()
 	enTr := ctx.Translations.For("en")
+	pokeName := enTr.T(gamedata.PokemonTranslationKey(pokemonID))
 	result := make([]string, 0, len(ids))
 	for _, id := range ids {
 		key := gamedata.FormTranslationKey(id)
@@ -521,7 +523,11 @@ func (c *InfoCommand) availableRecentForms(ctx *bot.CommandContext, pokemonID in
 		if name == key {
 			continue // unresolved form name — skip rather than show "form_N"
 		}
-		result = append(result, fmt.Sprintf("%d — %s", id, name))
+		// Users type form names with underscores replacing spaces; wrap in
+		// inline code so the underscore renders literally on both platforms
+		// (mirrors availableForms).
+		trackingName := strings.ReplaceAll(strings.ToLower(name), " ", "_")
+		result = append(result, ctx.Code(fmt.Sprintf("%s form:%s", pokeName, trackingName)))
 	}
 	return result
 }

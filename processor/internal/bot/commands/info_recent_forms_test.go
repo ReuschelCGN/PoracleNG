@@ -49,8 +49,8 @@ func TestInfo_Pokemon_RecentlySeenForms(t *testing.T) {
 		t.Fatal("expected at least one reply, got none")
 	}
 	text := replies[0].Text
-	if !strings.Contains(text, "680 — Winter 2023") {
-		t.Errorf("expected 'id — name' recent form line, got: %q", text)
+	if !strings.Contains(text, "form:winter_2023") {
+		t.Errorf("expected copy-pasteable 'form:<name>' recent form line, got: %q", text)
 	}
 	if !strings.Contains(text, "Recently-seen forms") {
 		t.Errorf("expected a recently-seen forms header, got: %q", text)
