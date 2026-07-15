@@ -18,7 +18,9 @@ package gamedata
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/pokemon/poracleng/processor/internal/i18n"
@@ -43,6 +45,7 @@ type GameData struct {
 	Weather        map[int]*WeatherData        // weatherId → WeatherData (boosted types)
 	Util           *UtilData                   // static game constants
 	PrevEvolutions map[int][]PreviousEvolution // pokemonID → what evolves into it
+	Costumes       map[int]CostumeInfo         // costumeId → CostumeInfo
 }
 
 // WeatherData holds weather boost information from the raw masterfile.
@@ -104,6 +107,18 @@ func Load(baseDir string) (*GameData, error) {
 
 	prevEvolutions := BuildPrevEvolutions(monsters)
 
+	var costumes map[int]CostumeInfo
+	costumeBytes, err := os.ReadFile(filepath.Join(rawDir, "costumes.json"))
+	if err == nil {
+		var raw map[string]CostumeInfo
+		if json.Unmarshal(costumeBytes, &raw) == nil {
+			costumes = make(map[int]CostumeInfo, len(raw))
+			for _, c := range raw {
+				costumes[c.ID] = c
+			}
+		}
+	}
+
 	return &GameData{
 		Monsters:       monsters,
 		Moves:          moves,
@@ -113,6 +128,7 @@ func Load(baseDir string) (*GameData, error) {
 		Weather:        weather,
 		Util:           util,
 		PrevEvolutions: prevEvolutions,
+		Costumes:       costumes,
 	}, nil
 }
 
