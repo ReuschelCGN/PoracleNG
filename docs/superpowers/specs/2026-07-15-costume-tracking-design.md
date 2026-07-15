@@ -90,8 +90,12 @@ exact match. Independent of the form check.
   include it in the diff/insert. Removal by costume supported.
 - **Slash `/track`:** add a `costume` option with **name autocomplete** (labels =
   costume names, resolves to id). Mapper emits `costume:<id>`.
-- **`!tracked` / rowtext:** the monster rule description includes the costume name
-  when not wildcard (and "no costume" when 0).
+- **`!tracked` line / rowtext (required):** the monster rule description
+  rendered by `rowtext` — used by `!tracked`, the tracking-API responses, and the
+  command confirmation — **must** include the costume: the translated costume
+  name for a specific costume, "no costume" for `0`, and nothing at wildcard
+  (9000). Without this a costume rule is indistinguishable from a normal rule in
+  `!tracked`.
 
 ### 6. `!info`
 - **`!info costumes`** — new subcommand (`msg.info.sub.costumes`): list all
@@ -102,16 +106,35 @@ exact match. Independent of the form check.
   `costume:<id>`.
 
 ### 7. RecentActivity (`tracker/recent_activity.go`)
-Add per-species costume recency: `costumesByPokemon map[int]map[int]time.Time`
-(pokémon id → costume id → last seen), `RecordCostume(pokemonID, costume)` (called
-from `cmd/processor/pokemon.go` `ProcessPokemon`, only when `costume > 0`), and
-`RecentCostumes(pokemonID) []int` (sorted, recency-windowed). Only costumes seen
-since startup appear — acceptable and self-maintaining.
+Reuse the **shared** `RecentActivity` (the same instance the slash-command
+autocomplete and `bot/command.go` already use — always constructed at startup,
+not gated on slash). Chosen deliberately: it's the project's common recency model.
+
+Two extensions beyond the existing flat `map[int]time.Time` categories:
+- **Two-level key:** add `costumesByPokemon map[int]map[int]time.Time`
+  (pokémon id → costume id → last seen) plus a small two-key `record` / `active`
+  variant (the existing helpers are single-int-keyed).
+- **New producer:** `RecordCostume(pokemonID, costume)` called from
+  `cmd/processor/pokemon.go` `ProcessPokemon` (only when `costume > 0`) — the
+  pokemon path does **not** currently feed `RecentActivity` at all (it only
+  touches `stats`), so this is new wiring on that handler.
+
+`RecentCostumes(pokemonID) []int` returns the recency-windowed costume ids for
+`!info`. In-memory only ⇒ resets on restart (same as the existing autocomplete
+recency); only costumes seen since startup appear — acceptable and
+self-maintaining.
 
 ### 8. v2 Pokémon API (`api/v2_pokemon.go`)
-Add `Costume *int` (nullable, doc: "Costume id; omit to match any (stored as
-9000 = any); 0 = no costume"). Wire `valueOr(req.Costume, 9000)` on write and
-`ptrUnless(row.Costume, 9000)` on read, mirroring `Form`.
+Add a nullable `Costume *int` field mirroring `Form`, and ensure it is fully
+writable and reads back with correct wildcard semantics:
+- **Create (`POST`) and update (`PUT`)** accept `costume`. `valueOr(req.Costume, 9000)`
+  on write: omitted / `null` ⇒ **9000 = any**; `0` ⇒ **no costume**; `N` ⇒ that
+  costume. So a client can *add* a costume filter, clear it (send `null`), or
+  demand no-costume (`0`).
+- **Read**: `ptrUnless(row.Costume, 9000)` — returned as `null` when at the
+  wildcard (9000), and as the literal value otherwise (including `0`). The null
+  field therefore round-trips as "match any", consistent with `form`.
+- Doc string states the 9000 / 0 / null semantics explicitly.
 
 ### 9. i18n
 New keys in `internal/i18n/locale/en.json`: `msg.info.sub.costumes`,
