@@ -57,6 +57,29 @@ func TestInfo_Pokemon_RecentlySeenForms(t *testing.T) {
 	}
 }
 
+// TestInfo_Pokemon_SectionOrder locks the approved layout: the recency
+// sections (recent forms → recent costumes) render BEFORE the full
+// "Available forms" list, so what's spawning now is surfaced first.
+func TestInfo_Pokemon_SectionOrder(t *testing.T) {
+	ctx := infoFormCtx(t)
+	ctx.RecentActivity.RecordForm(25, 680)
+
+	cmd := &InfoCommand{}
+	replies := cmd.Run(ctx, []string{"pikachu"})
+	if len(replies) == 0 {
+		t.Fatal("expected at least one reply, got none")
+	}
+	text := replies[0].Text
+	recentIdx := strings.Index(text, "Recently-seen forms")
+	availIdx := strings.Index(text, "Available forms")
+	if recentIdx == -1 || availIdx == -1 {
+		t.Fatalf("expected both recent-forms and available-forms sections present, got: %q", text)
+	}
+	if recentIdx > availIdx {
+		t.Errorf("recent forms must render before available forms; recentIdx=%d availIdx=%d in: %q", recentIdx, availIdx, text)
+	}
+}
+
 func TestInfo_Pokemon_NoRecentForms_SectionOmitted(t *testing.T) {
 	ctx := infoFormCtx(t)
 

@@ -291,16 +291,7 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
-	// Available forms for tracking
-	forms := c.availableForms(ctx, pokemonID)
-	if len(forms) > 0 {
-		sb.WriteByte('\n')
-		sb.WriteString(tr.T("msg.info.available_forms") + "\n")
-		for _, f := range forms {
-			sb.WriteString("  " + f + "\n")
-		}
-	}
-
+	// Recency sections first (what's spawning now), then the full form list.
 	// Recently-seen forms for tracking (form:<name>)
 	recentForms := c.availableRecentForms(ctx, pokemonID)
 	if len(recentForms) > 0 {
@@ -318,6 +309,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		sb.WriteString(tr.T("msg.info.available_costumes") + "\n")
 		for _, cst := range costumes {
 			sb.WriteString("  " + cst + "\n")
+		}
+	}
+
+	// Available forms for tracking (full list)
+	forms := c.availableForms(ctx, pokemonID)
+	if len(forms) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.available_forms") + "\n")
+		for _, f := range forms {
+			sb.WriteString("  " + f + "\n")
 		}
 	}
 
