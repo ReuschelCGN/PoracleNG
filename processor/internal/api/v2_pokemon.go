@@ -114,13 +114,13 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 	template := valueOr(req.Template, "")
 
 	row := db.MonsterTrackingAPI{
-		ID:                    humanID,
-		ProfileNo:             profileNo,
-		Ping:                  "", // server-managed
-		Template:              template,
-		Distance:              distance,
-		PokemonID:             req.PokemonID,
-		Form:                  valueOr(req.Form, 0),
+		ID:        humanID,
+		ProfileNo: profileNo,
+		Ping:      "", // server-managed
+		Template:  template,
+		Distance:  distance,
+		PokemonID: req.PokemonID,
+		Form:      valueOr(req.Form, 0),
 		// Stopgap: v2PokemonRule doesn't expose a Costume field yet, so pin to
 		// the 9000 "any costume" wildcard. Without this, the Go zero-value 0
 		// would fail to diff against 9000-backfilled existing rows and
