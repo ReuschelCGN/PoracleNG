@@ -334,6 +334,7 @@
   "arg.mega": "mega",
   "arg.prefix.mega": "mega",
   "arg.prefix.form": "form",
+  "arg.prefix.costume": "costume",
   "arg.prefix.template": "template",
   "arg.prefix.gym": "gym",
   "arg.prefix.move": "move",
