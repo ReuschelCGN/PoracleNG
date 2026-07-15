@@ -555,6 +555,7 @@
   "msg.info.available_forms": "Available forms:",
   "msg.info.recent_forms": "**Recently-seen forms:**",
   "msg.info.available_costumes": "**Recently-seen costumes:**",
+  "msg.info.recent_raid_costumes": "**Recently-seen raid costumes:**",
   "msg.info.costumes.header": "**Costumes** (`costume:<id>` to track):",
   "msg.info.no_costume_data": "No costume data loaded",
   "msg.info.hundo_cp": "100% IV CP:",

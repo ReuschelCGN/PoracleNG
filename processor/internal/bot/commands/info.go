@@ -312,6 +312,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	// Recently-seen raid costumes
+	raidCostumes := c.availableRaidCostumes(ctx, pokemonID)
+	if len(raidCostumes) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.recent_raid_costumes") + "\n")
+		for _, rc := range raidCostumes {
+			sb.WriteString("  " + rc + "\n")
+		}
+	}
+
 	// Available forms for tracking (full list)
 	forms := c.availableForms(ctx, pokemonID)
 	if len(forms) > 0 {
@@ -545,6 +555,25 @@ func (c *InfoCommand) availableCostumes(ctx *bot.CommandContext, pokemonID int) 
 	}
 	sort.Ints(ids)
 
+	tr := ctx.Tr()
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, fmt.Sprintf("%d — %s", id, costumeName(ctx, tr, id)))
+	}
+	return result
+}
+
+// availableRaidCostumes returns "id — name" display strings for costumes
+// recently seen on raid boss pokemonID (via RecentActivity), sorted by id.
+func (c *InfoCommand) availableRaidCostumes(ctx *bot.CommandContext, pokemonID int) []string {
+	if ctx.RecentActivity == nil {
+		return nil
+	}
+	ids := ctx.RecentActivity.RecentRaidCostumes(pokemonID)
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Ints(ids)
 	tr := ctx.Tr()
 	result := make([]string, 0, len(ids))
 	for _, id := range ids {
