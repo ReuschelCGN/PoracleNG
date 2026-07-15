@@ -69,6 +69,23 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*formReply}
 	}
 
+	// Resolve costume filter: 9000 = any (default when the arg is absent),
+	// 0 = no costume, N = specific costume. Mirrors applyFormFilter's
+	// not-found path for an unresolved name.
+	costume := 9000
+	if costumeArg, ok := parsed.Strings["costume"]; ok {
+		id, resolved := ctx.ArgMatcher.ResolveCostume(costumeArg, ctx.Language)
+		if !resolved {
+			return []bot.Reply{{
+				React: "🙅",
+				Text: tr.Tf("msg.costume_not_found",
+					ctx.EscapeForCode(costumeArg),
+					bot.CommandPrefix(ctx)),
+			}}
+		}
+		costume = id
+	}
+
 	// Reject bare "!track everything" with no meaningful filters for non-admins.
 	// Filters like IV, CP, level, PVP league, type, or gender meaningfully narrow results.
 	// "shiny" alone doesn't — almost everything can be shiny.
@@ -155,28 +172,22 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				ProfileNo: ctx.ProfileNo,
 				PokemonID: mon.PokemonID,
 				Form:      mon.Form,
-				// Stopgap: !track doesn't parse a costume: arg yet, so pin to
-				// the 9000 "any costume" wildcard. Without this, the Go
-				// zero-value 0 would fail to diff against 9000-backfilled
-				// existing rows and duplicate on every re-track (Costume has
-				// no `diff` tag — see db.MonsterTrackingAPI). A later task
-				// wires the real costume: arg through here.
-				Costume:  9000,
-				Ping:     pings,
-				Distance: filters.distance,
-				MinIV:    filters.minIV,
-				MaxIV:    filters.maxIV,
-				MinCP:    filters.minCP,
-				MaxCP:    filters.maxCP,
-				MinLevel: filters.minLevel,
-				MaxLevel: filters.maxLevel,
-				ATK:      filters.atk,
-				DEF:      filters.def,
-				STA:      filters.sta,
-				MaxATK:   filters.maxAtk,
-				MaxDEF:   filters.maxDef,
-				MaxSTA:   filters.maxSta,
-				Gender:   filters.gender,
+				Costume:   costume,
+				Ping:      pings,
+				Distance:  filters.distance,
+				MinIV:     filters.minIV,
+				MaxIV:     filters.maxIV,
+				MinCP:     filters.minCP,
+				MaxCP:     filters.maxCP,
+				MinLevel:  filters.minLevel,
+				MaxLevel:  filters.maxLevel,
+				ATK:       filters.atk,
+				DEF:       filters.def,
+				STA:       filters.sta,
+				MaxATK:    filters.maxAtk,
+				MaxDEF:    filters.maxDef,
+				MaxSTA:    filters.maxSta,
+				Gender:    filters.gender,
 				// !track no longer accepts weight constraints, but
 				// existing rows with non-default values still filter at
 				// match time so old rules don't fire spuriously when
@@ -297,6 +308,7 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
 		{Type: bot.ParamKeyword, Key: "arg.mega"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.costume"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.location"},
 		{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},

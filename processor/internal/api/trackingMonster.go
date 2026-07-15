@@ -471,6 +471,7 @@ func toMonsterTracking(api *db.MonsterTrackingAPI) *db.MonsterTracking {
 		Template:         api.Template,
 		PokemonID:        api.PokemonID,
 		Form:             api.Form,
+		Costume:          api.Costume,
 		MinIV:            api.MinIV,
 		MaxIV:            api.MaxIV,
 		MinCP:            api.MinCP,

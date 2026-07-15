@@ -12,6 +12,7 @@ func monsterAPIToTracking(a *db.MonsterTrackingAPI) *db.MonsterTracking {
 		ProfileNo:             a.ProfileNo,
 		PokemonID:             a.PokemonID,
 		Form:                  a.Form,
+		Costume:               a.Costume,
 		Distance:              a.Distance,
 		MinIV:                 a.MinIV,
 		MaxIV:                 a.MaxIV,
