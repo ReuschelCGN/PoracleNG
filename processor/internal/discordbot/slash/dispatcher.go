@@ -340,6 +340,18 @@ func (d *Dispatcher) routeAutocomplete(cmd, opt, focused, userLang string, ic *d
 		return autocomplete.IVRange(focused)
 	case opt == "boss" && cmd == "raid":
 		return autocomplete.RaidBoss(context.Background(), d.deps, focused, userLang)
+	// /raid costume is a flat, non-species-scoped list, same shape as
+	// /track costume. On empty focused with a resolvable sibling `boss`
+	// (raid has no `pokemon` option), it boosts that boss's recently-seen
+	// raid costumes to the top.
+	case opt == "costume" && cmd == "raid":
+		base := autocomplete.Costume(context.Background(), d.deps, focused, userLang)
+		if focused == "" && d.deps != nil && d.deps.RecentActivity != nil {
+			if pid := autocomplete.ResolvePokemonID(d.deps, siblingOptionString(ic, "boss")); pid > 0 {
+				base = autocomplete.PrependRecentCostumes(base, d.deps, d.deps.RecentActivity.RecentRaidCostumes(pid), userLang)
+			}
+		}
+		return base
 	case opt == "template":
 		return autocomplete.Template(context.Background(), d.deps, focused, dtsTypeFor(cmd), "discord", userLang)
 	case opt == "tracking" && cmd == "untrack":
