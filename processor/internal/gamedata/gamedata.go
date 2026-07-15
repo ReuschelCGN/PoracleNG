@@ -14,6 +14,7 @@
 //   - Item:     item_{id}
 //   - Weather:  weather_{id}
 //   - Grunt:    grunt_{id}
+//   - Costume:  costume_{id}
 package gamedata
 
 import (
@@ -22,6 +23,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 )
@@ -107,11 +110,19 @@ func Load(baseDir string) (*GameData, error) {
 
 	prevEvolutions := BuildPrevEvolutions(monsters)
 
+	// Costume data is additive display/tracking data, not core pokemon data,
+	// so a missing or malformed costumes.json degrades gracefully (Costumes
+	// stays nil) instead of hard-failing Load like the loaders above — but
+	// the failure is still surfaced via a warning so it doesn't go unnoticed.
 	var costumes map[int]CostumeInfo
 	costumeBytes, err := os.ReadFile(filepath.Join(rawDir, "costumes.json"))
-	if err == nil {
+	if err != nil {
+		log.Warnf("gamedata: failed to read costumes.json (continuing without costume data): %v", err)
+	} else {
 		var raw map[string]CostumeInfo
-		if json.Unmarshal(costumeBytes, &raw) == nil {
+		if err := json.Unmarshal(costumeBytes, &raw); err != nil {
+			log.Warnf("gamedata: failed to parse costumes.json (continuing without costume data): %v", err)
+		} else {
 			costumes = make(map[int]CostumeInfo, len(raw))
 			for _, c := range raw {
 				costumes[c.ID] = c
