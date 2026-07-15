@@ -522,6 +522,7 @@ type RaidTrackingAPI struct {
 	Team                  int         `db:"team"                    json:"team"                   diff:"match"`
 	PokemonID             int         `db:"pokemon_id"              json:"pokemon_id"`
 	Form                  int         `db:"form"                    json:"form"`
+	Costume               int         `db:"costume"                 json:"costume"`
 	Level                 int         `db:"level"                   json:"level"`
 	Exclusive             IntBool     `db:"exclusive"               json:"exclusive"`
 	Move                  int         `db:"move"                    json:"move"`
@@ -538,7 +539,7 @@ func SelectRaidsByIDProfile(db *sqlx.DB, id string, profileNo int) ([]RaidTracki
 	var raids []RaidTrackingAPI
 	err := db.Select(&raids,
 		`SELECT uid, id, profile_no, ping, clean, distance,
-		        COALESCE(template, '') AS template, team, pokemon_id, form,
+		        COALESCE(template, '') AS template, team, pokemon_id, form, costume,
 		        level, exclusive, move, evolution, gym_id, rsvp_changes,
 		        COALESCE(override_location_label, '') AS override_location_label,
 		        COALESCE(override_areas, '') AS override_areas
@@ -556,11 +557,11 @@ func SelectRaidsByIDProfile(db *sqlx.DB, id string, profileNo int) ([]RaidTracki
 func InsertRaid(db *sqlx.DB, raid *RaidTrackingAPI) (int64, error) {
 	result, err := db.Exec(
 		`INSERT INTO raid (id, profile_no, ping, clean, distance, template,
-		        team, pokemon_id, form, level, exclusive, move, evolution, gym_id, rsvp_changes,
+		        team, pokemon_id, form, costume, level, exclusive, move, evolution, gym_id, rsvp_changes,
 		        override_location_label, override_areas)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		raid.ID, raid.ProfileNo, raid.Ping, raid.Clean, raid.Distance, raid.Template,
-		raid.Team, raid.PokemonID, raid.Form, raid.Level, raid.Exclusive,
+		raid.Team, raid.PokemonID, raid.Form, raid.Costume, raid.Level, raid.Exclusive,
 		raid.Move, raid.Evolution, raid.GymID, raid.RSVPChanges,
 		nullIfEmpty(raid.OverrideLocationLabel), marshalOverrideAreas(raid.OverrideAreas))
 	if err != nil {
@@ -782,7 +783,7 @@ func SelectRaidsByID(db *sqlx.DB, id string) ([]RaidTrackingAPI, error) {
 	var raids []RaidTrackingAPI
 	err := db.Select(&raids,
 		`SELECT uid, id, profile_no, ping, clean, distance,
-		        COALESCE(template, '') AS template, team, pokemon_id, form,
+		        COALESCE(template, '') AS template, team, pokemon_id, form, costume,
 		        level, exclusive, move, evolution, gym_id, rsvp_changes,
 		        COALESCE(override_location_label, '') AS override_location_label,
 		        COALESCE(override_areas, '') AS override_areas
