@@ -301,6 +301,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	// Recently-seen forms for tracking (form:<name>)
+	recentForms := c.availableRecentForms(ctx, pokemonID)
+	if len(recentForms) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.recent_forms") + "\n")
+		for _, f := range recentForms {
+			sb.WriteString("  " + f + "\n")
+		}
+	}
+
 	// Recently-seen costumes for tracking (costume:<id>)
 	costumes := c.availableCostumes(ctx, pokemonID)
 	if len(costumes) > 0 {
@@ -480,6 +490,37 @@ func (c *InfoCommand) availableForms(ctx *bot.CommandContext, pokemonID int) []s
 	result := make([]string, len(entries))
 	for i, e := range entries {
 		result[i] = e.display
+	}
+	return result
+}
+
+// availableRecentForms returns "id — name" display strings for forms recently
+// seen on pokemonID (via RecentActivity), sorted by id. Mirrors
+// availableCostumes; returns nil when RecentActivity isn't wired or nothing
+// has been seen recently.
+func (c *InfoCommand) availableRecentForms(ctx *bot.CommandContext, pokemonID int) []string {
+	if ctx.RecentActivity == nil {
+		return nil
+	}
+	ids := ctx.RecentActivity.RecentForms(pokemonID)
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Ints(ids)
+
+	tr := ctx.Tr()
+	enTr := ctx.Translations.For("en")
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		key := gamedata.FormTranslationKey(id)
+		name := tr.T(key)
+		if name == key {
+			name = enTr.T(key)
+		}
+		if name == key {
+			continue // unresolved form name — skip rather than show "form_N"
+		}
+		result = append(result, fmt.Sprintf("%d — %s", id, name))
 	}
 	return result
 }
