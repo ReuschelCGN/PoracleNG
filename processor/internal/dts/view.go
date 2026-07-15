@@ -215,6 +215,18 @@ var typeAliases = map[string][]aliasPair{
 		// Color hex for the embed.
 		{"color", "gruntTypeColor"},
 	},
+	// Showcases render via their own template type. They only need pokestop
+	// identity aliases (the title hardcodes "Showcase"; grunt/reward fields
+	// don't apply). Note: the showcase webhook carries the name in `name`,
+	// which ProcessShowcase copies into `pokestop_name` on the base layer.
+	"showcase": {
+		{"pokestopName", "pokestop_name"},
+		{"pokestopUrl", "pokestop_url"},
+		{"pokestopId", "pokestop_id"},
+		{"name", "pokestop_name"},
+		{"url", "pokestop_url"},
+		{"displayType", "displayTypeId"},
+	},
 	"quest": {
 		{"pokestopName", "pokestop_name"},
 		{"pokestopUrl", "pokestop_url"},

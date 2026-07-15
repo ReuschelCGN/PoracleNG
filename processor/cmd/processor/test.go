@@ -221,6 +221,7 @@ func (ps *ProcessorService) processTestShowcase(raw json.RawMessage, target webh
 	enrichmentData, tilePending := ps.enricher.Invasion(
 		sc.Latitude, sc.Longitude, sc.ShowcaseExpiry, sc.PokestopID, sc.URL,
 		0, showcaseDisplayType, 0, enrichment.TileModeURL)
+	enrichmentData["pokestop_name"] = sc.Name
 	matched := []webhook.MatchedUser{target}
 
 	var perLang map[string]map[string]any

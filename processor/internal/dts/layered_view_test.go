@@ -51,6 +51,33 @@ func TestLayeredView_PerUserWins(t *testing.T) {
 	assert.Equal(t, "PerUser", v)
 }
 
+// TestLayeredView_ShowcaseAliases verifies the showcase template type resolves
+// the pokéstop identity aliases. Regression for the empty-title bug: the
+// showcase webhook carries the name in `name` (surfaced as pokestop_name on the
+// base layer by ProcessShowcase), and without a showcase alias table
+// {{pokestopName}} rendered empty.
+func TestLayeredView_ShowcaseAliases(t *testing.T) {
+	lv := newTestView(t, func(o *testViewOpts) {
+		o.templateType = "showcase"
+		o.base = map[string]any{
+			"pokestop_name": "Contest Hall",
+			"pokestop_url":  "http://img",
+			"pokestop_id":   "abc.16",
+			"displayTypeId": 9,
+		}
+	})
+	name, ok := lv.GetField("pokestopName")
+	require.True(t, ok)
+	assert.Equal(t, "Contest Hall", name)
+
+	dt, ok := lv.GetField("displayType")
+	require.True(t, ok)
+	assert.Equal(t, 9, dt)
+
+	url, _ := lv.GetField("pokestopUrl")
+	assert.Equal(t, "http://img", url)
+}
+
 func TestLayeredView_PerLangOverBase(t *testing.T) {
 	lv := newTestView(t, func(o *testViewOpts) {
 		o.base = map[string]any{"name": "Base"}

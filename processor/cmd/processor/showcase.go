@@ -143,6 +143,9 @@ func (ps *ProcessorService) ProcessShowcase(raw json.RawMessage) error {
 		baseEnrichment, tilePending := ps.enricher.Invasion(
 			sc.Latitude, sc.Longitude, sc.ShowcaseExpiry, sc.PokestopID, sc.URL,
 			0, showcaseDisplayType, 0, mode)
+		// The showcase webhook carries the pokéstop name in `name`; Invasion()
+		// takes no name arg, so surface it as pokestop_name for the alias.
+		baseEnrichment["pokestop_name"] = sc.Name
 
 		var perLang map[string]map[string]any
 		if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
