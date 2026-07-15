@@ -182,7 +182,7 @@ func (e *Enricher) MaxbattleTranslate(base map[string]any, mb *webhook.Maxbattle
 	}
 
 	if mb.BattlePokemonID > 0 {
-		TranslateMonsterNamesEng(m, gd, tr, e.Translations, mb.BattlePokemonID, mb.BattlePokemonForm, 0)
+		TranslateMonsterNamesEng(m, gd, tr, e.Translations, mb.BattlePokemonID, mb.BattlePokemonForm, 0, 0)
 		addGenerationFields(m, gd, tr, e.Translations.For("en"), mb.BattlePokemonID, mb.BattlePokemonForm)
 		addGenderFields(m, gd, tr, e.Translations.For("en"), mb.BattlePokemonGender)
 		// megaName: max-battle bosses are never mega/evolved, so it's the base
