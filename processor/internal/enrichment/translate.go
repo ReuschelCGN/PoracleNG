@@ -105,6 +105,22 @@ func buildFullName(tr *i18n.Translator, nameKeys gamedata.MonsterNameInfo, name,
 	return fullName
 }
 
+// costumeDisplayName returns the translated costume name for a costume id (via
+// costume_{id}), or "" when the id is ≤ 0 (no costume) or the key doesn't
+// resolve. Used to populate the standalone costumeName field consistently
+// across pokemon/raid/maxbattle enrichment (fullName already appends it inline
+// via buildFullName).
+func costumeDisplayName(tr *i18n.Translator, costume int) string {
+	if costume <= 0 || tr == nil {
+		return ""
+	}
+	key := gamedata.CostumeTranslationKey(costume)
+	if cn := tr.T(key); cn != "" && cn != key {
+		return cn
+	}
+	return ""
+}
+
 // BuildFullNameWithAlignment composes a localised pokemon display name
 // including the optional Shadow/Purified alignment prefix for non-normal
 // alignments. The base + form + mega composition is delegated to

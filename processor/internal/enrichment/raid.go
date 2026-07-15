@@ -259,8 +259,10 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 			return m
 		}
 
-		// Pokemon name
-		TranslateMonsterNamesEng(m, gd, tr, e.Translations, raid.PokemonID, raid.Form, raid.Evolution, 0)
+		// Pokemon name — thread the raid boss's costume (raid webhooks carry
+		// it) so fullName/fullNameEng include it parenthesised, like spawns.
+		TranslateMonsterNamesEng(m, gd, tr, e.Translations, raid.PokemonID, raid.Form, raid.Evolution, raid.Costume)
+		m["costumeName"] = costumeDisplayName(tr, raid.Costume)
 
 		enTr := e.Translations.For("en")
 
@@ -280,23 +282,18 @@ func (e *Enricher) RaidTranslate(base map[string]any, raid *webhook.RaidWebhook,
 		// Gender
 		addGenderFields(m, gd, tr, enTr, raid.Gender)
 
-		// Evolution name + megaName
+		// Evolution name (evolved bosses only). Prefix comes from
+		// pogo-translations evo_N ("Mega", "Mega X", "Primal", ...), not
+		// util.json's English Evolution.Name.
 		if raid.Evolution > 0 {
-			// Evolution prefix comes from pogo-translations evo_N
-			// ("Mega", "Mega X", "Primal", ...), not util.json's English
-			// Evolution.Name.
 			if _, ok := gd.Util.Evolution[raid.Evolution]; ok {
 				m["evolutionName"] = tr.T(fmt.Sprintf("evo_%d", raid.Evolution))
 			}
-			// megaName = fullName when evolved (mega/primal)
-			if fn, ok := m["fullName"].(string); ok {
-				m["megaName"] = fn
-			}
-		} else {
-			// megaName = base pokemon name when not evolved
-			if n, ok := m["name"].(string); ok {
-				m["megaName"] = n
-			}
+		}
+		// megaName is the full display name: base/mega name + form + costume
+		// (== fullName). Non-evolved bosses no longer drop the form/costume.
+		if fn, ok := m["fullName"].(string); ok {
+			m["megaName"] = fn
 		}
 
 		// Weakness

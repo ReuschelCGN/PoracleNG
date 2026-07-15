@@ -167,10 +167,12 @@ var monsterFields = []FieldDef{
 var raidFields = []FieldDef{
 	// Identity
 	{Name: "name", Type: "string", Description: "Translated pokemon name", Category: "identity", Preferred: true},
-	{Name: "fullName", Type: "string", Description: "Name + form", Category: "identity", Preferred: true},
+	{Name: "fullName", Type: "string", Description: "Name + form + costume (costume parenthesised)", Category: "identity", Preferred: true},
+	{Name: "megaName", Type: "string", Description: "Full display name incl. mega evolution + form + costume (equals fullName)", Category: "identity", Preferred: true},
 	{Name: "formName", Type: "string", Description: "Translated form name", Category: "identity"},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when none); fullName/megaName already include it parenthesised", Category: "identity"},
 	{Name: "nameEng", Type: "string", Description: "English pokemon name", Category: "identity"},
-	{Name: "fullNameEng", Type: "string", Description: "English name + form", Category: "identity"},
+	{Name: "fullNameEng", Type: "string", Description: "English name + form + costume", Category: "identity"},
 	{Name: "pokemonId", Type: "int", Description: "Pokemon ID", Category: "identity"},
 	{Name: "level", Type: "int", Description: "Raid level", Category: "identity", Preferred: true},
 	{Name: "levelName", Type: "string", Description: "Raid level name", Category: "identity", Preferred: true},
@@ -396,7 +398,9 @@ var fortUpdateFields = []FieldDef{
 
 var maxbattleFields = []FieldDef{
 	{Name: "name", Type: "string", Description: "Translated pokemon name", Category: "identity", Preferred: true},
-	{Name: "fullName", Type: "string", Description: "Name + form", Category: "identity", Preferred: true},
+	{Name: "fullName", Type: "string", Description: "Name + form + costume (costume parenthesised)", Category: "identity", Preferred: true},
+	{Name: "megaName", Type: "string", Description: "Full display name incl. form + costume (equals fullName)", Category: "identity", Preferred: true},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when none); fullName/megaName already include it parenthesised", Category: "identity"},
 	{Name: "pokemonId", Type: "int", Description: "Pokemon ID", Category: "identity"},
 	{Name: "level", Type: "int", Description: "Battle level", Category: "identity", Preferred: true},
 	{Name: "pokestopName", Type: "string", Description: "Location name", Category: "location", Preferred: true},

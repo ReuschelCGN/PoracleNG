@@ -349,14 +349,7 @@ func (e *Enricher) PokemonTranslate(base map[string]any, pokemon *webhook.Pokemo
 	TranslateMonsterNamesEng(m, gd, tr, e.Translations, pokemon.PokemonID, pokemon.Form, 0, pokemon.Costume)
 
 	// Costume name — empty when unset (0) or the translation key doesn't resolve.
-	costumeName := ""
-	if pokemon.Costume > 0 {
-		costumeKey := gamedata.CostumeTranslationKey(pokemon.Costume)
-		if cn := tr.T(costumeKey); cn != "" && cn != costumeKey {
-			costumeName = cn
-		}
-	}
-	m["costumeName"] = costumeName
+	m["costumeName"] = costumeDisplayName(tr, pokemon.Costume)
 
 	// Type names
 	TranslateTypeNames(m, tr, enTr, monster.Types)
