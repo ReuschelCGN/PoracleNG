@@ -5482,6 +5482,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -5786,6 +5794,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -6087,6 +6103,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -8156,6 +8180,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -10123,6 +10155,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -11111,6 +11151,14 @@
             "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "costume": {
+            "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+            "format": "int64",
+            "type": [
+              "integer",
               "null"
             ]
           },
