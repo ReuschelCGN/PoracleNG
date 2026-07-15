@@ -255,6 +255,18 @@ func (c *RaidCommand) removeRaids(ctx *bot.CommandContext, parsed *bot.ParsedArg
 
 	tr := ctx.Tr()
 
+	// Remove-by-UID targets specific rules directly and doesn't go through
+	// the pokemon/level/everything selection below, so a costume: arg has
+	// nothing to filter — resolve it only for the selection-based path
+	// (avoids rejecting `id:N costume:bad` and silently ignoring
+	// `id:N costume:1`).
+	if len(parsed.RemoveUIDs) > 0 {
+		return removeByUIDs(ctx, ctx.Tracking.Raids, parsed.RemoveUIDs,
+			store.RaidGetUID,
+			func(r *db.RaidTrackingAPI) string { return ctx.RowText.RaidRowText(tr, raidAPIToTracking(r)) },
+		)
+	}
+
 	// Costume filter: when present, narrows removal to rules with this
 	// exact costume ID, in addition to whatever pokemon/level/everything
 	// selection matched below. Mirrors untrack.go's costume-removal idiom.
@@ -270,13 +282,6 @@ func (c *RaidCommand) removeRaids(ctx *bot.CommandContext, parsed *bot.ParsedArg
 			}}
 		}
 		costumeFilter = &id
-	}
-
-	if len(parsed.RemoveUIDs) > 0 {
-		return removeByUIDs(ctx, ctx.Tracking.Raids, parsed.RemoveUIDs,
-			store.RaidGetUID,
-			func(r *db.RaidTrackingAPI) string { return ctx.RowText.RaidRowText(tr, raidAPIToTracking(r)) },
-		)
 	}
 
 	tracked, err := ctx.Tracking.Raids.SelectByIDProfile(ctx.TargetID, ctx.ProfileNo)

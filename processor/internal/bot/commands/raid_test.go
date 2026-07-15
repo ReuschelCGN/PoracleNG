@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -163,6 +164,25 @@ func TestRaid_Remove(t *testing.T) {
 
 	rows, _ = ctx.Tracking.Raids.SelectByIDProfile("user1", 1)
 	assert.Len(t, rows, 0)
+}
+
+// TestRaid_RemoveByUID_IgnoresBadCostume verifies that `!raid remove id:N`
+// deletes the rule even when an unresolvable costume: arg is also present.
+// Remove-by-UID targets a specific rule directly and never consults the
+// costume filter, so a costume arg — valid or not — must not block it.
+func TestRaid_RemoveByUID_IgnoresBadCostume(t *testing.T) {
+	ctx := raidCtx(t)
+	runRaid(t, ctx, "25")
+	rows, _ := ctx.Tracking.Raids.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	uid := rows[0].UID
+
+	replies := runRaid(t, ctx, fmt.Sprintf("remove id:%d costume:bogus", uid))
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "id: removal must not be blocked by an unresolvable costume arg, reply: %s", replies[0].Text)
+
+	rows, _ = ctx.Tracking.Raids.SelectByIDProfile("user1", 1)
+	assert.Len(t, rows, 0, "rule should have been removed by UID despite the bad costume arg")
 }
 
 func TestRaid_InvalidTemplate_NonAdmin(t *testing.T) {
