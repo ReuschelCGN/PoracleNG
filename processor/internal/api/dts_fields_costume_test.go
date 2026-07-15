@@ -2,15 +2,7 @@ package api
 
 import "testing"
 
-// hasFieldDef reports whether fields contains an entry with the given name.
-func hasFieldDef(fields []FieldDef, name string) bool {
-	for _, f := range fields {
-		if f.Name == name {
-			return true
-		}
-	}
-	return false
-}
+// hasFieldDef is defined in dts_fields_showcase_test.go (same test package).
 
 func TestMonsterFields_Costume(t *testing.T) {
 	m := fieldsByType["monster"]
