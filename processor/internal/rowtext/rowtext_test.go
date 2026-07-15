@@ -653,6 +653,32 @@ func TestMonsterRowText_MegaMode(t *testing.T) {
 	}
 }
 
+func TestRaidRowText_Costume(t *testing.T) {
+	tr := i18n.NewTranslator("en", map[string]string{
+		"poke_25":        "Pikachu",
+		"costume_1":      "Holiday 2016",
+		"msg.no_costume": "no costume",
+	})
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{{ID: 25, Form: 0}: {PokemonID: 25}},
+		Costumes: map[int]gamedata.CostumeInfo{1: {ID: 1, Name: "Holiday 2016"}},
+	}
+	g := &Generator{GD: gd, DefaultTemplateName: "1"}
+
+	// costume N -> shows the name
+	if got := g.RaidRowText(tr, &db.RaidTracking{PokemonID: 25, Level: 5, Costume: 1, Move: 9000, Evolution: 9000, Template: "1"}); !strings.Contains(got, "Holiday 2016") {
+		t.Errorf("costume 1 row should contain the costume name, got: %q", got)
+	}
+	// costume 0 -> "no costume"
+	if got := g.RaidRowText(tr, &db.RaidTracking{PokemonID: 25, Level: 5, Costume: 0, Move: 9000, Evolution: 9000, Template: "1"}); !strings.Contains(got, "no costume") {
+		t.Errorf("costume 0 row should contain 'no costume', got: %q", got)
+	}
+	// costume 9000 (any) -> nothing costume-related
+	if got := g.RaidRowText(tr, &db.RaidTracking{PokemonID: 25, Level: 5, Costume: 9000, Move: 9000, Evolution: 9000, Template: "1"}); strings.Contains(got, "Holiday 2016") || strings.Contains(got, "no costume") {
+		t.Errorf("costume 9000 row should not mention costume, got: %q", got)
+	}
+}
+
 func TestUcFirst(t *testing.T) {
 	tests := []struct {
 		input, want string
