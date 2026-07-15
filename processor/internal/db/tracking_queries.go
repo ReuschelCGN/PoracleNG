@@ -405,10 +405,20 @@ type MonsterTrackingAPI struct {
 	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
 }
 
-// UnmarshalJSON defaults an absent costume to the 9000 wildcard ("any") rather
-// than the Go zero-value 0 ("no costume"), so v1 clients (ReactMap/PoracleWeb)
-// that don't send the field never create no-costume rules. Present values pass
-// through verbatim.
+// UnmarshalJSON pre-seeds Costume to the 9000 wildcard ("any") before decoding,
+// so a body that omits "costume" yields 9000 rather than the Go zero-value 0
+// ("no costume") — otherwise a v1 client that doesn't know about costumes would
+// silently create no-costume rules. Present values pass through verbatim.
+//
+// This is a defence-in-depth guard, NOT the live default: no production code
+// unmarshals JSON directly into MonsterTrackingAPI. The authoritative
+// absent-costume defaults live at the actual decode sites —
+//   - v1: cleanRow's req.Costume.intValue(9000) (internal/api/trackingMonster.go)
+//   - v2: translateV2Pokemon's valueOr(req.Costume, 9000) (internal/api/v2_pokemon.go)
+// If you change the absent-costume behaviour, change those. Because this struct's
+// fields are plain int/string (no flexInt/flexBool), this method must NOT be
+// repurposed as the primary v1 parse path — it would drop the lenient
+// numeric/bool coercion ReactMap/PoracleWeb rely on.
 func (m *MonsterTrackingAPI) UnmarshalJSON(data []byte) error {
 	type alias MonsterTrackingAPI
 	tmp := alias{Costume: 9000}

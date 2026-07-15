@@ -7,6 +7,11 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/db"
 )
 
+// TestMonsterTrackingAPI_CostumeDefaults pins the defence-in-depth
+// UnmarshalJSON guard on the struct itself. It does NOT exercise the live v1
+// create path (that decodes into monsterInsertRequest and defaults via
+// cleanRow's intValue(9000)) — that end-to-end behaviour is covered by
+// TestCreateMonster_CostumeDefaultIsIdempotent.
 func TestMonsterTrackingAPI_CostumeDefaults(t *testing.T) {
 	cases := []struct {
 		name string

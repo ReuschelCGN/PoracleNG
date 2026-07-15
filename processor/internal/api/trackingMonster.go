@@ -248,6 +248,8 @@ func HandleCreateMonster(deps *TrackingDeps) gin.HandlerFunc {
 				// (ReactMap/PoracleWeb, pre-costume-feature scripts) diff cleanly
 				// against existing 9000-backfilled rows instead of being classified
 				// as new inserts (Costume has no `diff` tag — see db.MonsterTrackingAPI).
+				// This is the AUTHORITATIVE v1 absent-costume default (the
+				// MonsterTrackingAPI.UnmarshalJSON guard is defence-in-depth only).
 				Costume:             req.Costume.intValue(9000),
 				Clean:               req.Clean.intValue(0),
 				MinWeight:           req.MinWeight.intValue(0),
