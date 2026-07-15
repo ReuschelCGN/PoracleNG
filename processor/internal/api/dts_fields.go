@@ -153,6 +153,7 @@ var monsterFields = []FieldDef{
 	{Name: "sizeName", Type: "string", Description: "Size category name", Category: "other"},
 	{Name: "rarityName", Type: "string", Description: "Rarity group name", Category: "other"},
 	{Name: "costume", Type: "int", Description: "Costume ID", Category: "other"},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when no costume). Note: fullName already includes it parenthesised.", Category: "other"},
 	{Name: "shinyPossible", Type: "bool", Description: "Can be shiny", Category: "other"},
 	{Name: "weaknessList", Type: "array", Description: "Type weakness list", Category: "other"},
 	{Name: "weaknessEmoji", Type: "string", Description: "Flat string of all weakness multipliers + type emoji (e.g. \"2x💧⚡ 4x🪨 \").", Category: "other"},
