@@ -66,6 +66,73 @@
   },
   {
     "type": "pokemon",
+    "test": "costume",
+    "location": "current",
+    "webhook": {
+      "spawnpoint_id": "47decbc1f19",
+      "pokestop_id": "None",
+      "pokestop_name": null,
+      "encounter_id": "4387497020362672221",
+      "pokemon_id": 25,
+      "latitude": 51.274644760338,
+      "longitude": 1.0592872653170444,
+      "disappear_time": 1775478965,
+      "disappear_time_verified": true,
+      "first_seen": 1775475471,
+      "last_modified_time": 1775475472,
+      "gender": 1,
+      "cp": 718,
+      "form": 598,
+      "costume": 1,
+      "individual_attack": 3,
+      "individual_defense": 1,
+      "individual_stamina": 5,
+      "pokemon_level": 18,
+      "move_1": 219,
+      "move_2": 45,
+      "weight": 5.309950828552246,
+      "size": 3,
+      "height": 0.3768548369407654,
+      "weather": 0,
+      "capture_1": 0,
+      "capture_2": 0,
+      "capture_3": 0,
+      "shiny": false,
+      "display_pokemon_id": null,
+      "display_pokemon_form": null,
+      "is_event": 0,
+      "seen_type": "encounter",
+      "pvp": {
+        "great": [
+          {
+            "pokemon": 25,
+            "form": 598,
+            "cap": 50,
+            "value": 1695271,
+            "level": 45.5,
+            "cp": 1496,
+            "percentage": 0.94663,
+            "rank": 2154,
+            "capped": true
+          }
+        ],
+        "ultra": [
+          {
+            "pokemon": 25,
+            "form": 598,
+            "cap": 50,
+            "value": 1833475,
+            "level": 50,
+            "cp": 1580,
+            "percentage": 0.78296,
+            "rank": 3941
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "pokemon",
     "test": "hundo",
     "location": "current",
     "webhook": {
