@@ -744,3 +744,84 @@ func firstName(c []*discordgo.ApplicationCommandOptionChoice) string {
 	}
 	return c[0].Name
 }
+
+// costumeFormRouteDeps builds a minimal BotDeps with a translated pokemon,
+// costumes, and forms, plus a primed RecentActivity tracker — used for
+// testing the /track form and /track costume recency boost that cascades
+// from the sibling `pokemon` option.
+func costumeFormRouteDeps(t *testing.T) *bot.BotDeps {
+	t.Helper()
+	bundle := i18n.NewBundle()
+	bundle.AddTranslator(i18n.NewTranslator("en", map[string]string{
+		"poke_25":   "Pikachu",
+		"costume_1": "Holiday 2016",
+		"costume_8": "Flying",
+		"form_598":  "Normal",
+		"form_680":  "Winter 2023",
+	}))
+	bundle.LinkFallbacks()
+	gd := &gamedata.GameData{
+		Costumes: map[int]gamedata.CostumeInfo{
+			1: {ID: 1, Name: "Holiday 2016"},
+			8: {ID: 8, Name: "Flying"},
+		},
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 25, Form: 598}: {PokemonID: 25},
+			{ID: 25, Form: 680}: {PokemonID: 25},
+		},
+	}
+	ra := tracker.NewRecentActivity()
+	ra.RecordCostume(25, 1) // "Holiday 2016" — sorts after "Flying", proves boost
+	ra.RecordForm(25, 680)  // "Winter 2023" — sorts after "Normal", proves boost
+	return &bot.BotDeps{Translations: bundle, GameData: gd, Cfg: &config.Config{}, RecentActivity: ra}
+}
+
+func trackPokemonSiblingIC(pokemon string) *discordgo.InteractionCreate {
+	return &discordgo.InteractionCreate{Interaction: &discordgo.Interaction{
+		Type: discordgo.InteractionApplicationCommandAutocomplete,
+		Data: discordgo.ApplicationCommandInteractionData{
+			Name: "track",
+			Options: []*discordgo.ApplicationCommandInteractionDataOption{
+				{Name: "pokemon", Type: discordgo.ApplicationCommandOptionString, Value: pokemon},
+			},
+		},
+	}}
+}
+
+func TestRouteAutocomplete_TrackCostume_BoostsRecentForPokemon(t *testing.T) {
+	d := NewDispatcher(Config{})
+	d.bundle = testBundle(t)
+	d.cfgRoot = &config.Config{}
+	d.deps = costumeFormRouteDeps(t)
+	ic := trackPokemonSiblingIC("pikachu")
+	out := d.routeAutocomplete("track", "costume", "", "en", ic)
+	if len(out) == 0 || out[0].Name != "Holiday 2016" {
+		t.Errorf("/track costume empty focused: first=%+v, want Holiday 2016 (recent costume 1 for pikachu)", firstName(out))
+	}
+}
+
+func TestRouteAutocomplete_TrackForm_BoostsRecentForPokemon(t *testing.T) {
+	d := NewDispatcher(Config{})
+	d.bundle = testBundle(t)
+	d.cfgRoot = &config.Config{}
+	d.deps = costumeFormRouteDeps(t)
+	ic := trackPokemonSiblingIC("pikachu")
+	out := d.routeAutocomplete("track", "form", "", "en", ic)
+	if len(out) == 0 || out[0].Name != "Winter 2023" {
+		t.Errorf("/track form empty focused: first=%+v, want Winter 2023 (recent form 680 for pikachu)", firstName(out))
+	}
+}
+
+func TestRouteAutocomplete_TrackCostume_NoPokemonNoBoost(t *testing.T) {
+	d := NewDispatcher(Config{})
+	d.bundle = testBundle(t)
+	d.cfgRoot = &config.Config{}
+	d.deps = costumeFormRouteDeps(t)
+	// No sibling pokemon → flat alphabetical list ("Flying" first), recency not
+	// applied. The recent costume ("Holiday 2016", id 1) must NOT be boosted to
+	// the top.
+	out := d.routeAutocomplete("track", "costume", "", "en", trackPokemonSiblingIC(""))
+	if len(out) == 0 || out[0].Name != "Flying" {
+		t.Errorf("/track costume with no pokemon should be flat/alphabetical (Flying first), got first=%+v", firstName(out))
+	}
+}
