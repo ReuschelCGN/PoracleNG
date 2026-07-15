@@ -53,6 +53,9 @@ func (ps *ProcessorService) ProcessPokemon(raw json.RawMessage) error {
 		ivScanned := pokemon.IndividualAttack != nil
 		isShiny := pokemon.Shiny != nil && *pokemon.Shiny
 		ps.stats.RecordSighting(pokemon.PokemonID, ivScanned, isShiny)
+		if ps.recentActivity != nil && pokemon.Costume > 0 {
+			ps.recentActivity.RecordCostume(pokemon.PokemonID, pokemon.Costume)
+		}
 
 		// Duplicate check
 		verified := pokemon.Verified || pokemon.DisappearTimeVerified

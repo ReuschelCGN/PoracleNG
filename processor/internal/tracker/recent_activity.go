@@ -12,30 +12,32 @@ const recentActivityTTL = 6 * time.Hour
 // Entries expire after recentActivityTTL and are pruned lazily on read.
 // Intended for slash command autocomplete to prioritise currently-active entities.
 type RecentActivity struct {
-	mu              sync.Mutex
-	raidBosses      map[int]time.Time
-	maxBattleBosses map[int]time.Time
-	questPokemon    map[int]time.Time
-	questItems      map[int]time.Time
-	questCandy      map[int]time.Time
-	questMega       map[int]time.Time
-	questXL         map[int]time.Time
-	invasionGrunts  map[int]time.Time
-	now             func() time.Time
+	mu                sync.Mutex
+	raidBosses        map[int]time.Time
+	maxBattleBosses   map[int]time.Time
+	questPokemon      map[int]time.Time
+	questItems        map[int]time.Time
+	questCandy        map[int]time.Time
+	questMega         map[int]time.Time
+	questXL           map[int]time.Time
+	invasionGrunts    map[int]time.Time
+	costumesByPokemon map[int]map[int]time.Time
+	now               func() time.Time
 }
 
 // NewRecentActivity creates an empty RecentActivity tracker.
 func NewRecentActivity() *RecentActivity {
 	return &RecentActivity{
-		raidBosses:      make(map[int]time.Time),
-		maxBattleBosses: make(map[int]time.Time),
-		questPokemon:    make(map[int]time.Time),
-		questItems:      make(map[int]time.Time),
-		questCandy:      make(map[int]time.Time),
-		questMega:       make(map[int]time.Time),
-		questXL:         make(map[int]time.Time),
-		invasionGrunts:  make(map[int]time.Time),
-		now:             time.Now,
+		raidBosses:        make(map[int]time.Time),
+		maxBattleBosses:   make(map[int]time.Time),
+		questPokemon:      make(map[int]time.Time),
+		questItems:        make(map[int]time.Time),
+		questCandy:        make(map[int]time.Time),
+		questMega:         make(map[int]time.Time),
+		questXL:           make(map[int]time.Time),
+		invasionGrunts:    make(map[int]time.Time),
+		costumesByPokemon: make(map[int]map[int]time.Time),
+		now:               time.Now,
 	}
 }
 
@@ -56,6 +58,33 @@ func (r *RecentActivity) ActiveQuestCandy() []int      { return r.active(r.quest
 func (r *RecentActivity) ActiveQuestMega() []int       { return r.active(r.questMega) }
 func (r *RecentActivity) ActiveQuestXL() []int         { return r.active(r.questXL) }
 func (r *RecentActivity) ActiveInvasionGrunts() []int  { return r.active(r.invasionGrunts) }
+
+// RecordCostume marks costume as recently seen on pokemonID.
+func (r *RecentActivity) RecordCostume(pokemonID, costume int) {
+	if pokemonID <= 0 || costume <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	inner := r.costumesByPokemon[pokemonID]
+	if inner == nil {
+		inner = make(map[int]time.Time)
+		r.costumesByPokemon[pokemonID] = inner
+	}
+	inner[costume] = r.now()
+}
+
+// RecentCostumes returns the recency-windowed list of costume IDs recently
+// seen on pokemonID.
+func (r *RecentActivity) RecentCostumes(pokemonID int) []int {
+	r.mu.Lock()
+	inner := r.costumesByPokemon[pokemonID]
+	r.mu.Unlock()
+	if inner == nil {
+		return nil
+	}
+	return r.active(inner) // reuse the existing recency window logic
+}
 
 func (r *RecentActivity) record(m map[int]time.Time, id int) {
 	if id <= 0 {
