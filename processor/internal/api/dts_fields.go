@@ -288,8 +288,13 @@ var incidentFields = []FieldDef{
 	{Name: "disappearTime", Type: "string", Description: "Incident expiry time", Category: "time", Preferred: true},
 	{Name: "time", Type: "string", Description: "Expiry time (alias for disappearTime)", Category: "time", Preferred: true},
 	{Name: "expirationTimestamp", Type: "int", Description: "Unix expiry timestamp (for Discord <t:N:R>)", Category: "time"},
-	// Showcase fields (displayType == 9)
-	{Name: "showcasePresent", Type: "bool", Description: "True when showcase_rankings data is present (displayType 9 Showcase only). Guard all showcase blocks with {{#if showcasePresent}}.", Category: "showcase", Preferred: true},
+}
+
+// showcaseFields is the extra surface for the dedicated "showcase" template type
+// (a specialised incident display: focus + leaderboard). The showcase type also
+// includes all incidentFields (pokestop identity, time, maps).
+var showcaseFields = []FieldDef{
+	{Name: "showcasePresent", Type: "bool", Description: "True when showcase_rankings data is present. Guard leaderboard blocks with {{#if showcasePresent}}.", Category: "showcase", Preferred: true},
 	{Name: "showcaseTotalEntries", Type: "int", Description: "Total number of contestants in the Showcase.", Category: "showcase", Preferred: true},
 	{Name: "showcaseLastUpdate", Type: "int", Description: "Unix timestamp of the last leaderboard update.", Category: "showcase"},
 	{Name: "showcaseLastUpdateFormatted", Type: "string", Description: "Formatted last-update time using the operator's configured time layout.", Category: "showcase"},
@@ -308,7 +313,13 @@ var incidentSnippets = []Snippet{
 	{Label: "Countdown", Insert: "<t:{{expirationTimestamp}}:R>", Description: "Discord relative countdown", Category: "incident", Platform: "discord"},
 	{Label: "Kecleon dispatch (numeric)", Insert: "{{#if (eq displayType 8)}}🦎{{else}}✨{{/if}}", Description: "Branch on specific incident type using numeric displayType", Category: "incident"},
 	{Label: "Kecleon dispatch (slug)", Insert: "{{#if (eq gruntType \"kecleon\")}}🦎{{else}}✨{{/if}}", Description: "Branch on specific incident type using gruntType slug", Category: "incident"},
-	{Label: "Showcase leaderboard", Insert: "{{#if showcasePresent}}\n🏆 Top contestants ({{showcaseTotalEntries}} entries):\n{{#each showcase}}{{rank}}. {{fullName}}{{#if shiny}} ✨{{/if}}{{#if costumeName}} ({{costumeName}}){{/if}} — {{scoreFormatted}}\n{{/each}}{{/if}}", Description: "Full leaderboard block — only rendered for Showcase incidents", Category: "showcase"},
+}
+
+// showcaseSnippets are the showcase-only building blocks (the showcase type
+// also inherits incidentSnippets for the title/time lines).
+var showcaseSnippets = []Snippet{
+	{Label: "Showcase focus", Insert: "{{#if showcaseFocusPresent}}🎯 Featuring {{showcaseFocusCategory}}{{#if showcaseFocusName}}: {{showcaseFocusName}}{{/if}}{{/if}}", Description: "What the contest is featuring (e.g. \"Type: Steel\")", Category: "showcase"},
+	{Label: "Showcase leaderboard", Insert: "{{#if showcasePresent}}\n🏆 Top contestants ({{showcaseTotalEntries}} entries):\n{{#each showcase}}{{rank}}. {{fullName}}{{#if shiny}} ✨{{/if}}{{#if costumeName}} ({{costumeName}}){{/if}} — {{scoreFormatted}}\n{{/each}}{{/if}}", Description: "Full leaderboard block", Category: "showcase"},
 	{Label: "Showcase winner only", Insert: "{{#if showcasePresent}}🏆 {{showcaseFirst.fullName}} ({{showcaseFirst.scoreFormatted}}){{/if}}", Description: "Single-line winner entry", Category: "showcase"},
 }
 
@@ -742,6 +753,7 @@ var fieldsByType = map[string]fieldEntry{
 	"questSummary":   {Fields: append(commonFields, questSummaryFields...), BlockScopes: questSummaryBlockScopes, Snippets: append(commonSnippets, questSnippets...)},
 	"invasion":       {Fields: append(commonFields, invasionFields...), Snippets: append(commonSnippets, invasionSnippets...)},
 	"incident":       {Fields: append(commonFields, incidentFields...), Snippets: append(commonSnippets, incidentSnippets...)},
+	"showcase":       {Fields: append(append(commonFields, incidentFields...), showcaseFields...), Snippets: append(append(commonSnippets, incidentSnippets...), showcaseSnippets...)},
 	"lure":           {Fields: append(commonFields, lureFields...), Snippets: append(commonSnippets, lureSnippets...)},
 	"nest":           {Fields: append(commonFields, nestFields...), Snippets: commonSnippets},
 	"gym":            {Fields: append(commonFields, gymFields...), Snippets: commonSnippets},

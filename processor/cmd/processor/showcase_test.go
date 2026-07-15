@@ -70,7 +70,7 @@ func TestProcessShowcase_Wiring(t *testing.T) {
 		"CheckShowcase(sc.PokestopID, sc.ShowcaseExpiry",   // dedup with fingerprint
 		`EditKey: fmt.Sprintf("showcase:%s:%d"`,            // edit-mode key
 		"OverrideCleanTTH: sc.ShowcaseExpiry",              // clean-deletion TTH = contest end
-		`TemplateType: "incident"`,                         // reuse the incident template
+		`TemplateType: "showcase"`,                         // dedicated showcase display model
 	} {
 		if !strings.Contains(n, want) {
 			t.Errorf("showcase.go missing wiring: %q", want)

@@ -305,7 +305,7 @@ func resolveDTSType(hookType string, webhook map[string]any) string {
 	case "max_battle":
 		return "maxbattle"
 	case "showcase":
-		return "incident"
+		return "showcase"
 	default:
 		return hookType // quest, gym, nest, egg, invasion, lure — match 1:1
 	}

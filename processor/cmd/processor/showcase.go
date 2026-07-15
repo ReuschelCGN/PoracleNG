@@ -163,8 +163,12 @@ func (ps *ProcessorService) ProcessShowcase(raw json.RawMessage) error {
 		webhookFields := parseWebhookFields(raw)
 
 		ps.renderCh <- RenderJob{
+			// AlertType stays "incident" — showcases are tracked, rate-limited
+			// and blocked as incidents. TemplateType is the specialised
+			// "showcase" display model (leaderboard + focus), distinct from the
+			// plain incident card used by Gold-Stop / Kecleon.
 			AlertType:         "incident",
-			TemplateType:      "incident",
+			TemplateType:      "showcase",
 			Enrichment:        baseEnrichment,
 			PerLangEnrichment: perLang,
 			WebhookFields:     webhookFields,

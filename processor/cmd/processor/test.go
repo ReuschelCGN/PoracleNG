@@ -239,7 +239,7 @@ func (ps *ProcessorService) processTestShowcase(raw json.RawMessage, target webh
 	webhookFields := parseWebhookFields(raw)
 	ps.renderCh <- RenderJob{
 		AlertType:         "incident",
-		TemplateType:      "incident",
+		TemplateType:      "showcase",
 		Enrichment:        enrichmentData,
 		PerLangEnrichment: perLang,
 		WebhookFields:     webhookFields,
@@ -503,7 +503,7 @@ func resolveDTSTypeFromRaw(webhookType string, raw json.RawMessage) string {
 	case "max_battle":
 		return "maxbattle"
 	case "showcase":
-		return "incident"
+		return "showcase"
 	default:
 		return webhookType
 	}

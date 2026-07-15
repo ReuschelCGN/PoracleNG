@@ -863,7 +863,9 @@ These aliases are added on top of the pokestop / location / time / weather field
 
 ### Showcase fields
 
-These fields are only populated for **Showcase** incidents (`displayType == 9`). Always guard showcase blocks with `{{#if showcasePresent}}`.
+**Showcases render via their own `type: "showcase"` template** — a specialised display model (focus + leaderboard), distinct from the plain `incident` card used by Gold-Stop / Kecleon. A bundled default `showcase` template ships in `fallbacks/dts.json`; operators can override it like any other type. (Showcases are still *tracked* as incidents — a `grunt_type="showcase"` incident rule — only the rendered template differs.) The fields below belong to the `showcase` template type.
+
+Always guard the leaderboard with `{{#if showcasePresent}}` and the focus line with `{{#if showcaseFocusPresent}}`.
 
 #### Top-level showcase fields
 
