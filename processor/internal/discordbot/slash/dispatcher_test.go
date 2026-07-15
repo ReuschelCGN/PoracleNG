@@ -846,9 +846,17 @@ func TestRouteAutocomplete_RaidCostume_BoostsRecentForBoss(t *testing.T) {
 	d.bundle = testBundle(t)
 	d.cfgRoot = &config.Config{}
 	deps := costumeFormRouteDeps(t)
+	// Replace the shared deps' RecentActivity with a fresh tracker that only
+	// primes the RAID costume bucket, leaving the SPAWN costume bucket empty.
+	// This discriminates the two buckets: if the dispatcher's /raid costume
+	// case ever regresses to calling RecentCostumes (spawn) instead of
+	// RecentRaidCostumes (raid), this test must fail rather than accidentally
+	// pass via a shared/primed spawn bucket.
+	//
 	// id 1 "Holiday 2016" sorts after the alphabetical-first base entry
 	// ("Flying", id 8), so a first-result match proves boosting rather
 	// than alphabetical order.
+	deps.RecentActivity = tracker.NewRecentActivity()
 	deps.RecentActivity.RecordRaidCostume(25, 1)
 	d.deps = deps
 	ic := raidBossSiblingIC("pikachu")
