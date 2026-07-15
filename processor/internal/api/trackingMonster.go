@@ -113,6 +113,7 @@ type monsterInsertRequest struct {
 	Template              any      `json:"template"`
 	Clean                 flexBool `json:"clean"`
 	Form                  flexInt  `json:"form"`
+	Costume               flexInt  `json:"costume"`
 	MinIV                 flexInt  `json:"min_iv"`
 	MaxIV                 flexInt  `json:"max_iv"`
 	MinCP                 flexInt  `json:"min_cp"`
@@ -242,6 +243,12 @@ func HandleCreateMonster(deps *TrackingDeps) gin.HandlerFunc {
 				MaxSTA:           req.MaxSTA.intValue(15),
 				Gender:           req.Gender.intValue(0),
 				Form:             req.Form.intValue(0),
+				// Costume defaults to 9000 (the "any costume" wildcard) when absent
+				// from the request body, so v1 clients that don't send costume
+				// (ReactMap/PoracleWeb, pre-costume-feature scripts) diff cleanly
+				// against existing 9000-backfilled rows instead of being classified
+				// as new inserts (Costume has no `diff` tag — see db.MonsterTrackingAPI).
+				Costume:          req.Costume.intValue(9000),
 				Clean:            req.Clean.intValue(0),
 				MinWeight:        req.MinWeight.intValue(0),
 				MaxWeight:        req.MaxWeight.intValue(9000000),

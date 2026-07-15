@@ -155,7 +155,14 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				ProfileNo: ctx.ProfileNo,
 				PokemonID: mon.PokemonID,
 				Form:      mon.Form,
-				Ping:      pings,
+				// Stopgap: !track doesn't parse a costume: arg yet, so pin to
+				// the 9000 "any costume" wildcard. Without this, the Go
+				// zero-value 0 would fail to diff against 9000-backfilled
+				// existing rows and duplicate on every re-track (Costume has
+				// no `diff` tag — see db.MonsterTrackingAPI). A later task
+				// wires the real costume: arg through here.
+				Costume: 9000,
+				Ping:    pings,
 				Distance:  filters.distance,
 				MinIV:     filters.minIV,
 				MaxIV:     filters.maxIV,

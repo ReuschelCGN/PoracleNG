@@ -121,6 +121,13 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 		Distance:              distance,
 		PokemonID:             req.PokemonID,
 		Form:                  valueOr(req.Form, 0),
+		// Stopgap: v2PokemonRule doesn't expose a Costume field yet, so pin to
+		// the 9000 "any costume" wildcard. Without this, the Go zero-value 0
+		// would fail to diff against 9000-backfilled existing rows and
+		// duplicate on every re-submit (Costume has no `diff` tag — see
+		// db.MonsterTrackingAPI). A later task adds a nullable Costume *int +
+		// valueOr(req.Costume, 9000).
+		Costume:               9000,
 		MinIV:                 valueOr(req.MinIV, -1),
 		MaxIV:                 valueOr(req.MaxIV, 100),
 		MinCP:                 valueOr(req.MinCP, 0),
