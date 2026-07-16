@@ -99,10 +99,27 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	tr := ctx.Tr()
+	enTr := ctx.Translations.For("en")
+	subMatch := func(key, tok string) bool {
+		return tok == strings.ToLower(tr.T(key)) || tok == strings.ToLower(enTr.T(key))
+	}
+	var subMode string
+	if len(nameArgs) > 1 {
+		last := strings.ToLower(nameArgs[len(nameArgs)-1])
+		switch {
+		case subMatch("msg.info.sub.forms", last):
+			subMode = "forms"
+			nameArgs = nameArgs[:len(nameArgs)-1]
+		case subMatch("msg.info.sub.costumes", last):
+			subMode = "costumes"
+			nameArgs = nameArgs[:len(nameArgs)-1]
+		}
+	}
+
 	name := strings.Join(nameArgs, " ")
 	resolved := ctx.Resolver.Resolve(name, ctx.Language)
 	if len(resolved) == 0 {
-		tr := ctx.Tr()
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.info.pokemon_not_found", ctx.EscapeForReply(name))}}
 	}
 
@@ -125,7 +142,6 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 		if !matched {
 			// Also try English form names
-			enTr := ctx.Translations.For("en")
 			for _, r := range resolved {
 				if r.PokemonID != pokemonID {
 					continue
@@ -144,12 +160,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		mon = ctx.GameData.Monsters[gamedata.MonsterKey{ID: pokemonID, Form: 0}]
 	}
 	if mon == nil {
-		tr := ctx.Tr()
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.info.pokemon_not_found", ctx.EscapeForReply(name))}}
 	}
 
-	tr := ctx.Tr()
-	enTr := ctx.Translations.For("en")
+	// Sub-route: hand off to the forms/costumes sub-view renderer.
+	switch subMode {
+	case "forms":
+		return c.pokemonFormsFull(ctx, pokemonID)
+	case "costumes":
+		return c.pokemonCostumesFull(ctx, pokemonID)
+	}
 
 	// Determine platform for emoji resolution
 	platform := strings.SplitN(ctx.TargetType, ":", 2)[0]
@@ -302,7 +322,17 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
-	// Recently-seen costumes for tracking (costume:<id>)
+	// Recently-seen raid forms
+	recentRaidForms := c.availableRecentRaidForms(ctx, pokemonID)
+	if len(recentRaidForms) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.recent_raid_forms") + "\n")
+		for _, f := range recentRaidForms {
+			sb.WriteString("  " + f + "\n")
+		}
+	}
+
+	// Recently-seen costumes for tracking (costume:<name>)
 	costumes := c.availableCostumes(ctx, pokemonID)
 	if len(costumes) > 0 {
 		sb.WriteByte('\n')
@@ -312,13 +342,34 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
-	// Available forms for tracking (full list)
+	// Recently-seen raid costumes
+	raidCostumes := c.availableRaidCostumes(ctx, pokemonID)
+	if len(raidCostumes) > 0 {
+		sb.WriteByte('\n')
+		sb.WriteString(tr.T("msg.info.recent_raid_costumes") + "\n")
+		for _, rc := range raidCostumes {
+			sb.WriteString("  " + rc + "\n")
+		}
+	}
+
+	// Available forms for tracking (full list, truncated with a pointer to
+	// "!info <pokemon> forms" for the untruncated roster).
 	forms := c.availableForms(ctx, pokemonID)
 	if len(forms) > 0 {
 		sb.WriteByte('\n')
 		sb.WriteString(tr.T("msg.info.available_forms") + "\n")
-		for _, f := range forms {
+		const formCap = 10
+		shown := forms
+		if len(shown) > formCap {
+			shown = shown[:formCap]
+		}
+		for _, f := range shown {
 			sb.WriteString("  " + f + "\n")
+		}
+		if len(forms) > formCap {
+			pokeName := enTr.T(gamedata.PokemonTranslationKey(pokemonID))
+			hintCmd := ctx.Code(bot.CommandPrefix(ctx) + tr.T("cmd.info") + " " + pokeName + " " + tr.T("msg.info.sub.forms"))
+			sb.WriteString("  " + tr.Tf("msg.info.more_forms", formCap, hintCmd) + "\n")
 		}
 	}
 
@@ -363,6 +414,59 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	return []bot.Reply{{Text: sb.String()}}
+}
+
+// pokemonFormsFull renders !info <pokemon> forms: recent forms (spawn + raid)
+// plus the full available-forms roster (untruncated).
+func (c *InfoCommand) pokemonFormsFull(ctx *bot.CommandContext, pokemonID int) []bot.Reply {
+	tr := ctx.Tr()
+	var sb strings.Builder
+	writeSection := func(header string, lines []string) {
+		if len(lines) == 0 {
+			return
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(tr.T(header) + "\n")
+		for _, l := range lines {
+			sb.WriteString("  " + l + "\n")
+		}
+	}
+	writeSection("msg.info.recent_forms", c.availableRecentForms(ctx, pokemonID))
+	writeSection("msg.info.recent_raid_forms", c.availableRecentRaidForms(ctx, pokemonID))
+	writeSection("msg.info.available_forms", c.availableForms(ctx, pokemonID))
+	if sb.Len() == 0 {
+		return []bot.Reply{{Text: tr.T("msg.info.no_form_data")}}
+	}
+	return []bot.Reply{{Text: sb.String()}}
+}
+
+// pokemonCostumesFull renders !info <pokemon> costumes: the combined recently-seen
+// costumes (spawn + raid), deduped, copy-pasteable.
+func (c *InfoCommand) pokemonCostumesFull(ctx *bot.CommandContext, pokemonID int) []bot.Reply {
+	tr := ctx.Tr()
+	seen := map[int]bool{}
+	var ids []int
+	if ctx.RecentActivity != nil {
+		for _, id := range append(ctx.RecentActivity.RecentCostumes(pokemonID), ctx.RecentActivity.RecentRaidCostumes(pokemonID)...) {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Ints(ids)
+	lines := c.costumeTrackLines(ctx, pokemonID, ids)
+	if len(lines) == 0 {
+		return []bot.Reply{{Text: tr.T("msg.info.no_costume_data")}}
+	}
+	var sb strings.Builder
+	sb.WriteString(tr.T("msg.info.available_costumes") + "\n")
+	for _, l := range lines {
+		sb.WriteString("  " + l + "\n")
+	}
 	return []bot.Reply{{Text: sb.String()}}
 }
 
@@ -532,9 +636,58 @@ func (c *InfoCommand) availableRecentForms(ctx *bot.CommandContext, pokemonID in
 	return result
 }
 
-// availableCostumes returns "id — name" display strings for costumes recently
-// seen on pokemonID (via RecentActivity), sorted by id. Returns nil when
-// RecentActivity isn't wired up or nothing has been seen recently.
+// costumeTrackLines builds copy-pasteable "<pokemon> costume:<name>" strings for
+// the given (sorted) costume ids — name lowercased with spaces→underscores,
+// mirroring availableRecentForms's form format. Unresolved names are skipped.
+func (c *InfoCommand) costumeTrackLines(ctx *bot.CommandContext, pokemonID int, ids []int) []string {
+	tr := ctx.Tr()
+	enTr := ctx.Translations.For("en")
+	pokeName := enTr.T(gamedata.PokemonTranslationKey(pokemonID))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		name := costumeName(ctx, tr, id)
+		if name == "" || name == gamedata.CostumeTranslationKey(id) {
+			continue
+		}
+		trackingName := strings.ReplaceAll(strings.ToLower(name), " ", "_")
+		result = append(result, ctx.Code(fmt.Sprintf("%s costume:%s", pokeName, trackingName)))
+	}
+	return result
+}
+
+// availableRecentRaidForms mirrors availableRecentForms but sources RecentRaidForms.
+func (c *InfoCommand) availableRecentRaidForms(ctx *bot.CommandContext, pokemonID int) []string {
+	if ctx.RecentActivity == nil {
+		return nil
+	}
+	ids := ctx.RecentActivity.RecentRaidForms(pokemonID)
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Ints(ids)
+	tr := ctx.Tr()
+	enTr := ctx.Translations.For("en")
+	pokeName := enTr.T(gamedata.PokemonTranslationKey(pokemonID))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		key := gamedata.FormTranslationKey(id)
+		name := tr.T(key)
+		if name == key {
+			name = enTr.T(key)
+		}
+		if name == key {
+			continue
+		}
+		trackingName := strings.ReplaceAll(strings.ToLower(name), " ", "_")
+		result = append(result, ctx.Code(fmt.Sprintf("%s form:%s", pokeName, trackingName)))
+	}
+	return result
+}
+
+// availableCostumes returns copy-pasteable "pokemon costume:<name>" strings
+// for costumes recently seen on pokemonID (via RecentActivity), sorted by id.
+// Returns nil when RecentActivity isn't wired up or nothing has been seen
+// recently.
 func (c *InfoCommand) availableCostumes(ctx *bot.CommandContext, pokemonID int) []string {
 	if ctx.RecentActivity == nil {
 		return nil
@@ -544,13 +697,22 @@ func (c *InfoCommand) availableCostumes(ctx *bot.CommandContext, pokemonID int) 
 		return nil
 	}
 	sort.Ints(ids)
+	return c.costumeTrackLines(ctx, pokemonID, ids)
+}
 
-	tr := ctx.Tr()
-	result := make([]string, 0, len(ids))
-	for _, id := range ids {
-		result = append(result, fmt.Sprintf("%d — %s", id, costumeName(ctx, tr, id)))
+// availableRaidCostumes returns copy-pasteable "pokemon costume:<name>"
+// strings for costumes recently seen on raid boss pokemonID (via
+// RecentActivity), sorted by id.
+func (c *InfoCommand) availableRaidCostumes(ctx *bot.CommandContext, pokemonID int) []string {
+	if ctx.RecentActivity == nil {
+		return nil
 	}
-	return result
+	ids := ctx.RecentActivity.RecentRaidCostumes(pokemonID)
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Ints(ids)
+	return c.costumeTrackLines(ctx, pokemonID, ids)
 }
 
 // showCostumes lists every known costume (GameData.Costumes), sorted by id,

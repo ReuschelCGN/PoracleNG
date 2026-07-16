@@ -75,6 +75,7 @@ func raidAPIToTracking(a *db.RaidTrackingAPI) *db.RaidTracking {
 		Team:                  a.Team,
 		Exclusive:             bool(a.Exclusive),
 		Form:                  a.Form,
+		Costume:               a.Costume,
 		Evolution:             a.Evolution,
 		Move:                  a.Move,
 		GymID:                 sql.NullString{String: a.GymID.String, Valid: a.GymID.Valid},

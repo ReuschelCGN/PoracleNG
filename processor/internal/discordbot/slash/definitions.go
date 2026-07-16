@@ -540,6 +540,8 @@ func raidOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 		distanceOpt(bundle, "raid"),
 		cleanOpt(bundle, "raid", "Auto-delete the alert when the raid expires"),
 		templateOpt(bundle, "raid"),
+		stringOpt(bundle, "raid.form", "form", "Raid boss form", false, true),
+		stringOpt(bundle, "raid.costume", "costume", "Raid boss costume", false, true),
 	}
 	return append(opts, trackerLocationAreaOpts(bundle)...)
 }

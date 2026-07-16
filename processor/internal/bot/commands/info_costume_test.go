@@ -89,8 +89,8 @@ func TestInfo_Pokemon_RecentlySeenCostumes(t *testing.T) {
 		t.Fatal("expected at least one reply, got none")
 	}
 	text := replies[0].Text
-	if !strings.Contains(text, "Holiday 2016") {
-		t.Errorf("expected recently-seen costume section to contain %q, got: %q", "Holiday 2016", text)
+	if !strings.Contains(text, "costume:holiday_2016") {
+		t.Errorf("expected recently-seen costume section to contain copy-pasteable %q, got: %q", "costume:holiday_2016", text)
 	}
 	if !strings.Contains(text, "Recently-seen costumes") {
 		t.Errorf("expected a recently-seen costumes header, got: %q", text)

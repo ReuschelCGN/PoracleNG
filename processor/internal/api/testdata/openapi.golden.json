@@ -6774,6 +6774,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "Human-readable rule description (present only with ?include_descriptions=true)",
                   "type": "string"
@@ -6931,6 +6939,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "Human-readable rule description (present only with ?include_descriptions=true)",
                   "type": "string"
@@ -7085,6 +7101,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -8613,6 +8637,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -10591,6 +10623,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "Human-readable rule description (present only with ?include_descriptions=true)",
                   "type": "string"
@@ -11613,6 +11653,14 @@
             "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "costume": {
+            "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+            "format": "int64",
+            "type": [
+              "integer",
               "null"
             ]
           },

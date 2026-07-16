@@ -774,3 +774,39 @@ func TestTrackingAPI_OverrideContextFetchedOnce(t *testing.T) {
 		t.Errorf("expected Get called 1 time for 5-row batch, got %d (hoist not working)", getCount)
 	}
 }
+
+func TestCreateRaid_CostumeDefaultIsIdempotent(t *testing.T) {
+	mock := store.NewMockHumanStore()
+	mock.AddHuman(&store.Human{ID: "u1", Type: "discord:user", Name: "User", Enabled: true, Language: "en", CurrentProfileNo: 1})
+
+	mockRaids := store.NewMockTrackingStore(store.RaidGetUID, store.RaidSetUID)
+	minGD := &gamedata.GameData{Monsters: map[gamedata.MonsterKey]*gamedata.Monster{}, Util: &gamedata.UtilData{}}
+
+	deps := &TrackingDeps{
+		Humans:       mock,
+		Tracking:     &store.TrackingStores{Raids: mockRaids},
+		Config:       &config.Config{},
+		RowText:      &rowtext.Generator{DefaultTemplateName: "1", GD: minGD},
+		Translations: i18n.NewBundle(),
+	}
+
+	r := gin.New()
+	r.POST("/api/tracking/raid/:id", HandleCreateRaid(deps))
+
+	body := `{"pokemon_id":25}`
+	for i, want := range []int{1, 1} { // both POSTs => still 1 row
+		req := httptest.NewRequest(http.MethodPost, "/api/tracking/raid/u1", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("POST %d: expected 200, got %d: %s", i, w.Code, w.Body.String())
+		}
+		rows := mockRaids.AllRows()
+		if len(rows) != want {
+			t.Fatalf("after POST %d: expected %d row(s), got %d (dup?)", i, want, len(rows))
+		}
+		if rows[0].Costume != 9000 {
+			t.Fatalf("expected Costume=9000 from v1 default, got %d", rows[0].Costume)
+		}
+	}
+}

@@ -264,6 +264,7 @@ func toRaidTracking(api *db.RaidTrackingAPI) *db.RaidTracking {
 		Team:        api.Team,
 		PokemonID:   api.PokemonID,
 		Form:        api.Form,
+		Costume:     api.Costume,
 		Level:       api.Level,
 		Exclusive:   bool(api.Exclusive),
 		Move:        api.Move,
