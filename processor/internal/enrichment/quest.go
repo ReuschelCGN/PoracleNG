@@ -185,7 +185,7 @@ func (e *Enricher) QuestTranslate(base map[string]any, quest *webhook.QuestWebho
 		monsterList := make([]map[string]any, len(rewardData.Monsters))
 		for i, mon := range rewardData.Monsters {
 			nameInfo := make(map[string]any)
-			TranslateMonsterNamesEng(nameInfo, gd, tr, e.Translations, mon.PokemonID, mon.FormID, 0)
+			TranslateMonsterNamesEng(nameInfo, gd, tr, e.Translations, mon.PokemonID, mon.FormID, 0, 0)
 			monsterList[i] = map[string]any{
 				"pokemonId":   mon.PokemonID,
 				"formId":      mon.FormID,

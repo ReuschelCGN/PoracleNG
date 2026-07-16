@@ -191,22 +191,25 @@
       clean: true
       template: pvp
       form: alola
+      costume: "1"
       size: xl
-  text: "!track 25 iv100 great5 ultra10 little7 d250 clean template:pvp form:alola xl"
-  expected_tokens: ["25", iv100, great5, ultra10, little7, d250, clean, "template:pvp", "form:alola", xl]
+  text: "!track 25 iv100 great5 ultra10 little7 d250 clean template:pvp form:alola costume:1 xl"
+  expected_tokens: ["25", iv100, great5, ultra10, little7, d250, clean, "template:pvp", "form:alola", "costume:1", xl]
 
 # -----------------------------------------------------------------------------
 # /raid — boss XOR level
 # -----------------------------------------------------------------------------
 - name: raid-boss
-  description: /raid with named boss
+  description: /raid with named boss, costume, and form
   command: cmd.raid
   slash:
     name: raid
     options:
       boss: mewtwo
-  text: "!raid mewtwo"
-  expected_tokens: [mewtwo]
+      costume: "1"
+      form: alolan
+  text: "!raid mewtwo costume:1 form:alolan"
+  expected_tokens: [mewtwo, "costume:1", "form:alolan"]
 
 - name: raid-level-all-options
   description: /raid with level + team + distance + clean + template (covers all non-boss options)

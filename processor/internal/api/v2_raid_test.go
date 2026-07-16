@@ -619,6 +619,45 @@ func TestV2Raid_UnknownHuman404(t *testing.T) {
 	}
 }
 
+// --- costume -----------------------------------------------------------
+
+// TestV2Raid_CostumeRoundTrip mirrors the v2 pokemon costume round-trip:
+// omitted -> stored 9000 (any) -> read back null; 0 -> stored 0 (no costume)
+// -> read back literal 0 (not null); a specific costume -> stored/round-trips
+// unchanged.
+func TestV2Raid_CostumeRoundTrip(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantStored  int
+		wantReadout any
+	}{
+		{"omitted -> any (9000)", `[{"level":5}]`, 9000, nil},
+		{"zero -> no costume (0)", `[{"level":5,"costume":0}]`, 0, float64(0)},
+		{"specific costume", `[{"level":5,"costume":7}]`, 7, float64(7)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, rs, _, restore := newV2RaidTestAPI(t)
+			defer restore()
+
+			w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/raid", c.body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			rows := rs.AllRows()
+			if len(rows) != 1 || rows[0].Costume != c.wantStored {
+				t.Fatalf("expected stored costume %d, got %+v", c.wantStored, rows)
+			}
+
+			out := v2RulesArray(t, v2DecodeBody(t, v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/raid", "")), "rules")
+			if out[0]["costume"] != c.wantReadout {
+				t.Fatalf("costume read-back mismatch: got %v want %v", out[0]["costume"], c.wantReadout)
+			}
+		})
+	}
+}
+
 // TestV2Raid_RoundTrip is the Part B fixed-point check for raid: a rule with a
 // specific boss + a set move + default team/rsvp/etc GETs back with the defaults
 // as null and survives a PUT of that body unchanged.

@@ -421,8 +421,11 @@ Time-remaining fields (`tthd`, `tthh`, `tthm`, `tths`) are in the Common Fields 
 | `megaEvolutions` | array | Mega evolution entries |
 | `hasMegaEvolutions` | bool | Has mega evolutions |
 | `pokestopName` | string | Nearby pokestop name (if applicable) |
+| `costumeName` | string | Translated costume name (empty when no costume, i.e. `costume == 0` or the `costume_N` translation key is absent). |
 
 `distance`, `bearing`, `bearingEmoji`, `userDistanceTrack`, `userTrackDistance` are documented in Common Fields.
+
+**Note:** `fullName` already includes the costume, parenthesised, when the pokemon is wearing one — e.g. `"Pikachu (Holiday 2016)"`. `costumeName` is provided separately for templates that want to style or place the costume text independently of `fullName`.
 
 ### seenType values
 

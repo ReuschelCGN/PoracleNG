@@ -153,6 +153,7 @@ var monsterFields = []FieldDef{
 	{Name: "sizeName", Type: "string", Description: "Size category name", Category: "other"},
 	{Name: "rarityName", Type: "string", Description: "Rarity group name", Category: "other"},
 	{Name: "costume", Type: "int", Description: "Costume ID", Category: "other"},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when no costume). Note: fullName already includes it parenthesised.", Category: "other"},
 	{Name: "shinyPossible", Type: "bool", Description: "Can be shiny", Category: "other"},
 	{Name: "weaknessList", Type: "array", Description: "Type weakness list", Category: "other"},
 	{Name: "weaknessEmoji", Type: "string", Description: "Flat string of all weakness multipliers + type emoji (e.g. \"2x💧⚡ 4x🪨 \").", Category: "other"},
@@ -166,10 +167,12 @@ var monsterFields = []FieldDef{
 var raidFields = []FieldDef{
 	// Identity
 	{Name: "name", Type: "string", Description: "Translated pokemon name", Category: "identity", Preferred: true},
-	{Name: "fullName", Type: "string", Description: "Name + form", Category: "identity", Preferred: true},
+	{Name: "fullName", Type: "string", Description: "Name + form + costume (costume parenthesised)", Category: "identity", Preferred: true},
+	{Name: "megaName", Type: "string", Description: "Full display name incl. mega evolution + form + costume (equals fullName)", Category: "identity", Preferred: true},
 	{Name: "formName", Type: "string", Description: "Translated form name", Category: "identity"},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when none); fullName/megaName already include it parenthesised", Category: "identity"},
 	{Name: "nameEng", Type: "string", Description: "English pokemon name", Category: "identity"},
-	{Name: "fullNameEng", Type: "string", Description: "English name + form", Category: "identity"},
+	{Name: "fullNameEng", Type: "string", Description: "English name + form + costume", Category: "identity"},
 	{Name: "pokemonId", Type: "int", Description: "Pokemon ID", Category: "identity"},
 	{Name: "level", Type: "int", Description: "Raid level", Category: "identity", Preferred: true},
 	{Name: "levelName", Type: "string", Description: "Raid level name", Category: "identity", Preferred: true},
@@ -395,7 +398,9 @@ var fortUpdateFields = []FieldDef{
 
 var maxbattleFields = []FieldDef{
 	{Name: "name", Type: "string", Description: "Translated pokemon name", Category: "identity", Preferred: true},
-	{Name: "fullName", Type: "string", Description: "Name + form", Category: "identity", Preferred: true},
+	{Name: "fullName", Type: "string", Description: "Name + form + costume (costume parenthesised)", Category: "identity", Preferred: true},
+	{Name: "megaName", Type: "string", Description: "Full display name incl. form + costume (equals fullName)", Category: "identity", Preferred: true},
+	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when none); fullName/megaName already include it parenthesised", Category: "identity"},
 	{Name: "pokemonId", Type: "int", Description: "Pokemon ID", Category: "identity"},
 	{Name: "level", Type: "int", Description: "Battle level", Category: "identity", Preferred: true},
 	{Name: "pokestopName", Type: "string", Description: "Location name", Category: "location", Preferred: true},
