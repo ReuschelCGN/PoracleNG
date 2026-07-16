@@ -23,6 +23,7 @@ type RecentActivity struct {
 	invasionGrunts        map[int]time.Time
 	costumesByPokemon     map[int]map[int]time.Time
 	raidCostumesByPokemon map[int]map[int]time.Time
+	raidFormsByPokemon    map[int]map[int]time.Time
 	formsByPokemon        map[int]map[int]time.Time
 	now                   func() time.Time
 }
@@ -40,6 +41,7 @@ func NewRecentActivity() *RecentActivity {
 		invasionGrunts:        make(map[int]time.Time),
 		costumesByPokemon:     make(map[int]map[int]time.Time),
 		raidCostumesByPokemon: make(map[int]map[int]time.Time),
+		raidFormsByPokemon:    make(map[int]map[int]time.Time),
 		formsByPokemon:        make(map[int]map[int]time.Time),
 		now:                   time.Now,
 	}
@@ -110,6 +112,33 @@ func (r *RecentActivity) RecordRaidCostume(pokemonID, costume int) {
 func (r *RecentActivity) RecentRaidCostumes(pokemonID int) []int {
 	r.mu.Lock()
 	inner := r.raidCostumesByPokemon[pokemonID]
+	r.mu.Unlock()
+	if inner == nil {
+		return nil
+	}
+	return r.active(inner)
+}
+
+// RecordRaidForm marks form as recently seen on a raid boss pokemonID.
+func (r *RecentActivity) RecordRaidForm(pokemonID, form int) {
+	if pokemonID <= 0 || form <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	inner := r.raidFormsByPokemon[pokemonID]
+	if inner == nil {
+		inner = make(map[int]time.Time)
+		r.raidFormsByPokemon[pokemonID] = inner
+	}
+	inner[form] = r.now()
+}
+
+// RecentRaidForms returns the recency-windowed form IDs recently seen on raid
+// boss pokemonID.
+func (r *RecentActivity) RecentRaidForms(pokemonID int) []int {
+	r.mu.Lock()
+	inner := r.raidFormsByPokemon[pokemonID]
 	r.mu.Unlock()
 	if inner == nil {
 		return nil

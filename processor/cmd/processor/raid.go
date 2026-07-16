@@ -79,6 +79,9 @@ func (ps *ProcessorService) ProcessRaid(raw json.RawMessage) error {
 			if raid.Costume > 0 {
 				ps.recentActivity.RecordRaidCostume(raid.PokemonID, raid.Costume)
 			}
+			if raid.Form > 0 {
+				ps.recentActivity.RecordRaidForm(raid.PokemonID, raid.Form)
+			}
 		}
 
 		// ignore_long_raids: skip raids/eggs with > 47 minutes remaining
