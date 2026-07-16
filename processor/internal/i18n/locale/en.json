@@ -554,6 +554,7 @@
   "msg.info.usage_admin": "Admin: `{0}info poracle`, `{0}info dts`, `{0}info translate <word>`, `{0}info config [search]`",
   "msg.info.available_forms": "Available forms:",
   "msg.info.recent_forms": "**Recently-seen forms:**",
+  "msg.info.recent_raid_forms": "**Recently-seen raid forms:**",
   "msg.info.available_costumes": "**Recently-seen costumes:**",
   "msg.info.recent_raid_costumes": "**Recently-seen raid costumes:**",
   "msg.info.costumes.header": "**Costumes** (`costume:<id>` to track):",

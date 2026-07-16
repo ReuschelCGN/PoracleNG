@@ -33,8 +33,8 @@ func TestInfo_Pokemon_RecentRaidCostumes(t *testing.T) {
 		t.Fatal("expected a reply")
 	}
 	text := replies[0].Text
-	if !strings.Contains(text, "12 — Party Hat") || !strings.Contains(text, "Recently-seen raid costumes") {
-		t.Errorf("expected recent raid costume section, got: %q", text)
+	if !strings.Contains(text, "costume:party_hat") || !strings.Contains(text, "Recently-seen raid costumes") {
+		t.Errorf("expected copy-pasteable recent raid costume section, got: %q", text)
 	}
 }
 
