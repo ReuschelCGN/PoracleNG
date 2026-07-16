@@ -35,8 +35,9 @@ Gaps vs. the desired consistency:
 | D3 | **Section order** in `!info <pokemon>`: recently-seen forms → recently-seen raid forms → recently-seen costumes → recently-seen raid costumes → available forms (roster). Forms grouped, costumes grouped. |
 | D4 | **Recency sections shown in full** (bounded by the 6h window). Only the **available-forms roster** truncates. |
 | D5 | **Roster truncation.** When `availableForms` has more than **10** entries, `!info <pokemon>` shows the first 10 followed by a hint line: "More than 10 forms — do `!info <pokemon> forms`" (localized). ≤ 10 → shown in full, no hint. |
-| D6 | **`!info <pokemon> forms`** — new sub-route (detected in `pokemonInfo` when `args[1]` matches the "forms" subword): shows the **full available-forms roster** (untruncated), no other sections. |
+| D6 | **`!info <pokemon> forms`** — new sub-route (detected in `pokemonInfo` when `args[1]` matches the "forms" subword): shows the recently-seen forms (spawn + raid) **and** the full available-forms roster (untruncated) — a complete "forms for this species" view, no other sections. |
 | D7 | **`!info <pokemon> costumes`** — new sub-route (`args[1]` matches the existing "costumes" subword): shows pikachu's **recently-seen costumes, spawn + raid combined and deduped**, copy-pasteable, untruncated. (Costumes have no per-species roster in the data; recency is the only per-species costume data.) |
+| D8 | **`/raid form` slash option** — add a `form` option to `/raid` (autocomplete=true), mirroring the just-added `/raid costume`. `mappers/raid.go` emits `form:<val>`; the dispatcher routes `(cmd="raid", opt="form")` to `autocomplete.Form` cascading from the sibling `boss` option, and boosts `RecentRaidForms(pid)` when the field is empty. The text command (`!raid pikachu form:alolan`) already supports form via `applyFormFilter`; this is the slash surface only. |
 
 ## Components
 
@@ -46,6 +47,7 @@ Add, mirroring the raid-costume trio:
 - `RecordRaidForm(pokemonID, form int)` — no-op when `pokemonID <= 0 || form <= 0`
 - `RecentRaidForms(pokemonID int) []int` — via the existing `active()` window
 Producer: `RecordRaidForm(raid.PokemonID, raid.Form)` in `cmd/processor/raid.go`, beside the existing `RecordRaidCostume`/`RecordRaidBoss` calls (guarded `form > 0` and `recentActivity != nil`).
+Consumed by both the `!info` raid-forms section AND the `/raid form` autocomplete boost (§5).
 
 ### 2. `!info` sections (`bot/commands/info.go`)
 - **New helper** `availableRecentRaidForms(ctx, pokemonID) []string` — copy-pasteable `pokemon form:<name>` from `RecentRaidForms` (mirror `availableRecentForms`).
@@ -57,7 +59,16 @@ Producer: `RecordRaidForm(raid.PokemonID, raid.Form)` in `cmd/processor/raid.go`
 After resolving the pokemon from `args[0]`, if `len(args) > 1` and `args[1]` matches the "forms" or "costumes" subword (via the same `tr.T`/`enTr.T` match used at the top level), branch:
 - "forms" → render only the full available-forms roster (untruncated) for that species.
 - "costumes" → render only the combined recently-seen costumes (spawn + raid, deduped) for that species.
+- "forms" → render the recently-seen forms (spawn + raid) followed by the full available-forms roster (untruncated) for that species.
+- "costumes" → render the combined recently-seen costumes (spawn + raid, deduped) for that species.
 Otherwise render the normal `!info <pokemon>` view.
+
+### 5. `/raid form` slash option (`definitions.go`, `mappers/raid.go`, `dispatcher.go`)
+Mirror the `/raid costume` slash work (just shipped):
+- `definitions.go` `raidOptions` — add `stringOpt(bundle, "raid.form", "form", "Raid boss form", false, true)` (autocomplete=true).
+- `mappers/raid.go` — emit a `form:<val>` token when the form option is set.
+- `dispatcher.go` `routeAutocomplete` — add `(cmd="raid", opt="form")`: `base := autocomplete.Form(ctx, deps, siblingOptionString(ic,"boss"), focused, userLang)`, then when `focused == ""` and the boss resolves, `base = autocomplete.PrependRecentForms(base, deps, RecentRaidForms(pid), userLang)`. (Reuses the existing `autocomplete.Form` + `PrependRecentForms` + `ResolvePokemonID`.)
+The text command already handles `!raid pikachu form:alolan` via `applyFormFilter` — no command/DB change needed.
 
 ### 4. i18n (`i18n/locale/en.json`)
 New keys:
@@ -70,12 +81,13 @@ New keys:
 - RecentActivity: `RecordRaidForm`/`RecentRaidForms` — record + retrieve, skip form ≤ 0, per-species, window; separate from spawn `RecentForms` and from raid costumes.
 - `!info <pokemon>`: raid-forms section appears after `RecordRaidForm`, absent when empty; costume sections render `pokemon costume:<name>` (copy-pasteable), not `id — name`; section order is forms → raid forms → costumes → raid costumes → available forms.
 - Truncation: species with > 10 available forms shows 10 + the hint; ≤ 10 shows all, no hint.
-- Sub-routes: `!info <pokemon> forms` shows the full roster (more than the truncated inline view); `!info <pokemon> costumes` shows the combined recently-seen costumes; neither collides with the global `!info costumes`/`!info forms` top-level dispatch.
+- Sub-routes: `!info <pokemon> forms` shows recent forms (spawn + raid) + the full roster (more than the truncated inline view); `!info <pokemon> costumes` shows the combined recently-seen costumes; neither collides with the global `!info costumes`/`!info forms` top-level dispatch.
+- `/raid form`: mapper emits `form:<val>`; the dispatcher boosts recent raid forms first for the selected boss (proves boost, not alphabetical); no boss → base list.
 
 ## Out of scope / deferred
-- Raid-forms in `/raid form` autocomplete boost (there is no `/raid form` slash option — raid form comes via the boss name). Recency for raid forms is `!info`-only here.
 - A global `!info forms` (all forms across all species) — only the per-species `!info <pokemon> forms`.
 - Truncating the recency sections (D4: shown in full).
+- Egg form/costume (eggs have no boss).
 
 ## Affected files (reference)
-`tracker/recent_activity.go` (+ test), `cmd/processor/raid.go`, `bot/commands/info.go` (+ tests), `i18n/locale/en.json`.
+`tracker/recent_activity.go` (+ test), `cmd/processor/raid.go`, `bot/commands/info.go` (+ tests), `i18n/locale/en.json`, `discordbot/slash/definitions.go` + `mappers/raid.go` + `dispatcher.go` (+ tests) + slash testdata fixtures (`testdata/raid.json`, `parity.yaml`).
