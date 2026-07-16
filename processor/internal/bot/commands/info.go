@@ -120,7 +120,6 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 	name := strings.Join(nameArgs, " ")
 	resolved := ctx.Resolver.Resolve(name, ctx.Language)
 	if len(resolved) == 0 {
-		tr := ctx.Tr()
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.info.pokemon_not_found", ctx.EscapeForReply(name))}}
 	}
 
@@ -143,7 +142,6 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 		if !matched {
 			// Also try English form names
-			enTr := ctx.Translations.For("en")
 			for _, r := range resolved {
 				if r.PokemonID != pokemonID {
 					continue

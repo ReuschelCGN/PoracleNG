@@ -67,13 +67,28 @@ func TestInfo_Pokemon_FormsTruncated(t *testing.T) {
 func TestInfo_Pokemon_FormsSubroute(t *testing.T) {
 	ctx := manyFormsCtx(t)
 	ctx.RecentActivity.RecordForm(25, 680)
+	ctx.RecentActivity.RecordRaidForm(25, 680)
 	text := (&InfoCommand{}).Run(ctx, []string{"pikachu", "forms"})[0].Text
 	// Full roster (no truncation hint) AND recent forms.
 	if strings.Contains(text, "More than 10 forms") {
 		t.Errorf("!info pikachu forms must show the full roster untruncated, got: %q", text)
 	}
+	// Form 680 is ALSO present in manyFormsCtx's GameData.Monsters roster, so
+	// "form:winter_2023" alone would appear even if the recency section were
+	// removed entirely (the roster emits it under "Available forms:"). Assert
+	// the recency section HEADER — a distinct string only written by
+	// pokemonFormsFull when availableRecentForms returns entries — so this
+	// test actually discriminates the recent-forms path from the roster.
+	if !strings.Contains(text, "Recently-seen forms") {
+		t.Errorf("!info pikachu forms should include a recent-forms section, got: %q", text)
+	}
 	if !strings.Contains(text, "form:winter_2023") {
 		t.Errorf("!info pikachu forms should include recent forms, got: %q", text)
+	}
+	// Recent RAID forms path too: same discrimination logic applies to the
+	// "Recently-seen raid forms:" section.
+	if !strings.Contains(text, "Recently-seen raid forms") {
+		t.Errorf("!info pikachu forms should include a recent raid-forms section, got: %q", text)
 	}
 }
 
