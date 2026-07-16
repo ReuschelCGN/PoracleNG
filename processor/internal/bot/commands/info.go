@@ -99,6 +99,24 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	tr := ctx.Tr()
+	enTr := ctx.Translations.For("en")
+	subMatch := func(key, tok string) bool {
+		return tok == strings.ToLower(tr.T(key)) || tok == strings.ToLower(enTr.T(key))
+	}
+	var subMode string
+	if len(nameArgs) > 1 {
+		last := strings.ToLower(nameArgs[len(nameArgs)-1])
+		switch {
+		case subMatch("msg.info.sub.forms", last):
+			subMode = "forms"
+			nameArgs = nameArgs[:len(nameArgs)-1]
+		case subMatch("msg.info.sub.costumes", last):
+			subMode = "costumes"
+			nameArgs = nameArgs[:len(nameArgs)-1]
+		}
+	}
+
 	name := strings.Join(nameArgs, " ")
 	resolved := ctx.Resolver.Resolve(name, ctx.Language)
 	if len(resolved) == 0 {
@@ -144,12 +162,16 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		mon = ctx.GameData.Monsters[gamedata.MonsterKey{ID: pokemonID, Form: 0}]
 	}
 	if mon == nil {
-		tr := ctx.Tr()
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.info.pokemon_not_found", ctx.EscapeForReply(name))}}
 	}
 
-	tr := ctx.Tr()
-	enTr := ctx.Translations.For("en")
+	// Sub-route: hand off to the forms/costumes sub-view renderer.
+	switch subMode {
+	case "forms":
+		return c.pokemonFormsFull(ctx, pokemonID)
+	case "costumes":
+		return c.pokemonCostumesFull(ctx, pokemonID)
+	}
 
 	// Determine platform for emoji resolution
 	platform := strings.SplitN(ctx.TargetType, ":", 2)[0]
@@ -332,13 +354,24 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
-	// Available forms for tracking (full list)
+	// Available forms for tracking (full list, truncated with a pointer to
+	// "!info <pokemon> forms" for the untruncated roster).
 	forms := c.availableForms(ctx, pokemonID)
 	if len(forms) > 0 {
 		sb.WriteByte('\n')
 		sb.WriteString(tr.T("msg.info.available_forms") + "\n")
-		for _, f := range forms {
+		const formCap = 10
+		shown := forms
+		if len(shown) > formCap {
+			shown = shown[:formCap]
+		}
+		for _, f := range shown {
 			sb.WriteString("  " + f + "\n")
+		}
+		if len(forms) > formCap {
+			pokeName := enTr.T(gamedata.PokemonTranslationKey(pokemonID))
+			hintCmd := ctx.Code(bot.CommandPrefix(ctx) + tr.T("cmd.info") + " " + pokeName + " " + tr.T("msg.info.sub.forms"))
+			sb.WriteString("  " + tr.Tf("msg.info.more_forms", formCap, hintCmd) + "\n")
 		}
 	}
 
@@ -383,6 +416,59 @@ func (c *InfoCommand) pokemonInfo(ctx *bot.CommandContext, args []string) []bot.
 		}
 	}
 
+	return []bot.Reply{{Text: sb.String()}}
+}
+
+// pokemonFormsFull renders !info <pokemon> forms: recent forms (spawn + raid)
+// plus the full available-forms roster (untruncated).
+func (c *InfoCommand) pokemonFormsFull(ctx *bot.CommandContext, pokemonID int) []bot.Reply {
+	tr := ctx.Tr()
+	var sb strings.Builder
+	writeSection := func(header string, lines []string) {
+		if len(lines) == 0 {
+			return
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(tr.T(header) + "\n")
+		for _, l := range lines {
+			sb.WriteString("  " + l + "\n")
+		}
+	}
+	writeSection("msg.info.recent_forms", c.availableRecentForms(ctx, pokemonID))
+	writeSection("msg.info.recent_raid_forms", c.availableRecentRaidForms(ctx, pokemonID))
+	writeSection("msg.info.available_forms", c.availableForms(ctx, pokemonID))
+	if sb.Len() == 0 {
+		return []bot.Reply{{Text: tr.T("msg.info.no_form_data")}}
+	}
+	return []bot.Reply{{Text: sb.String()}}
+}
+
+// pokemonCostumesFull renders !info <pokemon> costumes: the combined recently-seen
+// costumes (spawn + raid), deduped, copy-pasteable.
+func (c *InfoCommand) pokemonCostumesFull(ctx *bot.CommandContext, pokemonID int) []bot.Reply {
+	tr := ctx.Tr()
+	seen := map[int]bool{}
+	var ids []int
+	if ctx.RecentActivity != nil {
+		for _, id := range append(ctx.RecentActivity.RecentCostumes(pokemonID), ctx.RecentActivity.RecentRaidCostumes(pokemonID)...) {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Ints(ids)
+	lines := c.costumeTrackLines(ctx, pokemonID, ids)
+	if len(lines) == 0 {
+		return []bot.Reply{{Text: tr.T("msg.info.no_costume_data")}}
+	}
+	var sb strings.Builder
+	sb.WriteString(tr.T("msg.info.available_costumes") + "\n")
+	for _, l := range lines {
+		sb.WriteString("  " + l + "\n")
+	}
 	return []bot.Reply{{Text: sb.String()}}
 }
 
