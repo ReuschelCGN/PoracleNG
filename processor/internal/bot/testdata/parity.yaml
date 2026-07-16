@@ -200,15 +200,16 @@
 # /raid — boss XOR level
 # -----------------------------------------------------------------------------
 - name: raid-boss
-  description: /raid with named boss and costume
+  description: /raid with named boss, costume, and form
   command: cmd.raid
   slash:
     name: raid
     options:
       boss: mewtwo
       costume: "1"
-  text: "!raid mewtwo costume:1"
-  expected_tokens: [mewtwo, "costume:1"]
+      form: alolan
+  text: "!raid mewtwo costume:1 form:alolan"
+  expected_tokens: [mewtwo, "costume:1", "form:alolan"]
 
 - name: raid-level-all-options
   description: /raid with level + team + distance + clean + template (covers all non-boss options)

@@ -865,3 +865,28 @@ func TestRouteAutocomplete_RaidCostume_BoostsRecentForBoss(t *testing.T) {
 		t.Errorf("/raid costume empty focused: first=%+v, want Holiday 2016 (recent raid costume 1 for pikachu)", firstName(out))
 	}
 }
+
+func TestRouteAutocomplete_RaidForm_BoostsRecentForBoss(t *testing.T) {
+	d := NewDispatcher(Config{})
+	d.bundle = testBundle(t)
+	d.cfgRoot = &config.Config{}
+	deps := costumeFormRouteDeps(t)
+	// Replace the shared deps' RecentActivity with a fresh tracker that only
+	// primes the RAID form bucket, leaving the SPAWN form bucket empty. This
+	// discriminates the two buckets: if the dispatcher's /raid form case ever
+	// regresses to calling RecentForms (spawn) instead of RecentRaidForms
+	// (raid), this test must fail rather than accidentally pass via a
+	// shared/primed spawn bucket.
+	//
+	// form 680 "Winter 2023" sorts after the alphabetical-first base entry
+	// ("Normal", form 598), so a first-result match proves boosting rather
+	// than alphabetical order.
+	deps.RecentActivity = tracker.NewRecentActivity()
+	deps.RecentActivity.RecordRaidForm(25, 680)
+	d.deps = deps
+	ic := raidBossSiblingIC("pikachu")
+	out := d.routeAutocomplete("raid", "form", "", "en", ic)
+	if len(out) == 0 || out[0].Name != "Winter 2023" {
+		t.Errorf("/raid form empty focused: first=%+v, want Winter 2023 (recent raid form)", firstName(out))
+	}
+}

@@ -167,6 +167,19 @@ func TestRaidMapper_Costume(t *testing.T) {
 	}
 }
 
+func TestRaidMapper_Form(t *testing.T) {
+	tokens, err := Raid([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "boss", Type: discordgo.ApplicationCommandOptionString, Value: "pikachu"},
+		{Name: "form", Type: discordgo.ApplicationCommandOptionString, Value: "alolan"},
+	})
+	if err != nil {
+		t.Fatalf("Raid mapper error: %v", err)
+	}
+	if !reflect.DeepEqual(tokens, []string{"pikachu", "form:alolan"}) {
+		t.Errorf("tokens=%v, want [pikachu form:alolan]", tokens)
+	}
+}
+
 func TestLookupRaid(t *testing.T) {
 	if Lookup("raid") == nil {
 		t.Fatal("nil mapper for /raid")
