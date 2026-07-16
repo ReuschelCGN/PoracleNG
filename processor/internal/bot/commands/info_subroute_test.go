@@ -57,6 +57,11 @@ func TestInfo_Pokemon_FormsTruncated(t *testing.T) {
 	if !strings.Contains(text, "More than 10 forms") {
 		t.Errorf("expected roster truncation hint, got: %q", text)
 	}
+	// The hint must also carry the actionable, copy-pasteable command
+	// (`!info Pikachu forms`) — not just the "More than 10 forms" prose.
+	if !strings.Contains(strings.ToLower(text), "info pikachu forms") {
+		t.Errorf("expected truncation hint to include the actionable 'info pikachu forms' command, got: %q", text)
+	}
 }
 
 func TestInfo_Pokemon_FormsSubroute(t *testing.T) {
@@ -78,6 +83,12 @@ func TestInfo_Pokemon_CostumesSubroute(t *testing.T) {
 	ctx.RecentActivity.RecordRaidCostume(25, 8) // a second, raid-only costume
 	text := (&InfoCommand{}).Run(ctx, []string{"pikachu", "costumes"})[0].Text
 	if !strings.Contains(text, "costume:holiday_2016") {
-		t.Errorf("!info pikachu costumes should show combined recent costumes, got: %q", text)
+		t.Errorf("!info pikachu costumes should show the spawn costume, got: %q", text)
+	}
+	// costume 8 is ONLY recorded via RecordRaidCostume, so this can only
+	// appear if pokemonCostumesFull actually reads RecentRaidCostumes —
+	// proving the spawn+raid combine, not just the spawn bucket.
+	if !strings.Contains(text, "costume:party_hat") {
+		t.Errorf("!info pikachu costumes should show the raid-only costume too, got: %q", text)
 	}
 }

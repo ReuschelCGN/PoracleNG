@@ -12,9 +12,11 @@ import (
 
 // infoFormCostumeCtx combines infoFormCtx (info_recent_forms_test.go) and
 // infoCostumeCtx (info_costume_test.go): a pikachu monster with a named form
-// (680 → "Winter 2023") and a named costume (1 → "Holiday 2016"), so a single
-// !info pikachu run can exercise recent forms, recent raid forms, and both
-// costume sections together.
+// (680 → "Winter 2023") and two named costumes (1 → "Holiday 2016", 8 →
+// "Party Hat"), so a single !info pikachu run can exercise recent forms,
+// recent raid forms, and both costume sections together. The second costume
+// lets tests prove spawn-costume and raid-costume buckets combine (id 1 vs
+// id 8 resolve to distinct names).
 func infoFormCostumeCtx(t *testing.T) *bot.CommandContext {
 	t.Helper()
 	ctx, _ := testCtx(t)
@@ -27,13 +29,17 @@ func infoFormCostumeCtx(t *testing.T) *bot.CommandContext {
 		Moves:    map[int]*gamedata.Move{},
 		Types:    map[int]*gamedata.TypeInfo{},
 		Util:     &gamedata.UtilData{},
-		Costumes: map[int]gamedata.CostumeInfo{1: {ID: 1, Name: "Holiday 2016"}},
+		Costumes: map[int]gamedata.CostumeInfo{
+			1: {ID: 1, Name: "Holiday 2016"},
+			8: {ID: 8, Name: "Party Hat"},
+		},
 	}
 
 	ctx.Translations.AddTranslator(i18n.NewTranslator("en", map[string]string{
 		"poke_25":   "Pikachu",
 		"form_680":  "Winter 2023",
 		"costume_1": "Holiday 2016",
+		"costume_8": "Party Hat",
 	}))
 
 	ctx.Resolver = bot.NewPokemonResolver(gd, ctx.Translations, []string{"en"}, nil)
