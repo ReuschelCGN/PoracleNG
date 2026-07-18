@@ -121,8 +121,9 @@ partials end-to-end (render + deliver).
   list, per the requirement.
 
 ### 7. Editor handoff doc (D7)
-`docs/superpowers/handoffs/2026-07-18-dts-editor-derived-types.md` (in PoracleNG,
-or delivered to the editor repo): the complete contract for the editor agent.
+`docs/superpowers/handoffs/2026-07-18-dts-editor-derived-types.md` — lives **in
+this (PoracleNG) repo**; the operator points the editor agent at it to read.
+The complete server contract the editor must consume.
 
 ## Editor handoff doc — required contents
 - The DTS-name-addressable `POST /api/dts/enrich` (accepts every DTS type incl.
