@@ -31,6 +31,24 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 	var result *enrichResult
 	var err error
 
+	// Resolve DTS-name synonyms (e.g. "monster", "monsterNoIv", "egg") to
+	// the underlying webhook type the switch below dispatches on, so
+	// EnrichWebhook("monster", ...) behaves exactly like
+	// EnrichWebhook("pokemon", ...). Derived names (monsterChanged,
+	// rsvpChanges, questSummary, incident, weatherchange) aren't wired into
+	// this switch yet — Tasks 3-7 add that — so they're left unresolved and
+	// fall through to the "unsupported" error below, same as today.
+	//
+	// "pokestop" is deliberately excluded from the rewrite even though it's
+	// the canonical WebhookType for both "invasion" and "lure": it isn't a
+	// name this switch dispatches on (disambiguating it requires peeking at
+	// the payload, see resolveDTSTypeFromRaw in test.go), so rewriting to it
+	// would break the "invasion" and "lure" cases that already work today
+	// under their own names.
+	if src, ok := dtsAlias(webhookType); ok && !src.Derived && src.WebhookType != "pokestop" {
+		webhookType = src.WebhookType
+	}
+
 	isPokemon := webhookType == "pokemon" || webhookType == "monster"
 
 	switch webhookType {
