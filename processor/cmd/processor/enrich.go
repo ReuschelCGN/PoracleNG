@@ -47,21 +47,28 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 	var err error
 
 	// Derived names (monsterChanged, rsvpChanges, questSummary, incident,
-	// weatherchange) aren't parsed from a raw webhook at all — they're
+	// weatherchange) don't arrive as their own Golbat wire event — they're
 	// synthesized from processor-internal state (an encounter change, an
-	// RSVP update, a summary digest, ...). "incident" is the one exception:
-	// it IS parsed from a raw webhook — the same PokestopEvent shape as
-	// "invasion" — just rendered under a distinct DTS template type (see
-	// enrichIncident), so it's marked Derived in the alias table purely to
-	// flag that it has no direct 1:1 webhook-type spelling of its own for the
-	// switch below, not because it's synthesized from internal state.
-	// TODO(derived types): Tasks 4-7 dispatch the remaining derived builders
-	// (monsterChanged, rsvpChanges, questSummary, weatherchange) here instead
-	// of erroring.
+	// RSVP update, a summary digest, a weather-cell transition, ...).
+	// "incident" is one exception: it IS parsed from a raw webhook — the
+	// same PokestopEvent shape as "invasion" — just rendered under a
+	// distinct DTS template type (see enrichIncident), so it's marked
+	// Derived in the alias table purely to flag that it has no direct 1:1
+	// webhook-type spelling of its own for the switch below, not because
+	// it's synthesized from internal state. "weatherchange" is a partial
+	// exception: enrichWeatherChange parses a fully-specified partial (the
+	// testdata.json sample / editor preview payload) supplying the old/new
+	// weather IDs and affected-pokemon list directly, rather than deriving
+	// them from live tracker state the way the real consumeWeatherChanges
+	// path does — see enrichWeatherChange's doc comment.
+	// TODO(derived types): Tasks 5-7 dispatch the remaining derived builders
+	// (monsterChanged, rsvpChanges, questSummary) here instead of erroring.
 	if src.Derived {
 		switch src.WebhookType {
 		case "incident":
 			result, err = ps.enrichIncident(raw, language, freshenStaleTime)
+		case "weather-change":
+			result, err = ps.enrichWeatherChange(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
 		}
@@ -469,5 +476,66 @@ func (ps *ProcessorService) enrichMaxbattle(raw json.RawMessage, language string
 		perLang:       perLang,
 		webhookFields: parseWebhookFields(raw),
 		tilePending:   tilePending,
+	}, nil
+}
+
+// enrichWeatherChange builds enrichment for the derived "weatherchange" DTS
+// test type: a weather-cell transition (old→new gameplay condition) plus a
+// short list of nearby pokemon affected by the boost change.
+//
+// Unlike the live path (consumeWeatherChanges in cmd/processor/weather.go),
+// which discovers caring users and affected pokemon from live tracker state
+// (WeatherCareTracker.GetCaringUsers, ActivePokemonTracker.GetAffectedPokemon)
+// fed by a channel of detected changes, this function takes a
+// fully-specified partial — the old/new weather IDs and the affected-pokemon
+// list are supplied directly by the caller (a testdata.json sample or an
+// editor preview payload), not derived from live cell state. It reuses the
+// exact same pure enrichment calls consumeWeatherChanges uses
+// (enricher.Weather / enricher.WeatherTranslate), so the resulting
+// base/perLang fields match what a live weather alert would carry — nothing
+// about rendering is re-derived here.
+//
+// showAlteredPokemonStaticMap is hardcoded false rather than read from
+// ps.cfg.Weather: it only controls whether the tile gets per-user
+// active-pokemon markers baked in (a live delivery-time concern needing a
+// real per-destination tile mode) and whether a duplicate "activePokemons"
+// field + tile-pending is produced for that purpose. The affected-pokemon
+// list templates actually read — enrichedActivePokemons — is populated by
+// WeatherTranslate whenever len(Affected) > 0, independent of this flag.
+func (ps *ProcessorService) enrichWeatherChange(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	var wc webhook.WeatherChangeWebhook
+	if err := json.Unmarshal(raw, &wc); err != nil {
+		return nil, fmt.Errorf("parse weather change: %w", err)
+	}
+
+	// freshenStaleTime, when true, bumps any already-past affected-pokemon
+	// DisappearTime into the near future — an editor-preview affordance
+	// mirroring enrichPokemon's DisappearTime freshening (see its doc
+	// comment for the full rationale). Must stay false for the live
+	// /api/test path (processTestWeatherChange).
+	if freshenStaleTime {
+		now := time.Now().Unix()
+		for i, ap := range wc.Affected {
+			if ap.DisappearTime > 0 && ap.DisappearTime < now {
+				wc.Affected[i].DisappearTime = now + 600 + int64(i)*60
+			}
+		}
+	}
+
+	const showAlteredPokemonStaticMap = false
+	base, tilePending := ps.enricher.Weather(wc.Latitude, wc.Longitude, wc.GameplayCondition, wc.Coords, showAlteredPokemonStaticMap, enrichment.TileModeURL, wc.S2CellID)
+
+	var perLang map[string]any
+	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
+		perLang, _ = ps.enricher.WeatherTranslate(base, wc.OldGameplayCondition, wc.GameplayCondition, wc.Affected, language, showAlteredPokemonStaticMap, enrichment.TileModeURL, wc.S2CellID)
+	}
+
+	return &enrichResult{
+		templateType:  "weatherchange",
+		base:          base,
+		perLang:       perLang,
+		webhookFields: parseWebhookFields(raw),
+		tilePending:   tilePending,
+		extras:        map[string]any{"affected": wc.Affected},
 	}, nil
 }

@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "fort-update", "max-battle", "showcase"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "fort-update", "max-battle", "showcase", "weatherchange"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -244,6 +244,23 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		hook["end_time"] = battleEnd
 	case "quest", "gym", "nest":
 		// No timestamp freshening needed
+	case "weatherchange":
+		// The cell's own gameplay_condition/old_gameplay_condition carry no
+		// timestamp, but each affected-pokemon entry's disappear_time is a
+		// canned sample value — freshen it the same way "pokemon" freshens
+		// disappear_time, so clean-alert TTH computation doesn't see an
+		// already-past despawn.
+		if affected, ok := hook["affected"].([]interface{}); ok {
+			for i, a := range affected {
+				am, ok := a.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if _, ok := am["disappear_time"]; ok {
+					am["disappear_time"] = nowSecs + 10*60 + int64(i)*60
+				}
+			}
+		}
 	}
 
 	// Marshal webhook for the ProcessTest call

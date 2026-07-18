@@ -54,6 +54,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestInvasion(raw, matchedUser)
 	case "incident":
 		return ps.processTestIncident(raw, matchedUser)
+	case "weatherchange":
+		return ps.processTestWeatherChange(raw, matchedUser)
 	case "quest":
 		return ps.processTestQuest(raw, matchedUser)
 	case "gym":
@@ -164,6 +166,25 @@ func (ps *ProcessorService) processTestIncident(raw json.RawMessage, target webh
 		return fmt.Errorf("render queue not available")
 	}
 	ps.renderCh <- ps.renderJobFromEnrich(r, target, "incident", raw, false, false)
+	return nil
+}
+
+// processTestWeatherChange handles !poracle-test weatherchange,<id>. Like
+// processTestIncident, freshenStaleTime=false preserves this path's
+// pre-existing convention of never bumping stale timestamps in the live test
+// path (see enrichPokemon's doc comment for the full rationale); the
+// per-affected-pokemon disappear_time freshening !poracle-test needs instead
+// happens in bot/commands/poracletest.go before ProcessTest is even called
+// (mirroring how it freshens disappear_time/start/end for the other types).
+func (ps *ProcessorService) processTestWeatherChange(raw json.RawMessage, target webhook.MatchedUser) error {
+	r, err := ps.enrichWeatherChange(raw, target.Language, false)
+	if err != nil {
+		return err
+	}
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+	ps.renderCh <- ps.renderJobFromEnrich(r, target, "weather", raw, false, false)
 	return nil
 }
 

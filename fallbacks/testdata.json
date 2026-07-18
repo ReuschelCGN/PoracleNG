@@ -1685,5 +1685,52 @@
       ],
       "updated": 1774471518
     }
+  },
+  {
+    "type": "weatherchange",
+    "test": "rain",
+    "location": "current",
+    "webhook": {
+      "s2_cell_id": "5222463073676417024",
+      "latitude": 51.5,
+      "longitude": -0.1,
+      "gameplay_condition": 2,
+      "old_gameplay_condition": 1,
+      "coords": [
+        [51.4995, -0.1005],
+        [51.4995, -0.0995],
+        [51.5005, -0.0995],
+        [51.5005, -0.1005]
+      ],
+      "affected": [
+        {
+          "pokemon_id": 129,
+          "form": 0,
+          "iv": 100,
+          "cp": 979,
+          "latitude": 51.5001,
+          "longitude": -0.0998,
+          "disappear_time": 1751900000
+        },
+        {
+          "pokemon_id": 7,
+          "form": 0,
+          "iv": 82.22,
+          "cp": 612,
+          "latitude": 51.4998,
+          "longitude": -0.1002,
+          "disappear_time": 1751900300
+        },
+        {
+          "pokemon_id": 25,
+          "form": 0,
+          "iv": 91.11,
+          "cp": 450,
+          "latitude": 51.5003,
+          "longitude": -0.0996,
+          "disappear_time": 1751900600
+        }
+      ]
+    }
   }
 ]
