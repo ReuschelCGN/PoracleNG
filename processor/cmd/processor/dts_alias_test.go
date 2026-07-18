@@ -71,7 +71,12 @@ func TestDtsAlias_RawWebhookTypesResolve(t *testing.T) {
 		{"pokemon", "pokemon", "monster"},
 		{"max_battle", "max_battle", "maxbattle"},
 		{"fort_update", "fort_update", "fort-update"},
-		{"fort-update", "fort-update", "fort-update"},
+		// "fort-update" is the DTS TemplateType spelling but must resolve to
+		// the same underscored WebhookType as "fort_update" — the literal
+		// testdata.json/wire spelling — same as the four derived types
+		// above, so ?dtsType=fort-update matches testdata entries instead
+		// of returning zero results.
+		{"fort-update", "fort_update", "fort-update"},
 	}
 
 	for _, tc := range cases {

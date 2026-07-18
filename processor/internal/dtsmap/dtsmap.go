@@ -71,10 +71,18 @@ var types = map[string]Source{
 
 	// Identity entries for raw webhook-type spellings not already covered
 	// above.
+	//
+	// "fort-update" is the DTS TemplateType name for fort updates (see
+	// internal/api/dts_fields.go's fieldsByType key "fort-update"), but the
+	// wire/testdata.json spelling is the underscored "fort_update" — same
+	// mismatch class as the four derived types above. Both spellings must
+	// resolve to WebhookType "fort_update" so dtsmap.Alias("fort-update")
+	// matches testdata entries and ?dtsType=fort-update isn't silently
+	// empty.
 	"pokemon":     {WebhookType: "pokemon", TemplateType: "monster"},
 	"max_battle":  {WebhookType: "max_battle", TemplateType: "maxbattle"},
 	"fort_update": {WebhookType: "fort_update", TemplateType: "fort-update"},
-	"fort-update": {WebhookType: "fort-update", TemplateType: "fort-update"},
+	"fort-update": {WebhookType: "fort_update", TemplateType: "fort-update"},
 
 	// Identity entries for the derived event's CLI-display (hyphenated)
 	// spelling (see !poracle-test's validHooks in
