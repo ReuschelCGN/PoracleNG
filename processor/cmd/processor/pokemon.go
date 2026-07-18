@@ -400,13 +400,23 @@ func changeTypeBucket(t tracker.ChangeType) string {
 	return "species"
 }
 
+// changeTypeText resolves the translated changeTypeText string for a given
+// bucket ("stats"/"species") in the given language. Shared by the live
+// per-language change-notification path (perLangWithChangeFields) and the
+// monsterChanged derived test/editor-preview path (enrichMonsterChanged in
+// enrich.go), so the "change_type_text_" + bucket translation-key
+// convention lives in exactly one place.
+func (ps *ProcessorService) changeTypeText(lang, bucket string) string {
+	return ps.translatorFor(lang).T("change_type_text_" + bucket)
+}
+
 // perLangWithChangeFields returns a per-language enrichment map that
 // adds `changeType` and `changeTypeText` to the slot for `lang`,
 // leaving other languages shared by reference. Used only for
 // monsterChanged RenderJobs so the fields don't leak into `monster`
 // jobs that share the upstream perLang map.
 func (ps *ProcessorService) perLangWithChangeFields(perLang map[string]map[string]any, lang, bucket string) map[string]map[string]any {
-	text := ps.translatorFor(lang).T("change_type_text_" + bucket)
+	text := ps.changeTypeText(lang, bucket)
 
 	if perLang == nil {
 		return map[string]map[string]any{

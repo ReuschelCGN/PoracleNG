@@ -236,7 +236,13 @@ func (ps *ProcessorService) processTestMonsterChanged(raw json.RawMessage, targe
 	job := ps.renderJobFromEnrich(r, target, "pokemon", partial.New, true, isEncountered)
 	job.IsChange = true
 	job.TemplateType = "monsterChanged"
+	// ChangeType is logging-only (see RenderJob.ChangeType doc). Prefer the
+	// bucket enrichMonsterChanged computed from old/new (extras["changeType"]);
+	// fall back to the "test" placeholder if it's ever missing.
 	job.ChangeType = "test"
+	if ct, ok := r.extras["changeType"].(string); ok && ct != "" {
+		job.ChangeType = ct
+	}
 	job.ReplyKey = newPeek.EncounterID
 	if original, ok := r.extras["original"].(map[string]any); ok {
 		job.OriginalView = original

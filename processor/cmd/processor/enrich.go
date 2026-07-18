@@ -700,11 +700,55 @@ func (ps *ProcessorService) enrichMonsterChanged(raw json.RawMessage, language s
 	priorState := tracker.EncounterStateFromPokemon(&oldPokemon)
 	original := dts.BuildOriginalView(priorState, ps.enricher.GameData, ps.translatorFor(language))
 
+	// The live path (dispatchPokemonAlert) gets its "species"/"stats" bucket
+	// from a tracker.ChangeType that tracker.EncounterTracker.Track already
+	// diffed. Here old/new arrive as a fully-specified pair rather than being
+	// diffed by Track, so there's no ChangeType to hand to changeTypeBucket —
+	// the bucket is computed directly from the two EncounterState snapshots
+	// (see monsterChangedBucket). Without this, changeType/changeTypeText
+	// never land in perLang and the bundled monsterChanged templates render
+	// a dangling "— " ({{changeTypeText}} is unguarded — see fallbacks/dts.json).
+	var newPokemon webhook.PokemonWebhook
+	if err := json.Unmarshal(partial.New, &newPokemon); err != nil {
+		return nil, fmt.Errorf("parse monster changed (new): %w", err)
+	}
+	newState := tracker.EncounterStateFromPokemon(&newPokemon)
+	bucket := monsterChangedBucket(priorState, newState)
+
 	result.templateType = "monsterChanged"
+	if result.perLang == nil {
+		result.perLang = map[string]any{}
+	}
+	result.perLang["changeType"] = bucket
+	result.perLang["changeTypeText"] = ps.changeTypeText(language, bucket)
+
 	if result.extras == nil {
 		result.extras = map[string]any{}
 	}
 	result.extras["original"] = original
+	// extras["changeType"] feeds RenderJob.ChangeType (logging only — see
+	// processTestMonsterChanged) with a representative value instead of the
+	// generic "test" placeholder.
+	result.extras["changeType"] = bucket
 
 	return result, nil
+}
+
+// monsterChangedBucket computes the "species"/"stats" change bucket for the
+// monsterChanged derived test/editor-preview path directly from the two
+// EncounterState snapshots the testdata.json partial supplies (old/new).
+// Mirrors changeTypeBucket's species-vs-stats classification (pokemon.go)
+// but works off identity fields since there's no live tracker.ChangeType
+// here: PokemonID/Form/Gender differing is an identity ("species") change —
+// same field comparisons and gender zero-guard as
+// tracker.EncounterTracker.Track's ChangeSpecies/ChangeForm/ChangeGender
+// cases; anything else (encountered, weather-boost CP shift, raw stat
+// drift) is bucketed as "stats".
+func monsterChangedBucket(old, newState tracker.EncounterState) string {
+	if old.PokemonID != newState.PokemonID ||
+		old.Form != newState.Form ||
+		(old.Gender != newState.Gender && old.Gender != 0 && newState.Gender != 0) {
+		return "species"
+	}
+	return "stats"
 }

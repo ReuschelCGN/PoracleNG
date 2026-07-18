@@ -65,6 +65,72 @@ func TestEnrichMonsterChanged_TemplateTypeAndFields(t *testing.T) {
 	}
 }
 
+// TestEnrichMonsterChanged_ChangeTypeFields covers the Task 6 fix: the
+// bundled monsterChanged templates render {{changeTypeText}} unguarded (see
+// fallbacks/dts.json's "— {{changeTypeText}}" description text), so without
+// this, !poracle-test monster-changed,ditto-reveal renders a dangling "— "
+// with nothing after it. enrichMonsterChanged must populate
+// changeType/changeTypeText on perLang the same way the live
+// dispatchPokemonAlert path does via perLangWithChangeFields. Foongus (590)
+// -> Ditto (132) is a species-level identity change, so the expected bucket
+// is "species".
+func TestEnrichMonsterChanged_ChangeTypeFields(t *testing.T) {
+	ps := newEnrichParityService(t)
+	raw := loadTestdataSample(t, "monster_changed", "ditto-reveal")
+
+	r, err := ps.enrichMonsterChanged(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichMonsterChanged error: %v", err)
+	}
+
+	if got, _ := r.perLang["changeType"].(string); got != "species" {
+		t.Errorf(`r.perLang["changeType"] = %q, want "species" (pokemon_id 590 -> 132)`, got)
+	}
+
+	wantText := ps.translatorFor("en").T("change_type_text_species")
+	got, _ := r.perLang["changeTypeText"].(string)
+	if got == "" {
+		t.Errorf(`r.perLang["changeTypeText"] is empty, want %q`, wantText)
+	}
+	if got != wantText {
+		t.Errorf(`r.perLang["changeTypeText"] = %q, want %q`, got, wantText)
+	}
+}
+
+// TestProcessTestMonsterChanged_PerLangCarriesChangeTypeText confirms the
+// changeType/changeTypeText fields enrichMonsterChanged sets survive into the
+// RenderJob's PerLangEnrichment (renderJobFromEnrich copies r.perLang into
+// perLang[target.Language]) — the exact LayeredView field the bundled
+// {{changeTypeText}} template expression reads at render time (priority
+// level 3, ahead of base/aliases/webhook — see LayeredView doc in CLAUDE.md).
+func TestProcessTestMonsterChanged_PerLangCarriesChangeTypeText(t *testing.T) {
+	ps := newEnrichParityService(t)
+	ps.renderCh = make(chan RenderJob, 1)
+
+	raw := loadTestdataSample(t, "monster_changed", "ditto-reveal")
+	target := webhook.MatchedUser{ID: "42", Language: "en"}
+
+	if err := ps.processTestMonsterChanged(raw, target); err != nil {
+		t.Fatalf("processTestMonsterChanged error: %v", err)
+	}
+
+	select {
+	case job := <-ps.renderCh:
+		langView, ok := job.PerLangEnrichment["en"]
+		if !ok {
+			t.Fatalf("job.PerLangEnrichment missing \"en\" slot: %+v", job.PerLangEnrichment)
+		}
+		if got, _ := langView["changeTypeText"].(string); got == "" {
+			t.Errorf(`job.PerLangEnrichment["en"]["changeTypeText"] is empty, want a non-empty translated string`)
+		}
+		if got, _ := langView["changeType"].(string); got != "species" {
+			t.Errorf(`job.PerLangEnrichment["en"]["changeType"] = %q, want "species"`, got)
+		}
+	default:
+		t.Fatal("expected a RenderJob to be enqueued on renderCh")
+	}
+}
+
 // TestEnrichForType_MonsterChanged locks in the enrichForType dispatch added
 // for this task: "monsterChanged" (and its raw webhook-type spelling
 // "monster-changed") must resolve via enrichMonsterChanged with the alias's

@@ -1813,7 +1813,7 @@
   {
     "type": "monster_changed",
     "test": "ditto-reveal",
-    "location": "current",
+    "location": "keep",
     "webhook": {
       "old": {
         "spawnpoint_id": "47decbc1f19",
