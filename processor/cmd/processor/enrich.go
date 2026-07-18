@@ -24,44 +24,64 @@ type enrichResult struct {
 	extras        map[string]any // derived-type state: original, affected, rsvp, group. Nil for plain types.
 }
 
-// EnrichWebhook runs a raw webhook through the enrichment pipeline, builds a
-// LayeredView (with aliases, emoji, computed fields), and returns a flattened
-// variable map matching what Handlebars templates see during real rendering.
-func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessage, language, platform string) (map[string]any, error) {
-	var result *enrichResult
-	var err error
+// enrichForType resolves a DTS-name synonym (e.g. "monster", "monsterNoIv",
+// "egg") via dtsAlias, dispatches to the enrich* function for the underlying
+// webhook type, and returns the resulting enrichResult with its templateType
+// forced to the alias's TemplateType.
+//
+// The alias is the single source of truth for template-type selection.
+// Without the override at the end of this function, names that share a
+// WebhookType but must render under distinct DTS template types collapse
+// onto whatever the enrich* function hardcodes or infers from the payload:
+// "monster" and "monsterNoIv" both dispatch through enrichPokemon (which
+// always sets templateType "monster"), and "raid"/"egg" both dispatch
+// through enrichRaid (which infers "raid" vs "egg" from the payload's
+// PokemonID, not from which name the caller asked for).
+func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	src, ok := dtsAlias(name)
+	if !ok {
+		return nil, fmt.Errorf("unsupported webhook type: %s", name)
+	}
 
-	// Resolve DTS-name synonyms (e.g. "monster", "monsterNoIv", "egg") to
-	// the underlying webhook type the switch below dispatches on, so
-	// EnrichWebhook("monster", ...) behaves exactly like
-	// EnrichWebhook("pokemon", ...). Derived names (monsterChanged,
-	// rsvpChanges, questSummary, incident, weatherchange) aren't wired into
-	// this switch yet — Tasks 3-7 add that — so they're left unresolved and
-	// fall through to the "unsupported" error below, same as today.
+	// Derived names (monsterChanged, rsvpChanges, questSummary, incident,
+	// weatherchange) aren't parsed from a raw webhook at all — they're
+	// synthesized from processor-internal state (an encounter change, an
+	// RSVP update, a summary digest, ...).
+	// TODO(derived types): Tasks 3-7 dispatch src.WebhookType's derived
+	// builder here instead of erroring.
+	if src.Derived {
+		return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
+	}
+
+	// Resolve to the webhook type the switch below dispatches on, so
+	// enrichForType("monster", ...) behaves exactly like
+	// enrichForType("pokemon", ...).
 	//
-	// "pokestop" is deliberately excluded from the rewrite even though it's
+	// "pokestop" is deliberately excluded from this rewrite even though it's
 	// the canonical WebhookType for both "invasion" and "lure": it isn't a
 	// name this switch dispatches on (disambiguating it requires peeking at
 	// the payload, see resolveDTSTypeFromRaw in test.go), so rewriting to it
 	// would break the "invasion" and "lure" cases that already work today
 	// under their own names.
-	if src, ok := dtsAlias(webhookType); ok && !src.Derived && src.WebhookType != "pokestop" {
-		webhookType = src.WebhookType
+	webhookType := src.WebhookType
+	if webhookType == "pokestop" {
+		webhookType = name
 	}
 
-	isPokemon := webhookType == "pokemon" || webhookType == "monster"
+	var result *enrichResult
+	var err error
 
 	switch webhookType {
 	case "pokemon", "monster":
-		result, err = ps.enrichPokemon(raw, language, true)
+		result, err = ps.enrichPokemon(raw, language, freshenStaleTime)
 	case "raid":
-		result, err = ps.enrichRaid(raw, language, false, true)
+		result, err = ps.enrichRaid(raw, language, false, freshenStaleTime)
 	case "egg":
-		result, err = ps.enrichRaid(raw, language, true, true)
+		result, err = ps.enrichRaid(raw, language, true, freshenStaleTime)
 	case "quest":
 		result, err = ps.enrichQuest(raw, language)
 	case "invasion":
-		result, err = ps.enrichInvasion(raw, language, true)
+		result, err = ps.enrichInvasion(raw, language, freshenStaleTime)
 	case "lure":
 		result, err = ps.enrichLure(raw, language)
 	case "nest":
@@ -78,6 +98,35 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 	if err != nil {
 		return nil, err
 	}
+
+	// The alias is authoritative: it disambiguates names that share a
+	// WebhookType but must render under distinct DTS template types (see
+	// the doc comment above).
+	if src.TemplateType != "" {
+		result.templateType = src.TemplateType
+	}
+
+	return result, nil
+}
+
+// EnrichWebhook runs a raw webhook through the enrichment pipeline, builds a
+// LayeredView (with aliases, emoji, computed fields), and returns a flattened
+// variable map matching what Handlebars templates see during real rendering.
+func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessage, language, platform string) (map[string]any, error) {
+	result, err := ps.enrichForType(webhookType, raw, language, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// isPokemon mirrors the WebhookType the requested name resolves to (not
+	// the alias-authoritative result.templateType — "monster" and
+	// "monsterNoIv" both resolve to the "pokemon" WebhookType and get PVP
+	// display computed for the editor preview below, same as before
+	// enrichForType existed). enrichForType already validated that
+	// dtsAlias(webhookType) resolves (it returned no error), so the lookup
+	// here cannot fail.
+	src, _ := dtsAlias(webhookType)
+	isPokemon := src.WebhookType == "pokemon"
 
 	// Compute PVP display data with a synthetic user (no filters = show all PVP
 	// entries). In normal rendering this is per-user, but for the editor preview

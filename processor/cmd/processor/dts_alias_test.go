@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // TestDtsAlias_DTSNamesResolve covers the DTS template-type name → canonical
 // webhook-source resolution described in CLAUDE.md's DTS template selection
@@ -133,6 +136,126 @@ func TestEnrichWebhook_ResolvesDTSNames(t *testing.T) {
 	if _, err := ps.EnrichWebhook("monsterChanged", pokemonRaw, "en", "discord"); err == nil {
 		t.Errorf(`EnrichWebhook("monsterChanged", ...) error = nil, want an "unsupported" error — derived-type handling isn't wired until Tasks 3-7`)
 	}
+}
+
+// TestEnrichForType_AliasTemplateTypeAuthoritative locks in the fix for two
+// verified defects where the resolved alias's TemplateType was discarded in
+// favor of whatever the underlying enrich* function hardcodes or infers from
+// the payload:
+//
+//   - "monsterNoIv" dispatches through enrichPokemon just like "monster", but
+//     enrichPokemon always hardcodes templateType "monster". Without the
+//     alias's TemplateType winning, enrichForType("monsterNoIv", ...) would
+//     be indistinguishable from enrichForType("monster", ...), silently
+//     losing the distinct DTS alias set view.go keys off templateType (see
+//     CLAUDE.md's DTS template selection docs).
+//   - "egg" is always rewritten to the "raid" WebhookType before dispatch
+//     (mirroring the pre-existing "pokestop" rewrite guard), so it always
+//     reaches enrichRaid with isEgg=false; enrichRaid then infers "raid" vs
+//     "egg" from raid.PokemonID. For a malformed egg fixture (pokemon_id !=
+//     0 — Golbat is not expected to send this, but the alias was requested
+//     explicitly), that inference lands on "raid", not "egg".
+//
+// This test exercises enrichForType directly at the *enrichResult level
+// rather than through EnrichWebhook: the existing harness doesn't set
+// dtsRenderer, so EnrichWebhook takes the mergeEnrichment fallback and
+// templateType is invisible in its return value — exactly how this defect
+// slipped through review.
+func TestEnrichForType_AliasTemplateTypeAuthoritative(t *testing.T) {
+	ps := newEnrichParityService(t)
+
+	pokemonRaw := loadTestdataSample(t, "pokemon", "hundo")
+
+	t.Run("monster", func(t *testing.T) {
+		r, err := ps.enrichForType("monster", pokemonRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("monster", ...) error: %v`, err)
+		}
+		if r.templateType != "monster" {
+			t.Errorf(`enrichForType("monster", ...).templateType = %q, want "monster"`, r.templateType)
+		}
+	})
+
+	t.Run("monsterNoIv", func(t *testing.T) {
+		r, err := ps.enrichForType("monsterNoIv", pokemonRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("monsterNoIv", ...) error: %v`, err)
+		}
+		if r.templateType != "monsterNoIv" {
+			t.Errorf(`enrichForType("monsterNoIv", ...).templateType = %q, want "monsterNoIv" (alias's TemplateType must win over enrichPokemon's hardcoded "monster")`, r.templateType)
+		}
+	})
+
+	t.Run("pokemon", func(t *testing.T) {
+		r, err := ps.enrichForType("pokemon", pokemonRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("pokemon", ...) error: %v`, err)
+		}
+		if r.templateType != "monster" {
+			t.Errorf(`enrichForType("pokemon", ...).templateType = %q, want "monster"`, r.templateType)
+		}
+	})
+
+	t.Run("raid", func(t *testing.T) {
+		raidRaw := loadTestdataSample(t, "raid", "level1")
+		r, err := ps.enrichForType("raid", raidRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("raid", ...) error: %v`, err)
+		}
+		if r.templateType != "raid" {
+			t.Errorf(`enrichForType("raid", ...).templateType = %q, want "raid"`, r.templateType)
+		}
+	})
+
+	t.Run("egg_malformed_pokemon_id", func(t *testing.T) {
+		// A malformed egg: the "egg" alias is requested explicitly, but the
+		// payload carries a real pokemon_id — the signal enrichRaid uses to
+		// infer "raid" vs "egg" when not told which one was requested.
+		malformedEggRaw := json.RawMessage(`{
+			"gym_id": "g1",
+			"latitude": 51.5,
+			"longitude": -0.1,
+			"pokemon_id": 150,
+			"level": 5,
+			"start": 999000,
+			"end": 1000000
+		}`)
+		r, err := ps.enrichForType("egg", malformedEggRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("egg", ...) error: %v`, err)
+		}
+		if r.templateType != "egg" {
+			t.Errorf(`enrichForType("egg", <pokemon_id != 0>).templateType = %q, want "egg" (alias's TemplateType must win over enrichRaid's payload-based inference)`, r.templateType)
+		}
+	})
+
+	t.Run("invasion", func(t *testing.T) {
+		invasionRaw := loadTestdataSample(t, "pokestop", "invasion")
+		r, err := ps.enrichForType("invasion", invasionRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("invasion", ...) error: %v`, err)
+		}
+		if r.templateType != "invasion" {
+			t.Errorf(`enrichForType("invasion", ...).templateType = %q, want "invasion"`, r.templateType)
+		}
+	})
+
+	t.Run("lure", func(t *testing.T) {
+		lureRaw := loadTestdataSample(t, "pokestop", "lure")
+		r, err := ps.enrichForType("lure", lureRaw, "en", true)
+		if err != nil {
+			t.Fatalf(`enrichForType("lure", ...) error: %v`, err)
+		}
+		if r.templateType != "lure" {
+			t.Errorf(`enrichForType("lure", ...).templateType = %q, want "lure"`, r.templateType)
+		}
+	})
+
+	t.Run("derived_name_errors", func(t *testing.T) {
+		if _, err := ps.enrichForType("monsterChanged", pokemonRaw, "en", true); err == nil {
+			t.Errorf(`enrichForType("monsterChanged", ...) error = nil, want a "derived type not yet supported" error`)
+		}
+	})
 }
 
 func TestDtsTypeMap_ContainsCanonicalEntries(t *testing.T) {
