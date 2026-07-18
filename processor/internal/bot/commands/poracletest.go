@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "fort-update", "max-battle", "showcase", "weatherchange"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "monster-changed", "fort-update", "max-battle", "showcase", "weatherchange"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -244,6 +244,24 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		hook["end_time"] = battleEnd
 	case "quest", "gym", "nest", "quest_summary":
 		// No timestamp freshening needed
+	case "monster_changed":
+		// Only the `new` sighting's disappear_time needs freshening so the
+		// preview doesn't render as already-expired; `old` is a fixed prior
+		// point in time with no timestamp templates read (BuildOriginalView
+		// never surfaces DisappearTime). Deep-copy `new` before mutating —
+		// hook is only a shallow copy of dataItem.Webhook (maps.Copy doesn't
+		// recurse), so hook["new"] is still the SAME nested map as the
+		// loaded testdata entry; mutating it in place would corrupt the
+		// shared bundled/user sample for subsequent invocations (same
+		// rationale as the fort_update case above).
+		if newObj, ok := hook["new"].(map[string]any); ok {
+			newNew := make(map[string]any, len(newObj))
+			maps.Copy(newNew, newObj)
+			if _, ok := newNew["disappear_time"]; ok {
+				newNew["disappear_time"] = nowSecs + 10*60
+			}
+			hook["new"] = newNew
+		}
 	case "weatherchange":
 		// The cell's own gameplay_condition/old_gameplay_condition carry no
 		// timestamp, but each affected-pokemon entry's disappear_time is a
@@ -325,6 +343,8 @@ func resolveDTSType(hookType string, webhook map[string]any) string {
 		return "showcase"
 	case "quest_summary":
 		return "questSummary"
+	case "monster_changed":
+		return "monsterChanged"
 	default:
 		return hookType // quest, gym, nest, egg, invasion, lure — match 1:1
 	}

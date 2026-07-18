@@ -18,3 +18,16 @@ func TestResolveDTSType_QuestSummary(t *testing.T) {
 		t.Errorf(`resolveDTSType("quest_summary", nil) = %q, want "questSummary"`, got)
 	}
 }
+
+// TestResolveDTSType_MonsterChanged mirrors TestResolveDTSType_QuestSummary
+// for the "monster-changed" !poracle-test type (superpowers/sdd task-6): the
+// CLI-typeable spelling is lowercase-dash ("monster-changed", never the
+// camelCase DTS template-type name "monsterChanged" a user could never type),
+// and resolveDTSType maps the post-ReplaceAll wire spelling
+// ("monster_changed") back to the registered DTS template type
+// ("monsterChanged") for template-existence validation.
+func TestResolveDTSType_MonsterChanged(t *testing.T) {
+	if got := resolveDTSType("monster_changed", nil); got != "monsterChanged" {
+		t.Errorf(`resolveDTSType("monster_changed", nil) = %q, want "monsterChanged"`, got)
+	}
+}

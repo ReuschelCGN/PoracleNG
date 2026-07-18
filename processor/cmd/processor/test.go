@@ -56,6 +56,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestIncident(raw, matchedUser)
 	case "weatherchange":
 		return ps.processTestWeatherChange(raw, matchedUser)
+	case "monster_changed":
+		return ps.processTestMonsterChanged(raw, matchedUser)
 	case "quest":
 		return ps.processTestQuest(raw, matchedUser)
 	case "quest_summary":
@@ -187,6 +189,60 @@ func (ps *ProcessorService) processTestWeatherChange(raw json.RawMessage, target
 		return fmt.Errorf("render queue not available")
 	}
 	ps.renderCh <- ps.renderJobFromEnrich(r, target, "weatherchange", raw, false, false)
+	return nil
+}
+
+// processTestMonsterChanged handles !poracle-test monster-changed,<id> (wire
+// type "monster_changed" — see resolveDTSTypeFromRaw). Unlike the live path
+// (dispatchPokemonAlert in cmd/processor/pokemon.go), which buckets
+// prior-only users into a monsterChanged render only after
+// tracker.EncounterTracker.Track detects a real diff between two sightings
+// of the same encounter_id, this renders the testdata partial's
+// already-distinct old/new pair straight through: enrichMonsterChanged
+// builds the `new` state (base/perLang, same as a plain pokemon test send)
+// plus the {{original.X}} view from `old`. The resulting RenderJob carries
+// IsChange=true / OriginalView so it goes through
+// dtsRenderer.RenderPokemonChanged exactly like a live change notification
+// would (see processRenderJob's IsChange branch).
+func (ps *ProcessorService) processTestMonsterChanged(raw json.RawMessage, target webhook.MatchedUser) error {
+	// freshenStaleTime=false: mirrors processTestPokemon's pre-existing
+	// convention of never bumping a stale DisappearTime on the live
+	// /api/test path (see enrichPokemon's doc comment).
+	r, err := ps.enrichMonsterChanged(raw, target.Language, false)
+	if err != nil {
+		return err
+	}
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+
+	var partial monsterChangedPartial
+	if err := json.Unmarshal(raw, &partial); err != nil {
+		return fmt.Errorf("parse monster changed: %w", err)
+	}
+	// Peek encounter_id off `new` for ReplyKey — mirrors the live path,
+	// where every pokemon RenderJob carries ReplyKey = encounterID so a
+	// later change can find the prior message via the reply index.
+	var newPeek struct {
+		EncounterID string `json:"encounter_id"`
+	}
+	_ = json.Unmarshal(partial.New, &newPeek) // best-effort; empty ReplyKey just skips reply-threading
+
+	isEncountered := false
+	if v, ok := r.extras["encountered"].(bool); ok {
+		isEncountered = v
+	}
+
+	job := ps.renderJobFromEnrich(r, target, "pokemon", partial.New, true, isEncountered)
+	job.IsChange = true
+	job.TemplateType = "monsterChanged"
+	job.ChangeType = "test"
+	job.ReplyKey = newPeek.EncounterID
+	if original, ok := r.extras["original"].(map[string]any); ok {
+		job.OriginalView = original
+	}
+
+	ps.renderCh <- job
 	return nil
 }
 
@@ -371,6 +427,8 @@ func resolveDTSTypeFromRaw(webhookType string, raw json.RawMessage) string {
 		return "showcase"
 	case "quest_summary":
 		return "questSummary"
+	case "monster_changed":
+		return "monsterChanged"
 	default:
 		return webhookType
 	}

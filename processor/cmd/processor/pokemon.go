@@ -77,31 +77,7 @@ func (ps *ProcessorService) ProcessPokemon(raw json.RawMessage) error {
 		}
 
 		// Encounter tracking (change detection)
-		atk, def, sta := 0, 0, 0
-		if pokemon.IndividualAttack != nil {
-			atk = *pokemon.IndividualAttack
-		}
-		if pokemon.IndividualDefense != nil {
-			def = *pokemon.IndividualDefense
-		}
-		if pokemon.IndividualStamina != nil {
-			sta = *pokemon.IndividualStamina
-		}
-		weather := pokemon.Weather
-		if pokemon.BoostedWeather > 0 {
-			weather = pokemon.BoostedWeather
-		}
-		encounterState := tracker.EncounterState{
-			PokemonID:     pokemon.PokemonID,
-			Form:          pokemon.Form,
-			Gender:        pokemon.Gender,
-			Weather:       weather,
-			CP:            pokemon.CP,
-			ATK:           atk,
-			DEF:           def,
-			STA:           sta,
-			DisappearTime: pokemon.DisappearTime,
-		}
+		encounterState := tracker.EncounterStateFromPokemon(&pokemon)
 
 		// Get rarity group
 		rarityGroup := ps.stats.GetRarityGroup(pokemon.PokemonID)

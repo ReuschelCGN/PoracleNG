@@ -10,6 +10,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/enrichment"
 	"github.com/pokemon/poracleng/processor/internal/matching"
 	"github.com/pokemon/poracleng/processor/internal/staticmap"
+	"github.com/pokemon/poracleng/processor/internal/tracker"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -66,9 +67,15 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 	// editor preview payload) rather than pulling buffered quests from the
 	// live SummaryBuffer and grouping across possibly-different reward
 	// keys the way the real DispatchQuestSummary does — see
-	// enrichQuestSummary's doc comment.
-	// TODO(derived types): Tasks 6-7 dispatch the remaining derived builders
-	// (monsterChanged, rsvpChanges) here instead of erroring.
+	// enrichQuestSummary's doc comment. "monster-changed" is likewise a
+	// partial exception: enrichMonsterChanged takes a fully-specified
+	// {old,new} pokemon-webhook pair (the testdata.json sample / editor
+	// preview payload) rather than diffing two live sightings of the same
+	// encounter_id via tracker.EncounterTracker.Track the way the real
+	// dispatchPokemonAlert path does — see enrichMonsterChanged's doc
+	// comment.
+	// TODO(derived types): Task 7 dispatches the remaining derived builder
+	// (rsvpChanges) here instead of erroring.
 	if src.Derived {
 		switch src.WebhookType {
 		case "incident":
@@ -77,6 +84,8 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 			result, err = ps.enrichWeatherChange(raw, language, freshenStaleTime)
 		case "quest-summary":
 			result, err = ps.enrichQuestSummary(raw, language, freshenStaleTime)
+		case "monster-changed":
+			result, err = ps.enrichMonsterChanged(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
 		}
@@ -192,11 +201,27 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 			platform,
 			nil, // no matched areas
 		)
-		return lv.Flatten(), nil
+		return injectOriginalExtra(lv.Flatten(), result), nil
 	}
 
 	// Fallback if DTS renderer isn't available — return raw merge
-	return mergeEnrichment(result.base, result.perLang, result.webhookFields), nil
+	return injectOriginalExtra(mergeEnrichment(result.base, result.perLang, result.webhookFields), result), nil
+}
+
+// injectOriginalExtra copies extras["original"] (built by
+// enrichMonsterChanged) onto the flattened variable map so the
+// /api/dts/enrich editor preview exposes {{original.X}} the same way the
+// live RenderPokemonChanged path and !poracle-test do. LayeredView.Flatten
+// doesn't include it: the "original" nested-map exposure is a raymond
+// FieldResolver special-case (LayeredView.GetField) that only applies during
+// actual template rendering, not the flattened variable-browser map this
+// function builds. A no-op for every non-monsterChanged type, since only
+// enrichMonsterChanged sets extras["original"].
+func injectOriginalExtra(vars map[string]any, result *enrichResult) map[string]any {
+	if original, ok := result.extras["original"].(map[string]any); ok {
+		vars["original"] = original
+	}
+	return vars
 }
 
 // mergeEnrichment is a simple fallback when the DTS renderer is not available.
@@ -616,4 +641,70 @@ func (ps *ProcessorService) enrichQuestSummary(raw json.RawMessage, language str
 		webhookFields: parseWebhookFields(raw),
 		extras:        map[string]any{"quests": views},
 	}, nil
+}
+
+// monsterChangedPartial is the structured shape enrichMonsterChanged
+// consumes for the derived "monsterChanged" DTS type: the prior sighting's
+// pokemon webhook (`old`) and the current sighting's pokemon webhook (`new`)
+// for the same encounter. It's a test/editor-preview convenience, not a real
+// Golbat wire event — the live path (dispatchPokemonAlert in
+// cmd/processor/pokemon.go) derives both states from
+// tracker.EncounterTracker.Track's diff against repeated sightings of the
+// same encounter_id over time; here the caller supplies both snapshots
+// directly (see fallbacks/testdata.json's "monster_changed"/"ditto-reveal"
+// sample — the underscore spelling is the !poracle-test/API wire type; the
+// DTS template-type name and dtsAlias key are both "monsterChanged", see
+// resolveDTSTypeFromRaw).
+type monsterChangedPartial struct {
+	Old json.RawMessage `json:"old"`
+	New json.RawMessage `json:"new"`
+}
+
+// enrichMonsterChanged parses the monsterChanged partial, enriches `new` via
+// enrichPokemon — the exact same helper the plain "pokemon"/"monster" test
+// path uses — and builds the {{original.X}} prior-sighting view from `old`
+// via tracker.EncounterStateFromPokemon + dts.BuildOriginalView. This is the
+// same BuildOriginalView call dispatchPokemonAlert falls back to when no
+// per-language OldWebhook re-enrichment is available (see its doc comment);
+// unlike that live path, this never attempts the richer
+// buildPerLanguageOriginal re-enrichment, since that helper needs a live
+// target-user list and a fully wired WeatherProvider — neither fits an
+// editor preview / single-shot test render. So {{original.X}} here is always
+// the narrower BuildOriginalView field set: identity, battle stats, and
+// translated names — no map/icon URLs.
+//
+// freshenStaleTime only affects `new` (via enrichPokemon) — `old` is a fixed
+// prior point in time with no expiring timestamp templates read
+// (BuildOriginalView never surfaces DisappearTime).
+func (ps *ProcessorService) enrichMonsterChanged(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	var partial monsterChangedPartial
+	if err := json.Unmarshal(raw, &partial); err != nil {
+		return nil, fmt.Errorf("parse monster changed: %w", err)
+	}
+	if len(partial.New) == 0 {
+		return nil, fmt.Errorf("monster changed partial missing 'new' webhook")
+	}
+	if len(partial.Old) == 0 {
+		return nil, fmt.Errorf("monster changed partial missing 'old' webhook")
+	}
+
+	result, err := ps.enrichPokemon(partial.New, language, freshenStaleTime)
+	if err != nil {
+		return nil, fmt.Errorf("enrich monster changed (new): %w", err)
+	}
+
+	var oldPokemon webhook.PokemonWebhook
+	if err := json.Unmarshal(partial.Old, &oldPokemon); err != nil {
+		return nil, fmt.Errorf("parse monster changed (old): %w", err)
+	}
+	priorState := tracker.EncounterStateFromPokemon(&oldPokemon)
+	original := dts.BuildOriginalView(priorState, ps.enricher.GameData, ps.translatorFor(language))
+
+	result.templateType = "monsterChanged"
+	if result.extras == nil {
+		result.extras = map[string]any{}
+	}
+	result.extras["original"] = original
+
+	return result, nil
 }
