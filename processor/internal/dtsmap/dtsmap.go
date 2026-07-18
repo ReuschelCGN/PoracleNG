@@ -82,8 +82,15 @@ var types = map[string]Source{
 	// resolve to WebhookType "fort_update" so dtsmap.Alias("fort-update")
 	// matches testdata entries and ?dtsType=fort-update isn't silently
 	// empty.
+	//
+	// "max-battle" is the CLI-display / API hyphenated spelling for
+	// "maxbattle" (see !poracle-test's validHooks and POST /api/test's
+	// resolveTestWireType, internal/api/test_type.go) — same identity-entry
+	// treatment as "fort-update" above, so both hyphenated forms resolve
+	// consistently instead of only one of the two.
 	"pokemon":     {WebhookType: "pokemon", TemplateType: "monster"},
 	"max_battle":  {WebhookType: "max_battle", TemplateType: "maxbattle"},
+	"max-battle":  {WebhookType: "max_battle", TemplateType: "maxbattle"},
 	"fort_update": {WebhookType: "fort_update", TemplateType: "fort-update"},
 	"fort-update": {WebhookType: "fort_update", TemplateType: "fort-update"},
 

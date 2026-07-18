@@ -79,6 +79,80 @@ func TestHumaTest_OK(t *testing.T) {
 	}
 }
 
+// TestHumaTest_ResolvesDTSTypeNames confirms POST /api/test resolves `type`
+// through resolveTestWireType before calling ProcessTest, so a caller may use
+// a DTS template-type name (e.g. "monsterChanged") the same way !poracle-test
+// does, not just ProcessTest's own raw wire spellings. Prior to this fix,
+// req.Type was passed straight through, so {"type":"monsterChanged",...}
+// reached the real ProcessTest's switch (which only recognizes
+// "monster_changed") and 500'd with "unsupported test webhook type".
+func TestHumaTest_ResolvesDTSTypeNames(t *testing.T) {
+	cases := []struct {
+		sendType string
+		wantType string
+	}{
+		{"monsterChanged", "monster_changed"},
+		{"monster", "pokemon"},
+		{"maxbattle", "max_battle"},
+		// Wire types must keep working unchanged (idempotent resolution).
+		{"pokemon", "pokemon"},
+		{"raid", "raid"},
+		{"monster_changed", "monster_changed"},
+		{"max_battle", "max_battle"},
+		// CLI-display hyphenated forms must keep working.
+		{"fort-update", "fort_update"},
+		{"max-battle", "max_battle"},
+		// invasion/lure are unaffected: they resolve to themselves, exactly
+		// as the pre-fix passthrough behaved (see resolveTestWireType's doc
+		// comment for why the pokestop-guard direction differs from
+		// !poracle-test's resolveHookType).
+		{"invasion", "invasion"},
+		{"lure", "lure"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.sendType, func(t *testing.T) {
+			r, api := newFeaturesTestAPI(t)
+			proc := &stubTestProc{}
+			RegisterTest(api, proc)
+
+			body := []byte(`{
+				"type":"` + tc.sendType + `",
+				"target":{"id":"123","type":"discord:user","language":"en"},
+				"webhook":{"pokemon_id":25,"iv":100,"latitude":1.2,"longitude":3.4}
+			}`)
+			w := postJSON(t, r, "/api/test", body)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+			}
+			if proc.gotType != tc.wantType {
+				t.Errorf("ProcessTest called with type=%q, want %q (sent %q)", proc.gotType, tc.wantType, tc.sendType)
+			}
+		})
+	}
+}
+
+// TestHumaTest_UnknownTypePassesThrough confirms an unresolvable `type`
+// reaches ProcessTest unchanged rather than being masked behind a different
+// error — ProcessTest's own "unsupported test webhook type: %s" case is the
+// authoritative error for this, and resolveTestWireType must not shadow it.
+func TestHumaTest_UnknownTypePassesThrough(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	proc := &stubTestProc{}
+	RegisterTest(api, proc)
+
+	body := []byte(`{"type":"totally-bogus-type","target":{"id":"1"},"webhook":{"x":1}}`)
+	w := postJSON(t, r, "/api/test", body)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (stub never errors), got %d body=%s", w.Code, w.Body.String())
+	}
+	if proc.gotType != "totally-bogus-type" {
+		t.Errorf("ProcessTest called with type=%q, want unchanged %q", proc.gotType, "totally-bogus-type")
+	}
+}
+
 func TestHumaTest_MissingFields400(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
 	RegisterTest(api, &stubTestProc{})

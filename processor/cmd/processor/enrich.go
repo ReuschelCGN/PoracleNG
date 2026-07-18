@@ -158,15 +158,22 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 		return nil, err
 	}
 
-	// isPokemon mirrors the WebhookType the requested name resolves to (not
-	// the alias-authoritative result.templateType — "monster" and
-	// "monsterNoIv" both resolve to the "pokemon" WebhookType and get PVP
-	// display computed for the editor preview below, same as before
-	// enrichForType existed). enrichForType already validated that
-	// dtsAlias(webhookType) resolves (it returned no error), so the lookup
-	// here cannot fail.
-	src, _ := dtsAlias(webhookType)
-	isPokemon := src.WebhookType == "pokemon"
+	// isPokemon gates the synthetic-user PVP display block below on whether
+	// the RESULT renders through a pokemon-family template — result.templateType,
+	// not the requested name's underlying WebhookType. A prior version gated
+	// on `dtsAlias(webhookType).WebhookType == "pokemon"`, which covered
+	// "monster"/"monsterNoIv" (WebhookType "pokemon") but missed
+	// "monsterChanged": its WebhookType is the derived "monster_changed"
+	// spelling even though its base/perLang enrichment IS a pokemon spawn —
+	// the NEW sighting, built via enrichPokemon (see enrichMonsterChanged's
+	// doc comment) — so the editor preview rendered {{pvpGreat}}/etc. empty
+	// while the live path (processTestMonsterChanged ->
+	// renderJobFromEnrich(isPokemon=true)) always computed it. Gating on the
+	// alias-authoritative result.templateType instead (set by enrichForType)
+	// keeps all three pokemon-family template types in sync with
+	// renderJobFromEnrich's own isPokemon=true call sites (processTestPokemon,
+	// processTestMonsterChanged).
+	isPokemon := result.templateType == "monster" || result.templateType == "monsterNoIv" || result.templateType == "monsterChanged"
 
 	// Compute PVP display data with a synthetic user (no filters = show all PVP
 	// entries). In normal rendering this is per-user, but for the editor preview

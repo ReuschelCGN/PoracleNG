@@ -37,6 +37,27 @@ func TestAliasFold_CaseInsensitiveMatch(t *testing.T) {
 	}
 }
 
+// TestAliasFold_MaxBattleHyphenated locks in the "max-battle" identity entry
+// (CLI-display / API hyphenated spelling for the "maxbattle" DTS type),
+// mirroring the "fort-update" identity entry that already exists alongside
+// "fort_update" — see the canonical table's doc comment. Without it,
+// AliasFold("max-battle") fails even though "fort-update" (the same class of
+// hyphenated wire-adjacent spelling) already resolves, an inconsistency a
+// caller resolving either DTS type's hyphenated form (e.g. POST /api/test)
+// would trip over.
+func TestAliasFold_MaxBattleHyphenated(t *testing.T) {
+	src, ok := AliasFold("max-battle")
+	if !ok {
+		t.Fatalf(`AliasFold("max-battle") ok = false, want true`)
+	}
+	if src.WebhookType != "max_battle" {
+		t.Errorf(`AliasFold("max-battle").WebhookType = %q, want "max_battle"`, src.WebhookType)
+	}
+	if src.TemplateType != "maxbattle" {
+		t.Errorf(`AliasFold("max-battle").TemplateType = %q, want "maxbattle"`, src.TemplateType)
+	}
+}
+
 // TestAliasFold_Unknown confirms an unrecognized token (and the
 // deliberately-absent "pokestop" identity entry — see the canonical table's
 // doc comment) still resolves to ok=false.

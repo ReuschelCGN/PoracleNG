@@ -2,9 +2,12 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pokemon/poracleng/processor/internal/dts"
+	"github.com/pokemon/poracleng/processor/internal/enrichment"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -194,6 +197,81 @@ func TestEnrichWebhook_MonsterChanged(t *testing.T) {
 	if got, _ := vars["pokemonId"].(int); got != 132 {
 		t.Errorf(`vars["pokemonId"] = %v, want 132 (new/Ditto)`, vars["pokemonId"])
 	}
+}
+
+// TestEnrichWebhook_SyntheticPerUserPVP locks in the fix for a verified
+// defect: EnrichWebhook's synthetic "_editor" PokemonPerUser block (the
+// per-user PVP display data the editor preview shows) was gated on
+// `src.WebhookType == "pokemon"`, which is true for "monster"/"monsterNoIv"
+// (WebhookType "pokemon") but false for "monsterChanged" (WebhookType is the
+// derived "monster_changed" spelling) — even though monsterChanged's base
+// enrichment IS a pokemon spawn (the NEW sighting, built via enrichPokemon —
+// see enrichMonsterChanged's doc comment) and the LIVE path
+// (processTestMonsterChanged -> renderJobFromEnrich(isPokemon=true)) DOES
+// compute this block. So a monsterChanged template's {{pvpGreat}}/etc.
+// previewed empty in the editor but rendered populated live.
+//
+// Unlike TestEnrichWebhook_MonsterChanged above, this wires a real
+// dtsRenderer so EnrichWebhook takes the LayeredView.Flatten branch instead
+// of the mergeEnrichment fallback — mergeEnrichment never carries perUser at
+// all (by design; see EnrichWebhook's branch), so the fallback path can't
+// distinguish "computed but not merged" from "never computed" and would mask
+// this defect either way.
+func TestEnrichWebhook_SyntheticPerUserPVP(t *testing.T) {
+	ps := newEnrichParityService(t)
+	ps.enricher.PVPDisplay = &enrichment.PVPDisplayConfig{}
+
+	// dts.NewRenderer requires at least an empty dts.json to be present
+	// (it errors "no DTS source found" otherwise) — this test only needs
+	// the renderer's ViewBuilder (EnrichWebhook's LayeredView.Flatten
+	// branch), never a real template lookup, so an empty entry list is
+	// sufficient.
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "dts.json"), []byte("[]"), 0644); err != nil {
+		t.Fatalf("write dts.json: %v", err)
+	}
+	renderer, err := dts.NewRenderer(dts.RendererConfig{
+		ConfigDir:     configDir,
+		FallbackDir:   t.TempDir(),
+		DefaultLocale: "en",
+	})
+	if err != nil {
+		t.Fatalf("dts.NewRenderer: %v", err)
+	}
+	ps.dtsRenderer = renderer
+
+	pokemonRaw := loadTestdataSample(t, "pokemon", "hundo")
+	monsterChangedRaw := loadTestdataSample(t, "monster_changed", "ditto-reveal")
+
+	t.Run("monster", func(t *testing.T) {
+		vars, err := ps.EnrichWebhook("monster", pokemonRaw, "en", "discord")
+		if err != nil {
+			t.Fatalf(`EnrichWebhook("monster", ...) error: %v`, err)
+		}
+		if _, ok := vars["userHasPvpTracks"]; !ok {
+			t.Errorf(`EnrichWebhook("monster", ...)["userHasPvpTracks"] missing, want the synthetic-user PVP block to be present (no regression)`)
+		}
+	})
+
+	t.Run("monsterNoIv", func(t *testing.T) {
+		vars, err := ps.EnrichWebhook("monsterNoIv", pokemonRaw, "en", "discord")
+		if err != nil {
+			t.Fatalf(`EnrichWebhook("monsterNoIv", ...) error: %v`, err)
+		}
+		if _, ok := vars["userHasPvpTracks"]; !ok {
+			t.Errorf(`EnrichWebhook("monsterNoIv", ...)["userHasPvpTracks"] missing, want the synthetic-user PVP block to be present (no regression)`)
+		}
+	})
+
+	t.Run("monsterChanged", func(t *testing.T) {
+		vars, err := ps.EnrichWebhook("monsterChanged", monsterChangedRaw, "en", "discord")
+		if err != nil {
+			t.Fatalf(`EnrichWebhook("monsterChanged", ...) error: %v`, err)
+		}
+		if _, ok := vars["userHasPvpTracks"]; !ok {
+			t.Errorf(`EnrichWebhook("monsterChanged", ...)["userHasPvpTracks"] missing, want the synthetic-user PVP block to be present — matches the live processTestMonsterChanged/renderJobFromEnrich path, which always computes it for monsterChanged`)
+		}
+	})
 }
 
 // TestProcessTestMonsterChanged_EnqueuesChangeJob verifies the
