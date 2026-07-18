@@ -58,6 +58,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestWeatherChange(raw, matchedUser)
 	case "quest":
 		return ps.processTestQuest(raw, matchedUser)
+	case "quest_summary":
+		return ps.processTestQuestSummary(raw, matchedUser)
 	case "gym":
 		return ps.processTestGym(raw, matchedUser)
 	case "nest":
@@ -242,6 +244,28 @@ func (ps *ProcessorService) processTestQuest(raw json.RawMessage, target webhook
 	return nil
 }
 
+// processTestQuestSummary handles !poracle-test quest-summary,<id> (wire
+// type "quest_summary" — see resolveDTSTypeFromRaw). Unlike the live
+// scheduler (DispatchQuestSummary), which pulls buffered quests from the
+// SummaryBuffer, groups them by (rewardType, reward, form), and dispatches
+// one questSummary message per group via DispatchBypass, this test path
+// renders exactly the single already-grouped reward the testdata partial
+// supplies (see enrichQuestSummary) through the standard renderCh/RenderAlert
+// pipeline used by every other !poracle-test handler — so a test digest
+// goes through the normal render pool and rate limiting like any other test
+// alert, rather than bypassing it the way a real scheduled summary does.
+func (ps *ProcessorService) processTestQuestSummary(raw json.RawMessage, target webhook.MatchedUser) error {
+	r, err := ps.enrichQuestSummary(raw, target.Language, false)
+	if err != nil {
+		return err
+	}
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+	ps.renderCh <- ps.renderJobFromEnrich(r, target, AlertTypeQuest, raw, false, false)
+	return nil
+}
+
 func (ps *ProcessorService) processTestGym(raw json.RawMessage, target webhook.MatchedUser) error {
 	r, err := ps.enrichGym(raw, target.Language)
 	if err != nil {
@@ -345,6 +369,8 @@ func resolveDTSTypeFromRaw(webhookType string, raw json.RawMessage) string {
 		return "maxbattle"
 	case "showcase":
 		return "showcase"
+	case "quest_summary":
+		return "questSummary"
 	default:
 		return webhookType
 	}

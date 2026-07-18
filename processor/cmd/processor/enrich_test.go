@@ -79,8 +79,14 @@ func newEnrichParityService(t *testing.T) *ProcessorService {
 			WeatherProvider: stubWeatherProvider{}, // Pokemon/Raid/Invasion/Maxbattle enrichment dereferences this unconditionally
 			IvColors:        []string{"#9D9D9D", "#FFFFFF", "#1EFF00", "#0070DD", "#A335EE", "#FF8000"},
 		},
-		stats:  &tracker.StatsTracker{}, // zero-value: GetRarityGroup falls back to RarityUnknown
-		pvpCfg: &pvp.Config{},
+		// translations mirrors enricher.Translations — real processor init sets
+		// both from the same i18n.Load call (see main.go). buildQuestSummaryGroupView
+		// (used by enrichQuestSummary) reads ps.translations directly, same as
+		// the live DispatchQuestSummary scheduler path; a nil *i18n.Bundle would
+		// panic on .For(lang) rather than fail gracefully.
+		translations: tr,
+		stats:        &tracker.StatsTracker{}, // zero-value: GetRarityGroup falls back to RarityUnknown
+		pvpCfg:       &pvp.Config{},
 	}
 }
 

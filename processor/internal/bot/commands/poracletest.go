@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "fort-update", "max-battle", "showcase", "weatherchange"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "fort-update", "max-battle", "showcase", "weatherchange"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -242,7 +242,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		battleEnd := nowSecs + 120*60
 		hook["battle_end"] = battleEnd
 		hook["end_time"] = battleEnd
-	case "quest", "gym", "nest":
+	case "quest", "gym", "nest", "quest_summary":
 		// No timestamp freshening needed
 	case "weatherchange":
 		// The cell's own gameplay_condition/old_gameplay_condition carry no
@@ -323,6 +323,8 @@ func resolveDTSType(hookType string, webhook map[string]any) string {
 		return "maxbattle"
 	case "showcase":
 		return "showcase"
+	case "quest_summary":
+		return "questSummary"
 	default:
 		return hookType // quest, gym, nest, egg, invasion, lure — match 1:1
 	}

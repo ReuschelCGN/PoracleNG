@@ -1687,6 +1687,83 @@
     }
   },
   {
+    "type": "quest_summary",
+    "test": "stardust",
+    "location": "current",
+    "webhook": {
+      "reward": {
+        "type": 3,
+        "reward": 1500,
+        "form": 0
+      },
+      "quests": [
+        {
+          "pokestop_id": "e1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1.16",
+          "latitude": 34.052235,
+          "longitude": -118.243683,
+          "pokestop_name": "Pershing Square Fountain",
+          "type": 4,
+          "target": 10,
+          "template": "challenge_catch_easy",
+          "title": "quest_catch_pokemon_plural",
+          "conditions": [],
+          "rewards": [
+            {
+              "info": {
+                "amount": 1500
+              },
+              "type": 3
+            }
+          ],
+          "with_ar": false,
+          "updated": 1774471518
+        },
+        {
+          "pokestop_id": "e2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2.16",
+          "latitude": 34.055100,
+          "longitude": -118.246200,
+          "pokestop_name": "Angels Flight Railway",
+          "type": 4,
+          "target": 5,
+          "template": "challenge_catch_easy",
+          "title": "quest_catch_pokemon_plural",
+          "conditions": [],
+          "rewards": [
+            {
+              "info": {
+                "amount": 1500
+              },
+              "type": 3
+            }
+          ],
+          "with_ar": false,
+          "updated": 1774471518
+        },
+        {
+          "pokestop_id": "e3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3.16",
+          "latitude": 34.049500,
+          "longitude": -118.250700,
+          "pokestop_name": "Grand Central Market Entrance",
+          "type": 13,
+          "target": 3,
+          "template": "challenge_berry_moderate",
+          "title": "quest_catch_feed_plural",
+          "conditions": [],
+          "rewards": [
+            {
+              "info": {
+                "amount": 1500
+              },
+              "type": 3
+            }
+          ],
+          "with_ar": true,
+          "updated": 1774471518
+        }
+      ]
+    }
+  },
+  {
     "type": "weatherchange",
     "test": "rain",
     "location": "current",

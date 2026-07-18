@@ -60,15 +60,23 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 	// testdata.json sample / editor preview payload) supplying the old/new
 	// weather IDs and affected-pokemon list directly, rather than deriving
 	// them from live tracker state the way the real consumeWeatherChanges
-	// path does — see enrichWeatherChange's doc comment.
-	// TODO(derived types): Tasks 5-7 dispatch the remaining derived builders
-	// (monsterChanged, rsvpChanges, questSummary) here instead of erroring.
+	// path does — see enrichWeatherChange's doc comment. "questSummary" is
+	// likewise a partial exception: enrichQuestSummary takes a
+	// fully-specified single reward group (the testdata.json sample /
+	// editor preview payload) rather than pulling buffered quests from the
+	// live SummaryBuffer and grouping across possibly-different reward
+	// keys the way the real DispatchQuestSummary does — see
+	// enrichQuestSummary's doc comment.
+	// TODO(derived types): Tasks 6-7 dispatch the remaining derived builders
+	// (monsterChanged, rsvpChanges) here instead of erroring.
 	if src.Derived {
 		switch src.WebhookType {
 		case "incident":
 			result, err = ps.enrichIncident(raw, language, freshenStaleTime)
 		case "weather-change":
 			result, err = ps.enrichWeatherChange(raw, language, freshenStaleTime)
+		case "quest-summary":
+			result, err = ps.enrichQuestSummary(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
 		}
@@ -537,5 +545,75 @@ func (ps *ProcessorService) enrichWeatherChange(raw json.RawMessage, language st
 		webhookFields: parseWebhookFields(raw),
 		tilePending:   tilePending,
 		extras:        map[string]any{"affected": wc.Affected},
+	}, nil
+}
+
+// questSummaryPartial is the structured shape enrichQuestSummary consumes
+// for the derived "questSummary" DTS type: one reward group's shared
+// (type, reward, form) key plus the per-pokestop quest webhooks that belong
+// to it. It's a test/editor-preview convenience, not a real Golbat wire
+// event — the live path (DispatchQuestSummary, cmd/processor/quest_summary_dispatch.go)
+// builds groups itself from many buffered tracker.BufferedQuest rows that
+// may span several different reward keys, then splits each group into
+// chunks per config; here the caller supplies exactly one already-formed
+// group (see fallbacks/testdata.json's "quest_summary"/"stardust" sample —
+// the underscore spelling is the !poracle-test/API wire type; the DTS
+// template-type name and dtsAlias key are both "questSummary", see
+// resolveDTSTypeFromRaw), rendered unchunked (chunk=1, chunks=1).
+type questSummaryPartial struct {
+	Reward struct {
+		Type int `json:"type"`
+		ID   int `json:"reward"`
+		Form int `json:"form"`
+	} `json:"reward"`
+	Quests []json.RawMessage `json:"quests"`
+}
+
+// enrichQuestSummary parses the questSummary partial, re-enriches each
+// per-pokestop quest via questEnrichOne — the exact same helper
+// DispatchQuestSummary uses to re-enrich buffered quests at delivery time —
+// and builds the group view via buildQuestSummaryGroupView, also shared
+// with DispatchQuestSummary, so the resulting fields match a live summary
+// digest byte-for-byte. Nothing about rendering is re-derived here.
+//
+// freshenStaleTime is accepted for signature symmetry with the other
+// Derived enrich* functions dispatched from enrichForType's switch, but is
+// a no-op here: quests carry no expiring timestamp of their own to freshen
+// (enrichQuest, the regular quest path, has no freshenStaleTime parameter
+// either) — the daily quest reset is computed from lat/lon at render time
+// (geo.EndOfDay), not read off the webhook.
+func (ps *ProcessorService) enrichQuestSummary(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	_ = freshenStaleTime
+
+	var partial questSummaryPartial
+	if err := json.Unmarshal(raw, &partial); err != nil {
+		return nil, fmt.Errorf("parse quest summary: %w", err)
+	}
+	if len(partial.Quests) == 0 {
+		return nil, fmt.Errorf("quest summary partial has no quests")
+	}
+
+	views := make([]map[string]any, 0, len(partial.Quests))
+	for _, q := range partial.Quests {
+		view := ps.questEnrichOne(q, language)
+		if view == nil {
+			continue
+		}
+		views = append(views, view)
+	}
+	if len(views) == 0 {
+		return nil, fmt.Errorf("quest summary partial: no quest entries could be enriched")
+	}
+
+	base := ps.buildQuestSummaryGroupView(
+		partial.Reward.Type, partial.Reward.ID, partial.Reward.Form,
+		views, len(views), 1, 1, language,
+	)
+
+	return &enrichResult{
+		templateType:  "questSummary",
+		base:          base,
+		webhookFields: parseWebhookFields(raw),
+		extras:        map[string]any{"quests": views},
 	}, nil
 }
