@@ -184,7 +184,7 @@ func (ps *ProcessorService) processTestWeatherChange(raw json.RawMessage, target
 	if ps.renderCh == nil {
 		return fmt.Errorf("render queue not available")
 	}
-	ps.renderCh <- ps.renderJobFromEnrich(r, target, "weather", raw, false, false)
+	ps.renderCh <- ps.renderJobFromEnrich(r, target, "weatherchange", raw, false, false)
 	return nil
 }
 
