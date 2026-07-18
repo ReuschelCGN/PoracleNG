@@ -1070,11 +1070,38 @@
               "array",
               "null"
             ]
+          },
+          "types": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DtsTypeInfo"
+            },
+            "type": "object"
           }
         },
         "required": [
           "status",
-          "testdata"
+          "testdata",
+          "types"
+        ],
+        "type": "object"
+      },
+      "DtsTypeInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "derived": {
+            "type": "boolean"
+          },
+          "templateType": {
+            "type": "string"
+          },
+          "webhookType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "webhookType",
+          "templateType",
+          "derived"
         ],
         "type": "object"
       },
@@ -2517,6 +2544,9 @@
       "TestDataEntry": {
         "additionalProperties": false,
         "properties": {
+          "dtsType": {
+            "type": "string"
+          },
           "location": {
             "type": "string"
           },
@@ -13093,14 +13123,26 @@
     },
     "/dts/testdata": {
       "get": {
-        "description": "Returns {status, testdata}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use.",
+        "description": "Returns {status, testdata, types}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use. ?dtsType=<name> resolves via the shared DTS-type alias table (including the pokestop invasion/lure and raid/egg payload-shape splits) and tags each returned entry with dtsType; the legacy ?type=<webhookType> filter is unchanged and untagged. types is the full DTS-type -> source map for client discovery.",
         "operationId": "get-dts-testdata",
         "parameters": [
           {
+            "description": "Legacy filter: exact raw webhook type (e.g. pokemon, raid, pokestop). Returns every entry of that type, untagged. Takes precedence over dtsType if both are set.",
             "explode": false,
             "in": "query",
             "name": "type",
             "schema": {
+              "description": "Legacy filter: exact raw webhook type (e.g. pokemon, raid, pokestop). Returns every entry of that type, untagged. Takes precedence over dtsType if both are set.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "DTS template type name (e.g. monster, egg, invasion, lure, incident, monsterChanged) or raw webhook type, resolved via the shared alias table. Returns only the entries that preview that type — including the server-side pokestop invasion/lure and raid/egg splits — each tagged with dtsType.",
+            "explode": false,
+            "in": "query",
+            "name": "dtsType",
+            "schema": {
+              "description": "DTS template type name (e.g. monster, egg, invasion, lure, incident, monsterChanged) or raw webhook type, resolved via the shared alias table. Returns only the entries that preview that type — including the server-side pokestop invasion/lure and raid/egg splits — each tagged with dtsType.",
               "type": "string"
             }
           }

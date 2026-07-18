@@ -19,17 +19,21 @@ func TestDtsAlias_DTSNamesResolve(t *testing.T) {
 	}{
 		{"monster", "pokemon", "monster", false},
 		{"monsterNoIv", "pokemon", "monsterNoIv", false},
-		{"monsterChanged", "monster-changed", "monsterChanged", true},
+		// WebhookType for the four derived types below is the literal
+		// testdata.json/wire spelling (underscores, or no separator for
+		// weatherchange), not the hyphenated CLI-display spelling — see
+		// dtsmap's doc comment on the canonical table.
+		{"monsterChanged", "monster_changed", "monsterChanged", true},
 		{"raid", "raid", "raid", false},
 		{"egg", "raid", "egg", false},
-		{"rsvpChanges", "rsvp-changes", "rsvpChanges", true},
+		{"rsvpChanges", "rsvp_changes", "rsvpChanges", true},
 		{"quest", "quest", "quest", false},
-		{"questSummary", "quest-summary", "questSummary", true},
+		{"questSummary", "quest_summary", "questSummary", true},
 		{"invasion", "pokestop", "invasion", false},
 		{"incident", "incident", "incident", true},
 		{"showcase", "showcase", "showcase", false},
 		{"lure", "pokestop", "lure", false},
-		{"weatherchange", "weather-change", "weatherchange", true},
+		{"weatherchange", "weatherchange", "weatherchange", true},
 		{"gym", "gym", "gym", false},
 		{"nest", "nest", "nest", false},
 		{"maxbattle", "max_battle", "maxbattle", false},

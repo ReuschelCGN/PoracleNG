@@ -83,13 +83,13 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 		switch src.WebhookType {
 		case "incident":
 			result, err = ps.enrichIncident(raw, language, freshenStaleTime)
-		case "weather-change":
+		case "weatherchange":
 			result, err = ps.enrichWeatherChange(raw, language, freshenStaleTime)
-		case "quest-summary":
+		case "quest_summary":
 			result, err = ps.enrichQuestSummary(raw, language, freshenStaleTime)
-		case "monster-changed":
+		case "monster_changed":
 			result, err = ps.enrichMonsterChanged(raw, language, freshenStaleTime)
-		case "rsvp-changes":
+		case "rsvp_changes":
 			result, err = ps.enrichRsvpChanges(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
