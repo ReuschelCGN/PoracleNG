@@ -52,6 +52,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestRaid(raw, matchedUser)
 	case "invasion":
 		return ps.processTestInvasion(raw, matchedUser)
+	case "incident":
+		return ps.processTestIncident(raw, matchedUser)
 	case "quest":
 		return ps.processTestQuest(raw, matchedUser)
 	case "gym":
@@ -147,6 +149,21 @@ func (ps *ProcessorService) processTestInvasion(raw json.RawMessage, target webh
 		return fmt.Errorf("render queue not available")
 	}
 	ps.renderCh <- ps.renderJobFromEnrich(r, target, "invasion", raw, false, false)
+	return nil
+}
+
+func (ps *ProcessorService) processTestIncident(raw json.RawMessage, target webhook.MatchedUser) error {
+	// freshenStaleTime=false: mirrors processTestInvasion's pre-existing
+	// behaviour of never bumping a stale IncidentExpiration/ExpireTimestamp
+	// (see enrichInvasion's doc comment; enrichIncident shares the same flag).
+	r, err := ps.enrichIncident(raw, target.Language, false)
+	if err != nil {
+		return err
+	}
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+	ps.renderCh <- ps.renderJobFromEnrich(r, target, "incident", raw, false, false)
 	return nil
 }
 

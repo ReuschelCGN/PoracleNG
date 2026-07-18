@@ -43,57 +43,68 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 		return nil, fmt.Errorf("unsupported webhook type: %s", name)
 	}
 
-	// Derived names (monsterChanged, rsvpChanges, questSummary, incident,
-	// weatherchange) aren't parsed from a raw webhook at all — they're
-	// synthesized from processor-internal state (an encounter change, an
-	// RSVP update, a summary digest, ...).
-	// TODO(derived types): Tasks 3-7 dispatch src.WebhookType's derived
-	// builder here instead of erroring.
-	if src.Derived {
-		return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
-	}
-
-	// Resolve to the webhook type the switch below dispatches on, so
-	// enrichForType("monster", ...) behaves exactly like
-	// enrichForType("pokemon", ...).
-	//
-	// "pokestop" is deliberately excluded from this rewrite even though it's
-	// the canonical WebhookType for both "invasion" and "lure": it isn't a
-	// name this switch dispatches on (disambiguating it requires peeking at
-	// the payload, see resolveDTSTypeFromRaw in test.go), so rewriting to it
-	// would break the "invasion" and "lure" cases that already work today
-	// under their own names.
-	webhookType := src.WebhookType
-	if webhookType == "pokestop" {
-		webhookType = name
-	}
-
 	var result *enrichResult
 	var err error
 
-	switch webhookType {
-	case "pokemon", "monster":
-		result, err = ps.enrichPokemon(raw, language, freshenStaleTime)
-	case "raid":
-		result, err = ps.enrichRaid(raw, language, false, freshenStaleTime)
-	case "egg":
-		result, err = ps.enrichRaid(raw, language, true, freshenStaleTime)
-	case "quest":
-		result, err = ps.enrichQuest(raw, language)
-	case "invasion":
-		result, err = ps.enrichInvasion(raw, language, freshenStaleTime)
-	case "lure":
-		result, err = ps.enrichLure(raw, language)
-	case "nest":
-		result, err = ps.enrichNest(raw, language)
-	case "gym":
-		result, err = ps.enrichGym(raw, language)
-	case "fort_update", "fort-update":
-		result, err = ps.enrichFort(raw, language)
-	case "max_battle", "maxbattle":
-		result, err = ps.enrichMaxbattle(raw, language)
-	default:
-		return nil, fmt.Errorf("unsupported webhook type: %s", webhookType)
+	// Derived names (monsterChanged, rsvpChanges, questSummary, incident,
+	// weatherchange) aren't parsed from a raw webhook at all — they're
+	// synthesized from processor-internal state (an encounter change, an
+	// RSVP update, a summary digest, ...). "incident" is the one exception:
+	// it IS parsed from a raw webhook — the same PokestopEvent shape as
+	// "invasion" — just rendered under a distinct DTS template type (see
+	// enrichIncident), so it's marked Derived in the alias table purely to
+	// flag that it has no direct 1:1 webhook-type spelling of its own for the
+	// switch below, not because it's synthesized from internal state.
+	// TODO(derived types): Tasks 4-7 dispatch the remaining derived builders
+	// (monsterChanged, rsvpChanges, questSummary, weatherchange) here instead
+	// of erroring.
+	if src.Derived {
+		switch src.WebhookType {
+		case "incident":
+			result, err = ps.enrichIncident(raw, language, freshenStaleTime)
+		default:
+			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
+		}
+	} else {
+		// Resolve to the webhook type the switch below dispatches on, so
+		// enrichForType("monster", ...) behaves exactly like
+		// enrichForType("pokemon", ...).
+		//
+		// "pokestop" is deliberately excluded from this rewrite even though it's
+		// the canonical WebhookType for both "invasion" and "lure": it isn't a
+		// name this switch dispatches on (disambiguating it requires peeking at
+		// the payload, see resolveDTSTypeFromRaw in test.go), so rewriting to it
+		// would break the "invasion" and "lure" cases that already work today
+		// under their own names.
+		webhookType := src.WebhookType
+		if webhookType == "pokestop" {
+			webhookType = name
+		}
+
+		switch webhookType {
+		case "pokemon", "monster":
+			result, err = ps.enrichPokemon(raw, language, freshenStaleTime)
+		case "raid":
+			result, err = ps.enrichRaid(raw, language, false, freshenStaleTime)
+		case "egg":
+			result, err = ps.enrichRaid(raw, language, true, freshenStaleTime)
+		case "quest":
+			result, err = ps.enrichQuest(raw, language)
+		case "invasion":
+			result, err = ps.enrichInvasion(raw, language, freshenStaleTime)
+		case "lure":
+			result, err = ps.enrichLure(raw, language)
+		case "nest":
+			result, err = ps.enrichNest(raw, language)
+		case "gym":
+			result, err = ps.enrichGym(raw, language)
+		case "fort_update", "fort-update":
+			result, err = ps.enrichFort(raw, language)
+		case "max_battle", "maxbattle":
+			result, err = ps.enrichMaxbattle(raw, language)
+		default:
+			return nil, fmt.Errorf("unsupported webhook type: %s", webhookType)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -285,6 +296,27 @@ func (ps *ProcessorService) enrichQuest(raw json.RawMessage, language string) (*
 // live /api/test path (see enrichPokemon's freshenStaleTime doc for the full
 // rationale).
 func (ps *ProcessorService) enrichInvasion(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	return ps.enrichPokestopEvent(raw, language, freshenStaleTime, "invasion")
+}
+
+// enrichIncident parses and enriches an incident webhook (Gold Pokéstop,
+// Kecleon, Pokémon-contest/Showcase display types). Incidents ride the exact
+// same webhook.InvasionWebhook payload shape as invasions — Golbat
+// distinguishes them only by gruntTypeID==0 with a display type >= 7 (see the
+// isIncident split in cmd/processor/invasion.go's live ProcessInvasion path) —
+// so this reuses enrichInvasion's enrichment core and only overrides the
+// resulting templateType to "incident". That gives operators a simpler card
+// without grunt/reward fields. freshenStaleTime has the same meaning as
+// enrichInvasion's (see enrichPokemon's doc for the full rationale).
+func (ps *ProcessorService) enrichIncident(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	return ps.enrichPokestopEvent(raw, language, freshenStaleTime, "incident")
+}
+
+// enrichPokestopEvent is the shared enrichment core for enrichInvasion and
+// enrichIncident: both parse the same webhook.InvasionWebhook shape and
+// enrich through enricher.Invasion/InvasionTranslate; only the resulting
+// templateType differs between callers.
+func (ps *ProcessorService) enrichPokestopEvent(raw json.RawMessage, language string, freshenStaleTime bool, templateType string) (*enrichResult, error) {
 	var inv webhook.InvasionWebhook
 	if err := json.Unmarshal(raw, &inv); err != nil {
 		return nil, fmt.Errorf("parse invasion: %w", err)
@@ -315,7 +347,7 @@ func (ps *ProcessorService) enrichInvasion(raw json.RawMessage, language string,
 	}
 
 	return &enrichResult{
-		templateType:  "invasion",
+		templateType:  templateType,
 		base:          base,
 		perLang:       perLang,
 		webhookFields: parseWebhookFields(raw),

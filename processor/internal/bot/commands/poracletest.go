@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "gym", "nest", "quest", "fort-update", "max-battle", "showcase"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "fort-update", "max-battle", "showcase"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -199,7 +199,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		start := nowSecs + 10*60
 		hook["start"] = start
 		hook["end"] = start + 30*60
-	case "pokestop":
+	case "pokestop", "incident":
 		if _, ok := hook["incident_expiration"]; ok {
 			hook["incident_expiration"] = nowSecs + 10*60
 		}

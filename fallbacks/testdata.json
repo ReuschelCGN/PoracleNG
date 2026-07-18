@@ -1215,7 +1215,7 @@
     }
   },
   {
-    "type": "pokestop",
+    "type": "incident",
     "test": "kecleon",
     "location": "current",
     "webhook": {
@@ -1237,7 +1237,7 @@
     }
   },
   {
-    "type": "pokestop",
+    "type": "incident",
     "test": "goldstop",
     "location": "current",
     "webhook": {
@@ -1259,7 +1259,7 @@
     }
   },
   {
-    "type": "pokestop",
+    "type": "incident",
     "test": "pokemoncontest",
     "location": "current",
     "webhook": {
