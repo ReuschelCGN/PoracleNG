@@ -159,11 +159,12 @@ func TestEnrichForType_MonsterChanged(t *testing.T) {
 		t.Errorf(`enrichForType("monster-changed", ...).templateType = %q, want "monsterChanged"`, r2.templateType)
 	}
 
-	// Other still-unimplemented derived names must keep erroring — this task
-	// only wires "monsterChanged" (in addition to "incident"/"weatherchange"/
-	// "questSummary" from tasks 3-5).
-	if _, err := ps.enrichForType("rsvpChanges", raw, "en", false); err == nil {
-		t.Errorf(`enrichForType("rsvpChanges", ...) error = nil, want a "derived type not yet supported" error`)
+	// Unrecognized names must keep erroring. "rsvpChanges" used to be the
+	// still-unimplemented case asserted here, but superpowers/sdd task-7
+	// wired it up (the last derived type) — see rsvpchanges_test.go's
+	// TestEnrichForType_RsvpChanges for its now-passing coverage.
+	if _, err := ps.enrichForType("totally-bogus-derived-type", raw, "en", false); err == nil {
+		t.Errorf(`enrichForType("totally-bogus-derived-type", ...) error = nil, want an "unsupported webhook type" error`)
 	}
 }
 

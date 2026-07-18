@@ -1888,5 +1888,52 @@
         "pvp": null
       }
     }
+  },
+  {
+    "type": "rsvp_changes",
+    "test": "level5",
+    "location": "current",
+    "webhook": {
+      "gym_id": "c3a1f2ea8d03748fdbc7fa72c6a15772.16",
+      "gym_name": "RSVP Test Gym",
+      "gym_url": "https://lh3.googleusercontent.com/G_JAaxOS90g-hVniIQuF9Tr5H1IIsrh_G3PDQI5Tm560YsKCu6u9V5UucRTr6vZnDgkANFp2QYvw_7ZF-2XA-Lgo9A",
+      "latitude": 51.189153,
+      "longitude": 0.892118,
+      "team_id": 1,
+      "spawn": 1775471928,
+      "start": 1775475528,
+      "end": 1775478228,
+      "level": 5,
+      "pokemon_id": 895,
+      "cp": 28624,
+      "gender": 3,
+      "form": 3215,
+      "alignment": 0,
+      "costume": 0,
+      "evolution": 0,
+      "move_1": 202,
+      "move_2": 82,
+      "ex_raid_eligible": 0,
+      "is_exclusive": 0,
+      "sponsor_id": 0,
+      "partner_id": "",
+      "power_up_points": 10,
+      "power_up_level": 0,
+      "power_up_end_timestamp": 0,
+      "ar_scan_eligible": 0,
+      "rsvps": [
+        {
+          "timeslot": 4102444800000,
+          "going_count": 4,
+          "maybe_count": 2
+        },
+        {
+          "timeslot": 4102448400000,
+          "going_count": 7,
+          "maybe_count": 1
+        }
+      ],
+      "raid_seed": "5845571837887094592"
+    }
   }
 ]

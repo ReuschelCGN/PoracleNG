@@ -62,6 +62,8 @@ func (ps *ProcessorService) ProcessTest(webhookType string, raw json.RawMessage,
 		return ps.processTestQuest(raw, matchedUser)
 	case "quest_summary":
 		return ps.processTestQuestSummary(raw, matchedUser)
+	case "rsvp_changes":
+		return ps.processTestRsvpChanges(raw, matchedUser)
 	case "gym":
 		return ps.processTestGym(raw, matchedUser)
 	case "nest":
@@ -141,6 +143,46 @@ func (ps *ProcessorService) processTestRaid(raw json.RawMessage, target webhook.
 		return fmt.Errorf("render queue not available")
 	}
 	ps.renderCh <- ps.renderJobFromEnrich(r, target, r.templateType, raw, false, false)
+	return nil
+}
+
+// processTestRsvpChanges handles !poracle-test rsvp-changes,<id> (wire type
+// "rsvp_changes" — see resolveDTSTypeFromRaw). Mirrors the compact
+// rsvpChanges RenderJob ProcessRaid constructs (cmd/processor/raid.go) for
+// prior-tracked users who should get the RSVP-only update instead of the
+// full raid/egg template: TemplateType "rsvpChanges", OverrideCleanTTH set
+// to the latest future RSVP timeslot (computed by enrichRsvpChanges), and
+// the same raidlife EditKey/ReplyKey convention so a test send lines up with
+// any live raid/egg message already tracked for the same gym+end lifecycle.
+// freshenStaleTime=false mirrors processTestRaid's pre-existing convention
+// of never bumping a stale Start/End window on the live /api/test path (see
+// enrichRaid's doc comment for the full rationale).
+func (ps *ProcessorService) processTestRsvpChanges(raw json.RawMessage, target webhook.MatchedUser) error {
+	r, err := ps.enrichRsvpChanges(raw, target.Language, false)
+	if err != nil {
+		return err
+	}
+	if ps.renderCh == nil {
+		return fmt.Errorf("render queue not available")
+	}
+
+	var raid webhook.RaidWebhook
+	if err := json.Unmarshal(raw, &raid); err != nil {
+		return fmt.Errorf("parse rsvp changes: %w", err)
+	}
+
+	job := ps.renderJobFromEnrich(r, target, "raid", raw, false, false)
+	job.TemplateType = "rsvpChanges"
+	job.EditKey = fmt.Sprintf(raidEditKeyFmt, raid.GymID, raid.End)
+	job.ReplyKey = fmt.Sprintf(raidReplyKeyFmt, raid.GymID, raid.End)
+	// OverrideCleanTTH is only set when we have a real future timeslot —
+	// mirrors ProcessRaid's own "0 means use the default path" convention
+	// (see enrichRsvpChanges's doc comment).
+	if tth, ok := r.extras["overrideCleanTTH"].(int64); ok && tth > 0 {
+		job.OverrideCleanTTH = tth
+	}
+
+	ps.renderCh <- job
 	return nil
 }
 
@@ -435,6 +477,8 @@ func resolveDTSTypeFromRaw(webhookType string, raw json.RawMessage) string {
 		return "questSummary"
 	case "monster_changed":
 		return "monsterChanged"
+	case "rsvp_changes":
+		return "rsvpChanges"
 	default:
 		return webhookType
 	}

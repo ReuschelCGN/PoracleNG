@@ -73,9 +73,12 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 	// preview payload) rather than diffing two live sightings of the same
 	// encounter_id via tracker.EncounterTracker.Track the way the real
 	// dispatchPokemonAlert path does — see enrichMonsterChanged's doc
-	// comment.
-	// TODO(derived types): Task 7 dispatches the remaining derived builder
-	// (rsvpChanges) here instead of erroring.
+	// comment. "rsvp-changes" is likewise a partial exception:
+	// enrichRsvpChanges takes a fully-specified raid webhook with its
+	// `rsvps` array populated (the testdata.json sample / editor preview
+	// payload) rather than reading the live RSVP list off an in-flight raid
+	// webhook the way the real ProcessRaid path does — see
+	// enrichRsvpChanges's doc comment.
 	if src.Derived {
 		switch src.WebhookType {
 		case "incident":
@@ -86,6 +89,8 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 			result, err = ps.enrichQuestSummary(raw, language, freshenStaleTime)
 		case "monster-changed":
 			result, err = ps.enrichMonsterChanged(raw, language, freshenStaleTime)
+		case "rsvp-changes":
+			result, err = ps.enrichRsvpChanges(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("derived type not yet supported (implemented in a later task): %s", name)
 		}
@@ -751,4 +756,65 @@ func monsterChangedBucket(old, newState tracker.EncounterState) string {
 		return "species"
 	}
 	return "stats"
+}
+
+// enrichRsvpChanges parses the derived "rsvpChanges" DTS test type's
+// partial — a raid webhook with its `rsvps` array populated (see
+// fallbacks/testdata.json's "rsvp_changes" sample — the underscore spelling
+// is the !poracle-test/API wire type; the DTS template-type name and
+// dtsAlias key are both "rsvpChanges", see resolveDTSTypeFromRaw). Unlike
+// monsterChanged/questSummary/weatherchange, this derived type needs no
+// bespoke partial shape: webhook.RaidWebhook already carries the RSVP list
+// natively (`rsvps`), so this reuses enrichRaid wholesale — the same helper
+// the plain "raid"/"egg" test path uses — and only adds
+// extras["overrideCleanTTH"].
+//
+// The live path (ProcessRaid in cmd/processor/raid.go) computes
+// OverrideCleanTTH as the latest future RSVP timeslot via
+// latestFutureTimeslotSec, so that a compact rsvpChanges message cleans up
+// at the RSVP window's edge rather than raid.End. This mirrors that exact
+// computation off the same partial's `rsvps` list, rather than deriving it
+// from a live in-flight raid the way ProcessRaid does.
+//
+// freshenStaleTime is forwarded to enrichRaid unchanged (bumping a stale
+// Start/End window for the editor preview — see enrichRaid's doc comment);
+// it does not touch the `rsvps` timeslots themselves; only future timeslots
+// contribute to enricher.Raid's own `rsvps` field and to
+// latestFutureTimeslotSec below (see internal/enrichment/raid.go), so a
+// testdata sample must carry safely-future timeslot values on its own (as
+// fallbacks/testdata.json's "rsvp_changes" sample does) for either
+// freshenStaleTime setting to see a populated RSVP list and a non-zero
+// OverrideCleanTTH.
+func (ps *ProcessorService) enrichRsvpChanges(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	// isEgg=false: rsvpChanges test sends always reuse enrichRaid's own
+	// raid-vs-egg inference from the payload's PokemonID; the alias override
+	// below (templateType = "rsvpChanges") applies regardless of which one
+	// enrichRaid picked.
+	result, err := ps.enrichRaid(raw, language, false, freshenStaleTime)
+	if err != nil {
+		return nil, fmt.Errorf("enrich rsvp changes: %w", err)
+	}
+
+	var raid webhook.RaidWebhook
+	if err := json.Unmarshal(raw, &raid); err != nil {
+		return nil, fmt.Errorf("parse rsvp changes: %w", err)
+	}
+
+	rsvps := make([]tracker.RaidRSVP, len(raid.RSVPs))
+	for i, r := range raid.RSVPs {
+		rsvps[i] = tracker.RaidRSVP{Timeslot: r.Timeslot, GoingCount: r.GoingCount, MaybeCount: r.MaybeCount}
+	}
+	latest := latestFutureTimeslotSec(rsvps, time.Now().UnixMilli())
+
+	result.templateType = "rsvpChanges"
+	if result.extras == nil {
+		result.extras = map[string]any{}
+	}
+	// overrideCleanTTH is 0 when no future RSVP timeslot exists — mirrors
+	// ProcessRaid's "use the render pool's default path" fallback (raid.End
+	// from the enrichment map); processTestRsvpChanges only sets
+	// RenderJob.OverrideCleanTTH when this is non-zero (see its doc comment).
+	result.extras["overrideCleanTTH"] = latest
+
+	return result, nil
 }

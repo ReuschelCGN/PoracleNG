@@ -86,7 +86,7 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "monster-changed", "fort-update", "max-battle", "showcase", "weatherchange"}
+	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "monster-changed", "rsvp-changes", "fort-update", "max-battle", "showcase", "weatherchange"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
@@ -199,6 +199,34 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		start := nowSecs + 10*60
 		hook["start"] = start
 		hook["end"] = start + 30*60
+	case "rsvp_changes":
+		start := nowSecs + 10*60
+		hook["start"] = start
+		hook["end"] = start + 30*60
+		// Deep-copy the rsvps array before mutating — hook is only a
+		// shallow copy of dataItem.Webhook (maps.Copy doesn't recurse), so
+		// hook["rsvps"] is still the SAME nested slice/maps as the loaded
+		// testdata entry; mutating in place would corrupt the shared
+		// bundled/user sample for subsequent invocations (same rationale as
+		// the fort_update/monster_changed cases below). Each timeslot is
+		// bumped to a distinct near-future point (+5min, +15min, ...) so the
+		// rendered rsvpChanges preview shows a live-looking RSVP window
+		// instead of the canned sample's fixed far-future timestamp.
+		if rsvps, ok := hook["rsvps"].([]interface{}); ok {
+			newRsvps := make([]interface{}, len(rsvps))
+			for i, r := range rsvps {
+				rm, ok := r.(map[string]interface{})
+				if !ok {
+					newRsvps[i] = r
+					continue
+				}
+				newR := make(map[string]interface{}, len(rm))
+				maps.Copy(newR, rm)
+				newR["timeslot"] = (nowSecs + int64(5+i*10)*60) * 1000
+				newRsvps[i] = newR
+			}
+			hook["rsvps"] = newRsvps
+		}
 	case "pokestop", "incident":
 		if _, ok := hook["incident_expiration"]; ok {
 			hook["incident_expiration"] = nowSecs + 10*60
@@ -345,6 +373,8 @@ func resolveDTSType(hookType string, webhook map[string]any) string {
 		return "questSummary"
 	case "monster_changed":
 		return "monsterChanged"
+	case "rsvp_changes":
+		return "rsvpChanges"
 	default:
 		return hookType // quest, gym, nest, egg, invasion, lure — match 1:1
 	}

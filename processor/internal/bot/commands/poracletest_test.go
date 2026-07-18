@@ -31,3 +31,16 @@ func TestResolveDTSType_MonsterChanged(t *testing.T) {
 		t.Errorf(`resolveDTSType("monster_changed", nil) = %q, want "monsterChanged"`, got)
 	}
 }
+
+// TestResolveDTSType_RsvpChanges mirrors TestResolveDTSType_MonsterChanged
+// for the "rsvp-changes" !poracle-test type (superpowers/sdd task-7 — the
+// last derived type): the CLI-typeable spelling is lowercase-dash
+// ("rsvp-changes", never the camelCase DTS template-type name "rsvpChanges"
+// a user could never type), and resolveDTSType maps the post-ReplaceAll wire
+// spelling ("rsvp_changes") back to the registered DTS template type
+// ("rsvpChanges") for template-existence validation.
+func TestResolveDTSType_RsvpChanges(t *testing.T) {
+	if got := resolveDTSType("rsvp_changes", nil); got != "rsvpChanges" {
+		t.Errorf(`resolveDTSType("rsvp_changes", nil) = %q, want "rsvpChanges"`, got)
+	}
+}
