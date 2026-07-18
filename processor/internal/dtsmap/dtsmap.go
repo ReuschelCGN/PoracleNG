@@ -7,7 +7,10 @@
 // single source of truth both sides use.
 package dtsmap
 
-import "maps"
+import (
+	"maps"
+	"strings"
+)
 
 // Source describes where a DTS template-type name comes from: which raw
 // webhook type it is enriched from, the canonical DTS template type name
@@ -106,6 +109,36 @@ var types = map[string]Source{
 // recognized.
 func Alias(name string) (Source, bool) {
 	src, ok := types[name]
+	return src, ok
+}
+
+// typesFold is a lowercase-keyed mirror of types, built once at package
+// init (a plain package-level var initializer — Go runs these
+// single-threaded before main/any goroutines, so no locking is needed) for
+// AliasFold. None of the canonical keys collide once lowercased: the
+// camelCase, hyphenated, and underscored spellings of the same derived type
+// ("monsterChanged" / "monster-changed" / "monster_changed") differ by
+// separator, not just case, so folding case never merges two distinct
+// entries.
+var typesFold = buildTypesFold()
+
+func buildTypesFold() map[string]Source {
+	out := make(map[string]Source, len(types))
+	for k, v := range types {
+		out[strings.ToLower(k)] = v
+	}
+	return out
+}
+
+// AliasFold is like Alias but matches name case-insensitively. It exists for
+// callers whose input has already been lowercased upstream and so can't be
+// matched against camelCase keys like "monsterChanged" or "monsterNoIv" by
+// Alias alone — e.g. !poracle-test's leading type token, which the bot
+// command parser lowercases before the command ever sees it (see
+// internal/bot/parser.go's tokenize and internal/bot/commands/poracletest.go's
+// resolveHookType).
+func AliasFold(name string) (Source, bool) {
+	src, ok := typesFold[strings.ToLower(name)]
 	return src, ok
 }
 

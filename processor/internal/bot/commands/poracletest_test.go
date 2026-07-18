@@ -1,6 +1,14 @@
 package commands
 
-import "testing"
+import (
+	"encoding/json"
+	"path/filepath"
+	"testing"
+
+	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/gamedata"
+)
 
 // TestResolveDTSType_QuestSummary locks in a real defect found while wiring
 // the "quest-summary" !poracle-test type (superpowers/sdd task-5): the
@@ -42,5 +50,240 @@ func TestResolveDTSType_MonsterChanged(t *testing.T) {
 func TestResolveDTSType_RsvpChanges(t *testing.T) {
 	if got := resolveDTSType("rsvp_changes", nil); got != "rsvpChanges" {
 		t.Errorf(`resolveDTSType("rsvp_changes", nil) = %q, want "rsvpChanges"`, got)
+	}
+}
+
+// TestResolveHookType_DTSNames covers superpowers/sdd task-9: !poracle-test's
+// leading type token must resolve by DTS template-type name (e.g. "monster",
+// "maxbattle"), not just by webhook wire type or CLI-display hyphenated
+// name. Tokens are given already-lowercased, matching what
+// internal/bot/parser.go's tokenize hands the command (a real "monsterChanged"
+// user input arrives as "monsterchanged" — see TestResolveDTSType_MonsterChanged's
+// doc comment for the same lowercasing constraint applied to resolveDTSType).
+func TestResolveHookType_DTSNames(t *testing.T) {
+	cases := []struct {
+		token string
+		want  string
+	}{
+		{"monster", "pokemon"},                // DTS name -> pokemon wire type
+		{"monsternoiv", "pokemon"},            // DTS name -> pokemon wire type
+		{"maxbattle", "max_battle"},           // DTS name (no hyphen) -> wire type
+		{"monsterchanged", "monster_changed"}, // camelCase, lowercased by the parser
+		{"rsvpchanges", "rsvp_changes"},
+		{"questsummary", "quest_summary"},
+		{"egg", "raid"}, // DTS name -> shared "raid" wire type/testdata bucket
+	}
+	for _, tc := range cases {
+		t.Run(tc.token, func(t *testing.T) {
+			got, ok := resolveHookType(tc.token)
+			if !ok {
+				t.Fatalf("resolveHookType(%q) ok = false, want true", tc.token)
+			}
+			if got != tc.want {
+				t.Errorf("resolveHookType(%q) = %q, want %q", tc.token, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveHookType_ExistingFormsUnchanged locks in backward compatibility:
+// every raw webhook-type spelling and CLI-display hyphenated derived-type
+// name that already worked before task-9 must keep resolving to the exact
+// same wire type.
+func TestResolveHookType_ExistingFormsUnchanged(t *testing.T) {
+	cases := []struct {
+		token string
+		want  string
+	}{
+		{"pokemon", "pokemon"},
+		{"raid", "raid"},
+		{"pokestop", "pokestop"},
+		{"incident", "incident"},
+		{"gym", "gym"},
+		{"nest", "nest"},
+		{"quest", "quest"},
+		{"showcase", "showcase"},
+		{"weatherchange", "weatherchange"},
+		{"quest-summary", "quest_summary"},
+		{"monster-changed", "monster_changed"},
+		{"rsvp-changes", "rsvp_changes"},
+		{"fort-update", "fort_update"},
+		{"max-battle", "max_battle"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.token, func(t *testing.T) {
+			got, ok := resolveHookType(tc.token)
+			if !ok {
+				t.Fatalf("resolveHookType(%q) ok = false, want true", tc.token)
+			}
+			if got != tc.want {
+				t.Errorf("resolveHookType(%q) = %q, want %q", tc.token, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveHookType_Unknown confirms a nonsense token is rejected, exactly
+// as validHooks rejected it before task-9 (the caller falls back to the
+// existing "unknown type" usage message — see TestPoracleTest_UnknownType).
+func TestResolveHookType_Unknown(t *testing.T) {
+	if _, ok := resolveHookType("not-a-real-type"); ok {
+		t.Errorf(`resolveHookType("not-a-real-type") ok = true, want false`)
+	}
+}
+
+// --- End-to-end Run() coverage -------------------------------------------
+
+// fakeTestProcessor records the webhookType and raw payload passed to
+// ProcessTest, so tests can assert !poracle-test resolved the right testdata
+// bucket for a DTS-name token without needing a fully-wired ProcessorService
+// (dtsRenderer/renderCh/dispatcher — see cmd/processor/incident_test.go's
+// TestProcessTest_DispatchesIncident doc comment for why that's impractical
+// at this layer).
+type fakeTestProcessor struct {
+	gotWebhookType string
+	gotRaw         json.RawMessage
+	gotTarget      bot.TestTarget
+	err            error
+}
+
+func (f *fakeTestProcessor) ProcessTest(webhookType string, raw json.RawMessage, target bot.TestTarget) error {
+	f.gotWebhookType = webhookType
+	f.gotRaw = raw
+	f.gotTarget = target
+	return f.err
+}
+
+// repoRoot walks up from this package (processor/internal/bot/commands) to
+// the repo root, where fallbacks/testdata.json lives — mirrors
+// cmd/processor/enrich_test.go's repoRoot helper.
+func repoRoot() string {
+	return filepath.Join("..", "..", "..", "..")
+}
+
+// poracleTestCmdCtx builds a CommandContext wired well enough to exercise
+// PoracleTestCommand.Run end-to-end: admin (Run 🙅-blocks non-admins),
+// Config.BaseDir pointing at the real repo root (loadTestdata reads
+// fallbacks/testdata.json from there), a minimal ArgMatcher for the
+// template:/language: prefixes, and a fakeTestProcessor to capture the
+// resolved dispatch. Named distinctly from poracle_test.go's poracleTestCtx
+// (that one builds a context for the unrelated !poracle registration
+// command).
+func poracleTestCmdCtx(t *testing.T) (*bot.CommandContext, *fakeTestProcessor) {
+	t.Helper()
+	ctx, _ := testCtx(t)
+	ctx.IsAdmin = true
+	ctx.Config = &config.Config{BaseDir: repoRoot()}
+
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{},
+		Moves:    map[int]*gamedata.Move{},
+		Types:    map[int]*gamedata.TypeInfo{},
+	}
+	resolver := bot.NewPokemonResolver(gd, ctx.Translations, []string{"en"}, nil)
+	ctx.ArgMatcher = bot.NewArgMatcher(ctx.Translations, gd, resolver, []string{"en"})
+
+	fake := &fakeTestProcessor{}
+	ctx.TestProcessor = fake
+	return ctx, fake
+}
+
+func runPoracleTest(t *testing.T, ctx *bot.CommandContext, args ...string) []bot.Reply {
+	t.Helper()
+	cmd := &PoracleTestCommand{}
+	return cmd.Run(ctx, args)
+}
+
+// TestPoracleTest_DTSNameLoadsSameEntryAsWireType is the core task-9
+// scenario: "!poracle-test monster hundo" must resolve the same testdata
+// bucket and dispatch the same wire type as the existing
+// "!poracle-test pokemon hundo".
+func TestPoracleTest_DTSNameLoadsSameEntryAsWireType(t *testing.T) {
+	ctx, fake := poracleTestCmdCtx(t)
+	replies := runPoracleTest(t, ctx, "monster", "hundo")
+	if len(replies) == 0 || replies[0].React != "✅" {
+		t.Fatalf("monster,hundo: replies = %+v, want a ✅ ack", replies)
+	}
+	if fake.gotWebhookType != "pokemon" {
+		t.Errorf(`monster,hundo: ProcessTest webhookType = %q, want "pokemon"`, fake.gotWebhookType)
+	}
+	gotHundo := fake.gotRaw
+
+	ctx2, fake2 := poracleTestCmdCtx(t)
+	runPoracleTest(t, ctx2, "pokemon", "hundo")
+	if fake2.gotWebhookType != "pokemon" {
+		t.Errorf(`pokemon,hundo: ProcessTest webhookType = %q, want "pokemon"`, fake2.gotWebhookType)
+	}
+	if string(gotHundo) != string(fake2.gotRaw) {
+		t.Errorf("monster,hundo and pokemon,hundo loaded different payloads:\n%s\nvs\n%s", gotHundo, fake2.gotRaw)
+	}
+}
+
+// TestPoracleTest_MaxbattleDTSName covers the "maxbattle" (no hyphen, DTS
+// template-type name) form alongside the pre-existing "max-battle"
+// (CLI-display hyphenated) form — both must resolve to the "max_battle"
+// wire type and find the same "level1" testdata entry.
+func TestPoracleTest_MaxbattleDTSName(t *testing.T) {
+	ctx, fake := poracleTestCmdCtx(t)
+	replies := runPoracleTest(t, ctx, "maxbattle", "level1")
+	if len(replies) == 0 || replies[0].React != "✅" {
+		t.Fatalf("maxbattle,level1: replies = %+v, want a ✅ ack", replies)
+	}
+	if fake.gotWebhookType != "max_battle" {
+		t.Errorf(`maxbattle,level1: ProcessTest webhookType = %q, want "max_battle"`, fake.gotWebhookType)
+	}
+
+	ctx2, fake2 := poracleTestCmdCtx(t)
+	runPoracleTest(t, ctx2, "max-battle", "level1")
+	if fake2.gotWebhookType != "max_battle" {
+		t.Errorf(`max-battle,level1: ProcessTest webhookType = %q, want "max_battle"`, fake2.gotWebhookType)
+	}
+}
+
+// TestPoracleTest_MonsterChangedLowercasedDTSName covers the camelCase DTS
+// name as it actually arrives at Run: lowercased by the parser (see
+// resolveHookType's doc comment). "!poracle-test monsterChanged,<id>" from a
+// real user reaches PoracleTestCommand.Run as the token "monsterchanged".
+func TestPoracleTest_MonsterChangedLowercasedDTSName(t *testing.T) {
+	ctx, fake := poracleTestCmdCtx(t)
+	replies := runPoracleTest(t, ctx, "monsterchanged", "ditto-reveal")
+	if len(replies) == 0 || replies[0].React != "✅" {
+		t.Fatalf("monsterchanged,ditto-reveal: replies = %+v, want a ✅ ack", replies)
+	}
+	if fake.gotWebhookType != "monster_changed" {
+		t.Errorf(`monsterchanged,ditto-reveal: ProcessTest webhookType = %q, want "monster_changed"`, fake.gotWebhookType)
+	}
+}
+
+// TestPoracleTest_EggDTSName covers "egg" — a DTS template-type name that
+// isn't its own wire type (fallbacks/testdata.json has no `type:"egg"`
+// entries; egg samples live under `type:"raid"`, disambiguated by
+// pokemon_id — see resolveDTSType's "raid" case). Both "egg" and "raid"
+// must resolve to the "raid" testdata bucket and find the same "egg5" entry.
+func TestPoracleTest_EggDTSName(t *testing.T) {
+	ctx, fake := poracleTestCmdCtx(t)
+	replies := runPoracleTest(t, ctx, "egg", "egg5")
+	if len(replies) == 0 || replies[0].React != "✅" {
+		t.Fatalf("egg,egg5: replies = %+v, want a ✅ ack", replies)
+	}
+	if fake.gotWebhookType != "raid" {
+		t.Errorf(`egg,egg5: ProcessTest webhookType = %q, want "raid"`, fake.gotWebhookType)
+	}
+}
+
+// TestPoracleTest_UnknownType confirms an unrecognized leading token still
+// produces the pre-existing "unknown type" usage reply (no regression: an
+// unresolvable token must not silently fall through to ProcessTest).
+func TestPoracleTest_UnknownType(t *testing.T) {
+	ctx, fake := poracleTestCmdCtx(t)
+	replies := runPoracleTest(t, ctx, "not-a-real-type", "whatever")
+	if len(replies) == 0 {
+		t.Fatal("not-a-real-type: expected a usage reply, got none")
+	}
+	if replies[0].React == "✅" {
+		t.Errorf("not-a-real-type: got a ✅ ack, want the unknown-type usage message")
+	}
+	if fake.gotWebhookType != "" {
+		t.Errorf("not-a-real-type: ProcessTest was called with webhookType %q, want no call", fake.gotWebhookType)
 	}
 }

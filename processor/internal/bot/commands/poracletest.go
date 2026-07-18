@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/dtsmap"
 )
 
 // PoracleTestCommand implements !poracle-test — send a test webhook.
@@ -80,25 +81,29 @@ func loadTestdata(baseDir string) ([]testdataEntry, error) {
 	return result, nil
 }
 
+// validHooks lists the leading !poracle-test type tokens accepted before
+// falling back to dtsmap resolution in resolveHookType: raw webhook-type
+// spellings (pokemon, raid, pokestop, ...) plus the CLI-display hyphenated
+// spelling for each derived type (monster-changed, max-battle, ...). Also
+// echoed verbatim in the usage/unknown-type reply text.
+var validHooks = []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "monster-changed", "rsvp-changes", "fort-update", "max-battle", "showcase", "weatherchange"}
+
 func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	if !ctx.IsAdmin {
 		return []bot.Reply{{React: "🙅"}}
 	}
 
 	tr := ctx.Tr()
-	validHooks := []string{"pokemon", "raid", "pokestop", "incident", "gym", "nest", "quest", "quest-summary", "monster-changed", "rsvp-changes", "fort-update", "max-battle", "showcase", "weatherchange"}
 
 	if len(args) == 0 {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
 	}
 
 	hookTypeDisplay := args[0]
-	valid := slices.Contains(validHooks, hookTypeDisplay)
+	hookType, valid := resolveHookType(hookTypeDisplay)
 	if !valid {
 		return []bot.Reply{{Text: tr.Tf("msg.poracle_test.usage", strings.Join(validHooks, ", "))}}
 	}
-
-	hookType := strings.ReplaceAll(hookTypeDisplay, "-", "_")
 
 	// Load testdata
 	testdata, err := loadTestdata(ctx.Config.BaseDir)
@@ -339,6 +344,48 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 	return []bot.Reply{
 		{React: "✅", Text: tr.Tf("msg.poracle_test.queued", hookType, displayID, template)},
 	}
+}
+
+// resolveHookType maps a !poracle-test leading type token to the wire
+// dispatch type used for testdata lookup (loadTestdata's entries are keyed
+// by wire type — "pokemon", "raid", "max_battle", ...), the timestamp
+// freshening switch in Run, and resolveDTSType.
+//
+// The token has already been lowercased (and, for unquoted tokens,
+// underscore-normalized) by the parser's tokenize step before Run ever sees
+// it (see internal/bot/parser.go) — a real "monsterChanged" arrives here as
+// "monsterchanged", never in its original camelCase.
+//
+// Resolution order:
+//  1. validHooks — the existing raw webhook-type spellings (pokemon, raid,
+//     pokestop, ...) and CLI-display hyphenated derived-type names
+//     (monster-changed, max-battle, ...), matched as-is (case already
+//     lowered by the parser, so this is an exact-string check).
+//  2. The shared dtsmap alias table, via AliasFold since the token's case
+//     information is already gone — this is what lets a DTS template-type
+//     name (monster, maxbattle, egg, monsterchanged, ...) resolve too.
+//
+// dtsmap deliberately has no "pokestop" entry (see dtsmap's doc comment), so
+// a bare "pokestop" token is only ever matched by validHooks, never by the
+// fallback. "invasion" and "lure" DO have their own dtsmap entries whose
+// WebhookType is "pokestop" — unlike enrichForType's identically-motivated
+// "pokestop" rewrite guard (cmd/processor/enrich.go), which keeps them
+// dispatching under their own name because ITS switch has direct
+// "invasion"/"lure" cases, here the resolved WebhookType IS what testdata
+// lookup needs: fallbacks/testdata.json has no "invasion"- or "lure"-typed
+// entries, only "pokestop"-typed ones disambiguated by payload shape
+// (resolveDTSType's "pokestop" case) — exactly like a literal "pokestop"
+// token. Resolving straight to "pokestop" is therefore correct here, not a
+// bug: it lets "!poracle-test invasion ..."/"!poracle-test lure ..." find
+// the same testdata bucket a literal "!poracle-test pokestop ..." would.
+func resolveHookType(token string) (string, bool) {
+	if slices.Contains(validHooks, token) {
+		return strings.ReplaceAll(token, "-", "_"), true
+	}
+	if src, ok := dtsmap.AliasFold(token); ok {
+		return src.WebhookType, true
+	}
+	return "", false
 }
 
 // resolveDTSType determines the DTS template type from the webhook type and data.
