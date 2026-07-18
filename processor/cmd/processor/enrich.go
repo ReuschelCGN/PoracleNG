@@ -21,6 +21,7 @@ type enrichResult struct {
 	perUser       map[string]any
 	webhookFields map[string]any
 	tilePending   *staticmap.TilePending
+	extras        map[string]any // derived-type state: original, affected, rsvp, group. Nil for plain types.
 }
 
 // EnrichWebhook runs a raw webhook through the enrichment pipeline, builds a
@@ -30,17 +31,19 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 	var result *enrichResult
 	var err error
 
+	isPokemon := webhookType == "pokemon" || webhookType == "monster"
+
 	switch webhookType {
 	case "pokemon", "monster":
-		result, err = ps.enrichPokemon(raw, language)
+		result, err = ps.enrichPokemon(raw, language, true)
 	case "raid":
-		result, err = ps.enrichRaid(raw, language, false)
+		result, err = ps.enrichRaid(raw, language, false, true)
 	case "egg":
-		result, err = ps.enrichRaid(raw, language, true)
+		result, err = ps.enrichRaid(raw, language, true, true)
 	case "quest":
 		result, err = ps.enrichQuest(raw, language)
 	case "invasion":
-		result, err = ps.enrichInvasion(raw, language)
+		result, err = ps.enrichInvasion(raw, language, true)
 	case "lure":
 		result, err = ps.enrichLure(raw, language)
 	case "nest":
@@ -56,6 +59,21 @@ func (ps *ProcessorService) EnrichWebhook(webhookType string, raw json.RawMessag
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// Compute PVP display data with a synthetic user (no filters = show all PVP
+	// entries). In normal rendering this is per-user, but for the editor preview
+	// we show everything. Only pokemon carries per-user PVP display data.
+	if isPokemon && ps.enricher.PVPDisplay != nil && result.perLang != nil {
+		syntheticUser := webhook.MatchedUser{
+			ID:       "_editor",
+			Language: language,
+		}
+		perUserMap := ps.enricher.PokemonPerUser(
+			map[string]map[string]any{language: result.perLang},
+			[]webhook.MatchedUser{syntheticUser},
+		)
+		result.perUser = perUserMap["_editor"]
 	}
 
 	// Resolve tile synchronously if pending (the normal render path does this async)
@@ -97,13 +115,19 @@ func mergeEnrichment(base, perLang, webhookFields map[string]any) map[string]any
 	return result
 }
 
-func (ps *ProcessorService) enrichPokemon(raw json.RawMessage, language string) (*enrichResult, error) {
+// enrichPokemon parses and enriches a pokemon webhook. freshenStaleTime, when
+// true, bumps an already-past DisappearTime into the near future — this is an
+// editor-preview affordance (canned/typed sample JSON often carries a stale
+// timestamp) and must stay false for the live /api/test path, which never
+// applied this correction before enrichPokemon existed (see enrich_test.go /
+// task-1 notes for the parity investigation).
+func (ps *ProcessorService) enrichPokemon(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
 	var pokemon webhook.PokemonWebhook
 	if err := json.Unmarshal(raw, &pokemon); err != nil {
 		return nil, fmt.Errorf("parse pokemon: %w", err)
 	}
 
-	if pokemon.DisappearTime > 0 && pokemon.DisappearTime < time.Now().Unix() {
+	if freshenStaleTime && pokemon.DisappearTime > 0 && pokemon.DisappearTime < time.Now().Unix() {
 		pokemon.DisappearTime = time.Now().Unix() + 600
 	}
 
@@ -116,38 +140,27 @@ func (ps *ProcessorService) enrichPokemon(raw json.RawMessage, language string) 
 		perLang = ps.enricher.PokemonTranslate(base, &pokemon, language)
 	}
 
-	// Compute PVP display data with a synthetic user (no filters = show all PVP entries).
-	// In normal rendering this is per-user, but for the editor preview we show everything.
-	var perUser map[string]any
-	if ps.enricher.PVPDisplay != nil && perLang != nil {
-		syntheticUser := webhook.MatchedUser{
-			ID:       "_editor",
-			Language: language,
-		}
-		perUserMap := ps.enricher.PokemonPerUser(
-			map[string]map[string]any{language: perLang},
-			[]webhook.MatchedUser{syntheticUser},
-		)
-		perUser = perUserMap["_editor"]
-	}
-
 	return &enrichResult{
 		templateType:  "monster",
 		base:          base,
 		perLang:       perLang,
-		perUser:       perUser,
 		webhookFields: parseWebhookFields(raw),
 		tilePending:   tilePending,
+		extras:        map[string]any{"encountered": processed.Encountered},
 	}, nil
 }
 
-func (ps *ProcessorService) enrichRaid(raw json.RawMessage, language string, isEgg bool) (*enrichResult, error) {
+// enrichRaid parses and enriches a raid/egg webhook. freshenStaleTime, when
+// true, bumps an already-past Start/End window into the near future — an
+// editor-preview affordance that must stay false for the live /api/test path
+// (see enrichPokemon's freshenStaleTime doc for the full rationale).
+func (ps *ProcessorService) enrichRaid(raw json.RawMessage, language string, isEgg, freshenStaleTime bool) (*enrichResult, error) {
 	var raid webhook.RaidWebhook
 	if err := json.Unmarshal(raw, &raid); err != nil {
 		return nil, fmt.Errorf("parse raid: %w", err)
 	}
 
-	if raid.Start > 0 && raid.End < time.Now().Unix() {
+	if freshenStaleTime && raid.Start > 0 && raid.End < time.Now().Unix() {
 		raid.Start = time.Now().Unix() + 600
 		raid.End = raid.Start + 1800
 	}
@@ -199,13 +212,18 @@ func (ps *ProcessorService) enrichQuest(raw json.RawMessage, language string) (*
 	}, nil
 }
 
-func (ps *ProcessorService) enrichInvasion(raw json.RawMessage, language string) (*enrichResult, error) {
+// enrichInvasion parses and enriches an invasion/pokestop webhook.
+// freshenStaleTime, when true, bumps an already-past IncidentExpiration into
+// the near future — an editor-preview affordance that must stay false for the
+// live /api/test path (see enrichPokemon's freshenStaleTime doc for the full
+// rationale).
+func (ps *ProcessorService) enrichInvasion(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
 	var inv webhook.InvasionWebhook
 	if err := json.Unmarshal(raw, &inv); err != nil {
 		return nil, fmt.Errorf("parse invasion: %w", err)
 	}
 
-	if inv.IncidentExpiration > 0 && inv.IncidentExpiration < time.Now().Unix() {
+	if freshenStaleTime && inv.IncidentExpiration > 0 && inv.IncidentExpiration < time.Now().Unix() {
 		inv.IncidentExpiration = time.Now().Unix() + 600
 	}
 
