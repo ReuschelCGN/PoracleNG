@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -151,6 +152,60 @@ func TestEnrichWeatherChange_FreshenStaleTimeFlag(t *testing.T) {
 	got, _ := editorAffected[0]["disappearTime"].(int64)
 	if got <= wayInThePast {
 		t.Errorf("freshenStaleTime=true: disappearTime = %v, want bumped past %d (editor-preview affordance)", got, wayInThePast)
+	}
+}
+
+// TestEnrichWeatherChange_ActivePokemonsHonorsConfig locks in the fix for the
+// "!poracle-test weatherchange shows no changed pokemon" bug. The bundled and
+// operator weatherchange templates iterate {{#each activePokemons}}, but
+// WeatherTranslate only populates the activePokemons key when
+// [weather] show_altered_pokemon_static_map is set (enrichedActivePokemons is
+// always set — a separate key the templates don't read). enrichWeatherChange
+// used to hardcode the flag false, so the test render never matched
+// production (where the flag is on). It must read the flag from config, like
+// the live consumeWeatherChanges path, so !poracle-test faithfully reproduces
+// the live alert.
+func TestEnrichWeatherChange_ActivePokemonsHonorsConfig(t *testing.T) {
+	ps := newEnrichParityService(t)
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: true}}
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+	r, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange error: %v", err)
+	}
+
+	// activePokemons is the key the weatherchange templates iterate — it must
+	// be present (and non-empty) once the config flag is on.
+	active, ok := r.perLang["activePokemons"].([]map[string]any)
+	if !ok {
+		t.Fatalf("perLang[activePokemons] = %v (%T), want []map[string]any — the key {{#each activePokemons}} reads", r.perLang["activePokemons"], r.perLang["activePokemons"])
+	}
+	if len(active) == 0 {
+		t.Errorf("perLang[activePokemons] is empty, want the affected-pokemon list so the template renders it")
+	}
+}
+
+// TestEnrichWeatherChange_ActivePokemonsNilCfg guards the nil-cfg fallback the
+// original hardcode existed to protect: the enrich-parity harness leaves
+// ps.cfg nil, so the flag reads false and activePokemons stays absent (the
+// always-present enrichedActivePokemons still carries the data) — no panic.
+func TestEnrichWeatherChange_ActivePokemonsNilCfg(t *testing.T) {
+	ps := newEnrichParityService(t)
+	if ps.cfg != nil {
+		t.Fatalf("harness precondition: ps.cfg = %v, want nil", ps.cfg)
+	}
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+	r, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange error: %v", err)
+	}
+	if _, present := r.perLang["activePokemons"]; present {
+		t.Errorf("nil cfg: perLang[activePokemons] present, want absent (flag defaults off)")
+	}
+	if _, ok := r.perLang["enrichedActivePokemons"].([]map[string]any); !ok {
+		t.Errorf("nil cfg: perLang[enrichedActivePokemons] missing, want the always-present affected list")
 	}
 }
 

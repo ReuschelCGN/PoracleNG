@@ -540,13 +540,17 @@ func (ps *ProcessorService) enrichMaxbattle(raw json.RawMessage, language string
 // base/perLang fields match what a live weather alert would carry — nothing
 // about rendering is re-derived here.
 //
-// showAlteredPokemonStaticMap is hardcoded false rather than read from
-// ps.cfg.Weather: it only controls whether the tile gets per-user
-// active-pokemon markers baked in (a live delivery-time concern needing a
-// real per-destination tile mode) and whether a duplicate "activePokemons"
-// field + tile-pending is produced for that purpose. The affected-pokemon
-// list templates actually read — enrichedActivePokemons — is populated by
-// WeatherTranslate whenever len(Affected) > 0, independent of this flag.
+// showAlteredPokemonStaticMap is read from ps.cfg.Weather (nil-safe), exactly
+// like the live consumeWeatherChanges path, so !poracle-test faithfully
+// reproduces the live alert. It matters because WeatherTranslate only
+// populates the "activePokemons" key — the one the bundled and operator
+// weatherchange templates iterate ({{#each activePokemons}}) — when this flag
+// is set. (The sibling "enrichedActivePokemons" key is always populated, but
+// the shipped templates don't read it.) Hardcoding the flag false made the
+// affected-pokemon list vanish from the test render even though production,
+// with show_altered_pokemon_static_map on, shows it. The nil guard preserves
+// the flag-off default for the enrich-parity test harness (which leaves
+// ps.cfg nil).
 func (ps *ProcessorService) enrichWeatherChange(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
 	var wc webhook.WeatherChangeWebhook
 	if err := json.Unmarshal(raw, &wc); err != nil {
@@ -567,7 +571,10 @@ func (ps *ProcessorService) enrichWeatherChange(raw json.RawMessage, language st
 		}
 	}
 
-	const showAlteredPokemonStaticMap = false
+	showAlteredPokemonStaticMap := false
+	if ps.cfg != nil {
+		showAlteredPokemonStaticMap = ps.cfg.Weather.ShowAlteredPokemonStaticMap
+	}
 	base, tilePending := ps.enricher.Weather(wc.Latitude, wc.Longitude, wc.GameplayCondition, wc.Coords, showAlteredPokemonStaticMap, enrichment.TileModeURL, wc.S2CellID)
 
 	var perLang map[string]any
