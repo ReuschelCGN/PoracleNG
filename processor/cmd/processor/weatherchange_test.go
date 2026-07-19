@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/staticmap"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -206,6 +207,47 @@ func TestEnrichWeatherChange_ActivePokemonsNilCfg(t *testing.T) {
 	}
 	if _, ok := r.perLang["enrichedActivePokemons"].([]map[string]any); !ok {
 		t.Errorf("nil cfg: perLang[enrichedActivePokemons] missing, want the always-present affected list")
+	}
+}
+
+// TestEnrichWeatherChange_TilePreservedWhenFlagOn locks in the tile-selection
+// fix. When [weather] show_altered_pokemon_static_map is on, enricher.Weather
+// returns no base tile — it defers to the per-user tile that WeatherTranslate
+// builds with active-pokemon markers. enrichWeatherChange must carry that
+// pending through (mirroring the live consumeWeatherChanges "use per-user tile
+// if available" selection); discarding it (the original perLang, _ = ... form)
+// made the weather-change tile vanish from !poracle-test even though
+// production shows it. The flag-off arm confirms the base tile still comes
+// from enricher.Weather.
+func TestEnrichWeatherChange_TilePreservedWhenFlagOn(t *testing.T) {
+	ps := newEnrichParityService(t)
+	// A .test URL never resolves (RFC 6761), so the tile workers fail fast
+	// with no real egress; SubmitTile returns the pending synchronously
+	// regardless, which is all this test inspects.
+	resolver := staticmap.New(staticmap.Config{Provider: "tileservercache", ProviderURL: "http://tiles.test"})
+	t.Cleanup(resolver.Close)
+	ps.enricher.StaticMap = resolver
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+
+	// Flag ON: base tile is nil, per-user tile must be carried through.
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: true}}
+	on, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange (flag on) error: %v", err)
+	}
+	if on.tilePending == nil {
+		t.Error("flag on: tilePending = nil, want the per-user weather tile carried through from WeatherTranslate")
+	}
+
+	// Flag OFF: base tile is produced by enricher.Weather as before.
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: false}}
+	off, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange (flag off) error: %v", err)
+	}
+	if off.tilePending == nil {
+		t.Error("flag off: tilePending = nil, want the base weather tile from enricher.Weather")
 	}
 }
 

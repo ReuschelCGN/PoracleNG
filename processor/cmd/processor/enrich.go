@@ -579,7 +579,16 @@ func (ps *ProcessorService) enrichWeatherChange(raw json.RawMessage, language st
 
 	var perLang map[string]any
 	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
-		perLang, _ = ps.enricher.WeatherTranslate(base, wc.OldGameplayCondition, wc.GameplayCondition, wc.Affected, language, showAlteredPokemonStaticMap, enrichment.TileModeURL, wc.S2CellID)
+		var userTilePending *staticmap.TilePending
+		perLang, userTilePending = ps.enricher.WeatherTranslate(base, wc.OldGameplayCondition, wc.GameplayCondition, wc.Affected, language, showAlteredPokemonStaticMap, enrichment.TileModeURL, wc.S2CellID)
+		// When show_altered_pokemon_static_map is on, enricher.Weather returns
+		// no base tile — WeatherTranslate produces the per-user tile (with
+		// active-pokemon markers) instead. Prefer it, otherwise keep the base
+		// tile, mirroring the live consumeWeatherChanges selection
+		// ("use per-user tile if available, otherwise base tile").
+		if userTilePending != nil {
+			tilePending = userTilePending
+		}
 	}
 
 	return &enrichResult{
