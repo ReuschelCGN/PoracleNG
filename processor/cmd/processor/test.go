@@ -6,7 +6,6 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
-	"github.com/pokemon/poracleng/processor/internal/enrichment"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -295,44 +294,18 @@ func (ps *ProcessorService) processTestMonsterChanged(raw json.RawMessage, targe
 }
 
 func (ps *ProcessorService) processTestShowcase(raw json.RawMessage, target webhook.MatchedUser) error {
-	var sc webhook.ShowcaseWebhook
-	if err := json.Unmarshal(raw, &sc); err != nil {
-		return fmt.Errorf("parse showcase: %w", err)
+	// Shares the exact enrichment core with the editor's /api/dts/enrich path
+	// (enrichForType -> enrichShowcase). AlertType is "incident" — showcases
+	// are tracked, rate-limited and blocked as incidents — while the
+	// enrichResult's templateType is the dedicated "showcase" display model.
+	r, err := ps.enrichShowcase(raw, target.Language, false)
+	if err != nil {
+		return err
 	}
-
-	// Showcases render through the incident template with a synthesised
-	// display_type=9 — mirrors ProcessShowcase.
-	enrichmentData, tilePending := ps.enricher.Invasion(
-		sc.Latitude, sc.Longitude, sc.ShowcaseExpiry, sc.PokestopID, sc.URL,
-		0, showcaseDisplayType, 0, enrichment.TileModeURL)
-	enrichmentData["pokestop_name"] = sc.Name
-	matched := []webhook.MatchedUser{target}
-
-	var perLang map[string]map[string]any
-	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
-		m := ps.enricher.InvasionTranslate(
-			enrichmentData, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, target.Language)
-		for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, target.Language) {
-			m[k] = v
-		}
-		perLang = map[string]map[string]any{target.Language: m}
-	}
-
 	if ps.renderCh == nil {
 		return fmt.Errorf("render queue not available")
 	}
-	webhookFields := parseWebhookFields(raw)
-	ps.renderCh <- RenderJob{
-		AlertType:         "incident",
-		TemplateType:      "showcase",
-		Enrichment:        enrichmentData,
-		PerLangEnrichment: perLang,
-		WebhookFields:     webhookFields,
-		MatchedUsers:      matched,
-		MatchedAreas:      []webhook.MatchedArea{},
-		TileGate:          ps.newTileGate(tilePending),
-		LogReference:      "test",
-	}
+	ps.renderCh <- ps.renderJobFromEnrich(r, target, "incident", raw, false, false)
 	return nil
 }
 

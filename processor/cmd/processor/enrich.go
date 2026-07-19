@@ -131,6 +131,8 @@ func (ps *ProcessorService) enrichForType(name string, raw json.RawMessage, lang
 			result, err = ps.enrichFort(raw, language)
 		case "max_battle", "maxbattle":
 			result, err = ps.enrichMaxbattle(raw, language)
+		case "showcase":
+			result, err = ps.enrichShowcase(raw, language, freshenStaleTime)
 		default:
 			return nil, fmt.Errorf("unsupported webhook type: %s", webhookType)
 		}
@@ -362,6 +364,53 @@ func (ps *ProcessorService) enrichInvasion(raw json.RawMessage, language string,
 // enrichInvasion's (see enrichPokemon's doc for the full rationale).
 func (ps *ProcessorService) enrichIncident(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
 	return ps.enrichPokestopEvent(raw, language, freshenStaleTime, "incident")
+}
+
+// enrichShowcase parses and enriches a showcase (contest) webhook — the
+// dedicated "showcase" DTS template type (leaderboard + featured focus),
+// distinct from the plain "incident" card. Showcases arrive as their own
+// webhook.ShowcaseWebhook shape (not the InvasionWebhook the other pokestop
+// events share), so this can't route through enrichPokestopEvent; it mirrors
+// the live ProcessShowcase / processTestShowcase enrichment exactly —
+// enricher.Invasion with a synthesised display_type, InvasionTranslate over
+// the rankings, and ShowcaseFocusTranslate merged into the same per-language
+// map. The AlertType stays "incident" at render time (showcases are tracked,
+// rate-limited and blocked as incidents); only the templateType is "showcase".
+// freshenStaleTime, when true, bumps an already-past ShowcaseExpiry into the
+// near future — the same editor-preview affordance as enrichInvasion (see
+// enrichPokemon's freshenStaleTime doc for the full rationale).
+func (ps *ProcessorService) enrichShowcase(raw json.RawMessage, language string, freshenStaleTime bool) (*enrichResult, error) {
+	var sc webhook.ShowcaseWebhook
+	if err := json.Unmarshal(raw, &sc); err != nil {
+		return nil, fmt.Errorf("parse showcase: %w", err)
+	}
+
+	if freshenStaleTime && sc.ShowcaseExpiry > 0 && sc.ShowcaseExpiry < time.Now().Unix() {
+		sc.ShowcaseExpiry = time.Now().Unix() + 600
+	}
+
+	base, tilePending := ps.enricher.Invasion(
+		sc.Latitude, sc.Longitude, sc.ShowcaseExpiry, sc.PokestopID, sc.URL,
+		0, showcaseDisplayType, 0, enrichment.TileModeURL)
+	// The showcase webhook carries the pokéstop name in `name`; Invasion()
+	// takes no name arg, so surface it as pokestop_name for the alias.
+	base["pokestop_name"] = sc.Name
+
+	var perLang map[string]any
+	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
+		perLang = ps.enricher.InvasionTranslate(base, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, language)
+		for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, language) {
+			perLang[k] = v
+		}
+	}
+
+	return &enrichResult{
+		templateType:  "showcase",
+		base:          base,
+		perLang:       perLang,
+		webhookFields: parseWebhookFields(raw),
+		tilePending:   tilePending,
+	}, nil
 }
 
 // enrichPokestopEvent is the shared enrichment core for enrichInvasion and
