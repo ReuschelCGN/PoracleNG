@@ -730,6 +730,7 @@ See `examples/dts/rsvpChanges/rsvp-update.json` for an installable starting poin
 | `conditionList` | array | Per-condition objects: `{type, name, formatted}` where `name` is the bare label ("Throw Type") and `formatted` includes the payload ("Excellent Throw"). Falls back to bare name when the webhook payload doesn't carry the data needed for the formatted variant. |
 | `conditionListEng` | array | English copy of `conditionList` |
 | `dustAmount` | int | Stardust reward amount |
+| `pokecoinAmount` | int | Pokecoin reward amount |
 | `itemAmount` | int | Item reward amount |
 | `energyAmount` | int | Mega energy amount (first reward) |
 | `candyAmount` | int | Candy amount (first reward) |
@@ -761,6 +762,8 @@ These are flat top-level strings, not nested under a `rewardData` object:
 | `itemNamesEng` | string | English item names |
 | `dustText` | string | Translated stardust text (e.g. "500 Stardust") |
 | `dustTextEng` | string | English stardust text |
+| `pokecoinText` | string | Translated pokecoin text (e.g. "10 Pokécoins") |
+| `pokecoinTextEng` | string | English pokecoin text |
 | `energyMonstersNames` | string | Mega energy reward text (translated) |
 | `energyMonstersNamesEng` | string | English energy reward text |
 | `candyMonstersNames` | string | Candy reward text (translated) |
@@ -781,7 +784,7 @@ The view passed to `questSummary` is shaped differently from a regular `quest` t
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `rewardType` | int | Reward type ID (2=item, 3=stardust, 4=candy, 7=pokemon, 12=mega energy) |
+| `rewardType` | int | Reward type ID (2=item, 3=stardust, 4=candy, 7=pokemon, 8=pokecoins, 12=mega energy) |
 | `reward` | int | Reward ID (item ID for type 2, dust amount for type 3, pokemon ID for types 4/7/12) |
 | `rewardForm` | int | Pokemon form ID for `rewardType == 7` (so e.g. two different Spinda forms group separately). `0` for all other reward types. |
 | `rewardName` | string | Translated reward name for the group header. Formatted to match the per-row reward strings from regular `quest` enrichment, **with amounts stripped** for types 2/4/12 because amounts vary across stops within a group. Examples: `"Spinda 01"` (type 7 + form, matches per-row `fullName`), `"Lapras Candy"` (type 4), `"Charizard Mega Energy"` (type 12), `"Razz Berry"` (type 2), `"1500 Stardust"` (type 3 — amount is included because it's part of the group key). |

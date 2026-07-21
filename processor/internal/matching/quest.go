@@ -11,7 +11,7 @@ import (
 
 // QuestRewardData holds a single parsed quest reward for matching.
 type QuestRewardData struct {
-	Type      int // 2=item, 3=stardust, 4=candy, 7=pokemon, 12=mega energy
+	Type      int // 2=item, 3=stardust, 4=candy, 7=pokemon, 8=pokecoins, 12=mega energy
 	PokemonID int
 	ItemID    int
 	Amount    int
@@ -145,6 +145,12 @@ func singleRewardMatches(q *db.QuestTracking, r *QuestRewardData) bool {
 		return true
 
 	case 3: // stardust
+		if q.Reward > r.Amount {
+			return false
+		}
+		return true
+
+	case 8: // pokecoins — min amount stored in Reward (mirrors stardust)
 		if q.Reward > r.Amount {
 			return false
 		}

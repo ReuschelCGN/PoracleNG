@@ -591,6 +591,7 @@ func questOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 		stringOpt(bundle, "quest.pokemon", "pokemon", "Pokemon reward", false, true),
 		stringOpt(bundle, "quest.item", "item", "Item reward (e.g. golden razz berry)", false, true),
 		intOpt(bundle, "quest.stardust", "stardust", "Stardust reward (minimum amount)", false),
+		intOpt(bundle, "quest.pokecoins", "pokecoins", "Pokecoin reward (minimum amount)", false),
 		stringOpt(bundle, "quest.candy", "candy", "Candy reward pokemon", false, true),
 		stringOpt(bundle, "quest.mega_energy", "mega_energy", "Mega energy reward pokemon", false, true),
 		// xl_candy intentionally omitted — matching/quest.go and
