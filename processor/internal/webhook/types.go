@@ -171,6 +171,24 @@ type ActivePokemonEntry struct {
 	DisappearTime int64   `json:"disappear_time"`
 }
 
+// WeatherChangeWebhook is the synthesized "weatherchange" derived-type shape
+// used by the DTS editor preview and !poracle-test — not a raw Golbat wire
+// type (weather changes are detected internally by tracker.WeatherTracker
+// from a stream of plain WeatherWebhook updates, see
+// cmd/processor/weather.go's consumeWeatherChanges). It carries the
+// old/new gameplay condition for the cell plus a short list of pokemon
+// affected by the transition (boosted/unboosted), mirroring the
+// tracker.WeatherChange event shape and webhook.MatchedUser.ActivePokemons.
+type WeatherChangeWebhook struct {
+	S2CellID             string               `json:"s2_cell_id"`
+	Latitude             float64              `json:"latitude"`
+	Longitude            float64              `json:"longitude"`
+	Coords               [][2]float64         `json:"coords,omitempty"`
+	GameplayCondition    int                  `json:"gameplay_condition"`
+	OldGameplayCondition int                  `json:"old_gameplay_condition"`
+	Affected             []ActivePokemonEntry `json:"affected,omitempty"`
+}
+
 // MatchedUser represents a user who matched an alert.
 type MatchedUser struct {
 	ID                string  `json:"id"`
