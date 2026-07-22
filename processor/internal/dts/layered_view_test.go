@@ -339,6 +339,26 @@ func TestLayeredView_RaidAliases(t *testing.T) {
 	assert.Equal(t, "http://example.com/gym", v)
 }
 
+func TestLayeredView_QuestLegacyAliases(t *testing.T) {
+	// Legacy PoracleJS snake_case names resolve to the translated
+	// questString / rewardString / conditionString computed by enrichment.
+	lv := newTestView(t, func(o *testViewOpts) {
+		o.templateType = "quest"
+		o.base = map[string]any{
+			"questString":     "Catch 5 Pokémon",
+			"rewardString":    "500 Stardust",
+			"conditionString": "Excellent Throw",
+		}
+	})
+	v, ok := lv.GetField("quest_task")
+	require.True(t, ok)
+	assert.Equal(t, "Catch 5 Pokémon", v)
+	v, _ = lv.GetField("quest_reward")
+	assert.Equal(t, "500 Stardust", v)
+	v, _ = lv.GetField("quest_conditions")
+	assert.Equal(t, "Excellent Throw", v)
+}
+
 func TestLayeredView_GymAliases(t *testing.T) {
 	lv := newTestView(t, func(o *testViewOpts) {
 		o.templateType = "gym"
