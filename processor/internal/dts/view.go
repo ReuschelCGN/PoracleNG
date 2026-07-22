@@ -233,6 +233,14 @@ var typeAliases = map[string][]aliasPair{
 		{"pokestopId", "pokestop_id"},
 		{"name", "pokestop_name"},
 		{"url", "pokestop_url"},
+		// Legacy PoracleJS snake_case field names. The translated objective,
+		// rewards, and conditions are computed under questString / rewardString
+		// / conditionString; alias the old names so ported PoracleJS quest
+		// templates keep resolving. Aliases outrank the raw webhook layer, so
+		// any scanner-provided quest_task is overridden by our translation.
+		{"quest_task", "questString"},
+		{"quest_reward", "rewardString"},
+		{"quest_conditions", "conditionString"},
 	},
 	"lure": {
 		{"pokestopName", "pokestop_name"},

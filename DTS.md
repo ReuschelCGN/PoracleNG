@@ -723,10 +723,13 @@ See `examples/dts/rsvpChanges/rsvp-update.json` for an installable starting poin
 | `pokestopUrl` | string | Pokestop image URL (alias for `pokestop_url`) |
 | `questString` | string | Translated quest objective |
 | `questStringEng` | string | English quest objective |
+| `quest_task` | string | Legacy PoracleJS alias for `questString` (translated objective) |
 | `rewardString` | string | All rewards as text (translated) |
 | `rewardStringEng` | string | English rewards text |
+| `quest_reward` | string | Legacy PoracleJS alias for `rewardString` |
 | `conditionString` | string | Comma-joined completion conditions, translated, e.g. "Excellent Throw, Curve Ball" |
 | `conditionStringEng` | string | English copy of `conditionString` |
+| `quest_conditions` | string | Legacy PoracleJS alias for `conditionString` |
 | `conditionList` | array | Per-condition objects: `{type, name, formatted}` where `name` is the bare label ("Throw Type") and `formatted` includes the payload ("Excellent Throw"). Falls back to bare name when the webhook payload doesn't carry the data needed for the formatted variant. |
 | `conditionListEng` | array | English copy of `conditionList` |
 | `dustAmount` | int | Stardust reward amount |
