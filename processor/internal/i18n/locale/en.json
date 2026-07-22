@@ -386,8 +386,6 @@
 
   "weather_1": "Sunny",
 
-  "quest_reward_8": "Pokécoins",
-
   "status.enabled": "enabled",
   "status.disabled": "disabled",
   "status.alerts_currently": "Your alerts are currently **{0}**",
