@@ -107,6 +107,32 @@ func TestQuest_BareStardust(t *testing.T) {
 	assert.Equal(t, 0, rows[0].Reward, "bare stardust = any amount")
 }
 
+func TestQuest_Pokecoins(t *testing.T) {
+	ctx := questCtx(t)
+	replies := runQuest(t, ctx, "pokecoins:10")
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 8, rows[0].RewardType, "pokecoins reward type")
+	assert.Equal(t, 10, rows[0].Reward, "pokecoins min amount stored in Reward")
+}
+
+func TestQuest_BarePokecoins(t *testing.T) {
+	ctx := questCtx(t)
+	replies := runQuest(t, ctx, "pokecoins")
+
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 8, rows[0].RewardType, "pokecoins reward type")
+	assert.Equal(t, 0, rows[0].Reward, "bare pokecoins = any amount")
+}
+
 func TestQuest_Duplicate(t *testing.T) {
 	ctx := questCtx(t)
 	replies1 := runQuest(t, ctx, "25")
@@ -180,8 +206,8 @@ func TestQuest_Everything(t *testing.T) {
 	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
 
 	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
-	// everything creates: pokemon(7), stardust(3), energy(12), candy(4), item(2)
-	assert.Len(t, rows, 5, "everything should create 5 reward types")
+	// everything creates: pokemon(7), stardust(3), pokecoins(8), energy(12), candy(4), item(2)
+	assert.Len(t, rows, 6, "everything should create 6 reward types")
 }
 
 // !quest all_pokemon → single "all pokemon" token after underscore
@@ -440,7 +466,7 @@ func TestQuest_EverythingWithAmountRoutesPerRewardType(t *testing.T) {
 	assert.Equal(t, "✅", replies[0].React, "should accept everything + amount:N, reply: %s", replies[0].Text)
 
 	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
-	require.Len(t, rows, 5, "everything inserts one row per reward type")
+	require.Len(t, rows, 6, "everything inserts one row per reward type")
 
 	byType := map[int]db.QuestTrackingAPI{}
 	for _, r := range rows {
@@ -450,6 +476,8 @@ func TestQuest_EverythingWithAmountRoutesPerRewardType(t *testing.T) {
 	assert.Equal(t, 0, byType[7].Reward, "pokemon: no reward filter")
 	assert.Equal(t, 25, byType[3].Reward, "stardust: amount routes into Reward")
 	assert.Equal(t, 0, byType[3].Amount, "stardust: Amount unused")
+	assert.Equal(t, 25, byType[8].Reward, "pokecoins: amount routes into Reward")
+	assert.Equal(t, 0, byType[8].Amount, "pokecoins: Amount unused")
 	assert.Equal(t, 25, byType[12].Amount, "mega energy: amount → Amount")
 	assert.Equal(t, 25, byType[4].Amount, "candy: amount → Amount")
 	assert.Equal(t, 25, byType[2].Amount, "item: amount → Amount")

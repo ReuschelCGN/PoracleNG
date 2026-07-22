@@ -59,7 +59,7 @@ func (c *QuestCommand) matchItemName(ctx *bot.CommandContext, parsed *bot.Parsed
 	return 0
 }
 
-// QuestCommand implements !quest — track quest rewards (pokemon, stardust, items, candy, energy).
+// QuestCommand implements !quest — track quest rewards (pokemon, stardust, pokecoins, items, candy, energy).
 type QuestCommand struct{}
 
 func (c *QuestCommand) Name() string      { return "cmd.quest" }
@@ -71,6 +71,7 @@ var questParams = []bot.ParamDef{
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.stardust"}, // stardust:1000 (min amount)
+	{Type: bot.ParamPrefixString, Key: "arg.prefix.pokecoin"}, // pokecoins:10 (min amount)
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.energy"},   // energy:charizard (pokemon)
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.candy"},    // candy:pikachu (pokemon)
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.amount"},   // amount:N (min amount for item/candy/mega_energy quests)
@@ -84,6 +85,7 @@ var questParams = []bot.ParamDef{
 	{Type: bot.ParamKeyword, Key: "arg.summary"},
 	{Type: bot.ParamKeyword, Key: "arg.shiny"},
 	{Type: bot.ParamKeyword, Key: "arg.stardust"}, // bare "stardust" keyword (any amount)
+	{Type: bot.ParamKeyword, Key: "arg.pokecoin"}, // bare "pokecoins" keyword (any amount)
 	{Type: bot.ParamKeyword, Key: "arg.energy"},   // bare "energy" keyword (any pokemon)
 	{Type: bot.ParamKeyword, Key: "arg.candy"},    // bare "candy" keyword (any pokemon)
 	{Type: bot.ParamPokemonName},
@@ -185,6 +187,16 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		// column (the stardust grammar's own min-amount slot). bare
 		// "stardust" alone means "any amount".
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, amountVal, 0, 0))
+	} else if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
+		// pokecoins:N — min amount lives in Reward, mirroring stardust.
+		_ = amountSet
+		amount := questParseInt(pokecoinVal)
+		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amount, 0, 0))
+	} else if parsed.HasKeyword("arg.pokecoin") {
+		// bare "pokecoins" + amount:N — route amount into Reward
+		// (pokecoins' own min-amount slot). bare "pokecoins" alone means
+		// "any amount".
+		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amountVal, 0, 0))
 	} else if energyVal, ok := parsed.Strings["energy"]; ok {
 		// energy:charizard — resolve pokemon name
 		resolved := ctx.Resolver.Resolve(energyVal, ctx.Language)
@@ -232,6 +244,7 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		//	candy / mega / item — q.Amount > 0 filter (the natural slot)
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 7, 0, 0, 0))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, amountVal, 0, 0))
+		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amountVal, 0, 0))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, 0, 0, amountVal))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, 0, 0, amountVal))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, 0, 0, amountVal))
@@ -384,7 +397,7 @@ func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedA
 	noOverride := Override{}
 	if parsed.HasKeyword("arg.everything") {
 		// remove everything — match all reward types
-		for _, rt := range []int{7, 3, 12, 4, 2} {
+		for _, rt := range []int{7, 3, 8, 12, 4, 2} {
 			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rt, 0, 0, 0))
 		}
 	} else if parsed.HasKeyword("arg.all_pokemon") || parsed.HasKeyword("arg.all_items") {
@@ -400,6 +413,11 @@ func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedA
 		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 3, amount, 0, 0))
 	} else if parsed.HasKeyword("arg.stardust") {
 		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 3, 0, 0, 0))
+	} else if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
+		amount := questParseInt(pokecoinVal)
+		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 8, amount, 0, 0))
+	} else if parsed.HasKeyword("arg.pokecoin") {
+		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 8, 0, 0, 0))
 	} else if energyVal, ok := parsed.Strings["energy"]; ok {
 		resolved := ctx.Resolver.Resolve(energyVal, ctx.Language)
 		if len(resolved) > 0 {
@@ -450,7 +468,7 @@ func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedA
 		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 2, itemID, 0, 0))
 	} else {
 		// No specific type — remove everything
-		for _, rt := range []int{7, 3, 12, 4, 2} {
+		for _, rt := range []int{7, 3, 8, 12, 4, 2} {
 			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rt, 0, 0, 0))
 		}
 	}

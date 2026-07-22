@@ -241,6 +241,7 @@ var questFields = []FieldDef{
 	{Name: "questString", Type: "string", Description: "Quest description", Category: "quest", Preferred: true},
 	{Name: "rewardString", Type: "string", Description: "Reward description", Category: "quest", Preferred: true},
 	{Name: "dustAmount", Type: "int", Description: "Stardust amount", Category: "quest"},
+	{Name: "pokecoinAmount", Type: "int", Description: "Pokecoin amount", Category: "quest"},
 	{Name: "itemAmount", Type: "int", Description: "Item amount", Category: "quest"},
 	{Name: "itemName", Type: "string", Description: "Item name", Category: "quest"},
 	{Name: "monsterName", Type: "string", Description: "Reward pokemon name", Category: "quest"},
@@ -728,8 +729,8 @@ var monsterChangedExtraFields = []FieldDef{
 // a regular quest template (questString, rewardString, pokestopName,
 // imgUrl, latitude, longitude, etc.) plus the per-row withAR boolean.
 var questSummaryFields = []FieldDef{
-	{Name: "rewardType", Type: "int", Description: "Reward type code (2=item, 3=stardust, 4=candy, 7=pokemon, 12=mega energy)", Category: "quest", Preferred: true},
-	{Name: "reward", Type: "int", Description: "Reward identifier — pokemon ID for type 4/7/12, item ID for type 2, dust amount for type 3", Category: "quest", Preferred: true},
+	{Name: "rewardType", Type: "int", Description: "Reward type code (2=item, 3=stardust, 4=candy, 7=pokemon, 8=pokecoins, 12=mega energy)", Category: "quest", Preferred: true},
+	{Name: "reward", Type: "int", Description: "Reward identifier — pokemon ID for type 4/7/12, item ID for type 2, dust amount for type 3, pokecoin amount for type 8", Category: "quest", Preferred: true},
 	{Name: "rewardForm", Type: "int", Description: "Pokemon form ID for type==7 rewards (so different Spinda forms, costumes, etc. group separately). 0 for all other reward types.", Category: "quest"},
 	{Name: "rewardName", Type: "string", Description: "Translated display name for the shared reward — matches the per-row reward strings from regular quest enrichment, with amounts stripped for types 2/4/12 (amounts vary per stop within a group). Examples: \"Spinda 01\" (type 7 with form), \"Lapras Candy\" (type 4), \"Charizard Mega Energy\" (type 12), \"Razz Berry\" (type 2), \"1500 Stardust\" (type 3 — amount kept because it's part of the group key).", Category: "quest", Preferred: true},
 	{Name: "imgUrl", Type: "string", Description: "Shared reward icon URL — best used as a Discord thumbnail/image. Discord renders webp/png/gif. Telegram's sticker endpoint is stricter — use stickerUrl there.", Category: "maps", Preferred: true},

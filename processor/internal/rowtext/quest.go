@@ -40,6 +40,14 @@ func (g *Generator) QuestRowText(tr *i18n.Translator, quest *db.QuestTracking) s
 			rewardThing = tr.T("tracking.reward_stardust")
 		}
 
+	case 8:
+		// Pokecoins reward
+		if quest.Reward > 0 {
+			rewardThing = tr.Tf("tracking.reward_pokecoin_min_fmt", quest.Reward)
+		} else {
+			rewardThing = tr.T("tracking.reward_pokecoin")
+		}
+
 	case 2:
 		// Item reward (reward==0 is the "all items" wildcard)
 		if quest.Reward == 0 {
