@@ -695,3 +695,46 @@ func TestUcFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestTranslateMonsterName_FormSuppression covers the Rattata scenario: an
+// explicitly-tracked "Normal" form (form 45, non-zero) must show its name in
+// !tracked so it's distinguishable from the "any form" (form 0) tracking and
+// from other named forms (Alola, form 46). Only form 0 suppresses a
+// Normal/Unset label.
+func TestTranslateMonsterName_FormSuppression(t *testing.T) {
+	gd := &gamedata.GameData{
+		Monsters: map[gamedata.MonsterKey]*gamedata.Monster{
+			{ID: 19, Form: 0}:  {PokemonID: 19, FormID: 0},
+			{ID: 19, Form: 45}: {PokemonID: 19, FormID: 45},
+			{ID: 19, Form: 46}: {PokemonID: 19, FormID: 46},
+		},
+	}
+	// form_45 → "Normal" and form_46 → "Alola" come from gamelocale in
+	// production; inject them directly since i18n.Load("") skips gamelocale.
+	tr := i18n.NewTranslator("en", map[string]string{
+		"poke_19": "Rattata",
+		"form_45": "Normal",
+		"form_46": "Alola",
+	})
+
+	tests := []struct {
+		name     string
+		form     int
+		wantForm string
+	}{
+		{"explicit normal form shows Normal", 45, "Normal"},
+		{"named form shows its name", 46, "Alola"},
+		{"any form (0) stays blank", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotForm := translateMonsterName(tr, gd, 19, tt.form)
+			if gotName != "Rattata" {
+				t.Errorf("name = %q, want %q", gotName, "Rattata")
+			}
+			if gotForm != tt.wantForm {
+				t.Errorf("form %d: formName = %q, want %q", tt.form, gotForm, tt.wantForm)
+			}
+		})
+	}
+}
