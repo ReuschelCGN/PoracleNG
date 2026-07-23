@@ -214,8 +214,49 @@ func TestPoracleTest_DTSNameLoadsSameEntryAsWireType(t *testing.T) {
 	if fake2.gotWebhookType != "pokemon" {
 		t.Errorf(`pokemon,hundo: ProcessTest webhookType = %q, want "pokemon"`, fake2.gotWebhookType)
 	}
-	if string(gotHundo) != string(fake2.gotRaw) {
+	if normalizeTestPayload(t, gotHundo) != normalizeTestPayload(t, fake2.gotRaw) {
 		t.Errorf("monster,hundo and pokemon,hundo loaded different payloads:\n%s\nvs\n%s", gotHundo, fake2.gotRaw)
+	}
+}
+
+// normalizeTestPayload parses a !poracle-test webhook payload and strips the
+// timestamp fields that PoracleTestCommand freshens from time.Now() at dispatch
+// (disappear_time for pokemon; start/end for raid/rsvp). Two loads of the same
+// testdata entry are byte-identical except for these, so comparing the
+// normalized forms proves "same entry" without the flaky wall-clock race that
+// made this test fail when the two loads straddled a one-second boundary.
+func normalizeTestPayload(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("normalizeTestPayload: unmarshal: %v", err)
+	}
+	for _, k := range []string{"disappear_time", "start", "end"} {
+		delete(m, k)
+	}
+	b, err := json.Marshal(m) // map keys marshal in sorted order → canonical
+	if err != nil {
+		t.Fatalf("normalizeTestPayload: marshal: %v", err)
+	}
+	return string(b)
+}
+
+// TestNormalizeTestPayload_IgnoresFreshenedTimestamps reproduces the exact CI
+// flake deterministically: two loads of the same entry that differ only in
+// disappear_time (stamped from time.Now() a second apart) must normalize equal,
+// while a genuine field difference must still be detected.
+func TestNormalizeTestPayload_IgnoresFreshenedTimestamps(t *testing.T) {
+	a := json.RawMessage(`{"pokemon_id":102,"cp":1041,"disappear_time":1784720004}`)
+	b := json.RawMessage(`{"pokemon_id":102,"cp":1041,"disappear_time":1784720005}`)
+	if normalizeTestPayload(t, a) != normalizeTestPayload(t, b) {
+		t.Errorf("payloads differing only by disappear_time should normalize equal:\n%s\nvs\n%s",
+			normalizeTestPayload(t, a), normalizeTestPayload(t, b))
+	}
+
+	// A real difference (cp) must NOT be masked by normalization.
+	c := json.RawMessage(`{"pokemon_id":102,"cp":9999,"disappear_time":1784720004}`)
+	if normalizeTestPayload(t, a) == normalizeTestPayload(t, c) {
+		t.Error("normalizeTestPayload must not mask a real field difference (cp)")
 	}
 }
 
