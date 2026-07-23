@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/staticmap"
 	"github.com/pokemon/poracleng/processor/internal/webhook"
 )
 
@@ -151,6 +153,101 @@ func TestEnrichWeatherChange_FreshenStaleTimeFlag(t *testing.T) {
 	got, _ := editorAffected[0]["disappearTime"].(int64)
 	if got <= wayInThePast {
 		t.Errorf("freshenStaleTime=true: disappearTime = %v, want bumped past %d (editor-preview affordance)", got, wayInThePast)
+	}
+}
+
+// TestEnrichWeatherChange_ActivePokemonsHonorsConfig locks in the fix for the
+// "!poracle-test weatherchange shows no changed pokemon" bug. The bundled and
+// operator weatherchange templates iterate {{#each activePokemons}}, but
+// WeatherTranslate only populates the activePokemons key when
+// [weather] show_altered_pokemon_static_map is set (enrichedActivePokemons is
+// always set — a separate key the templates don't read). enrichWeatherChange
+// used to hardcode the flag false, so the test render never matched
+// production (where the flag is on). It must read the flag from config, like
+// the live consumeWeatherChanges path, so !poracle-test faithfully reproduces
+// the live alert.
+func TestEnrichWeatherChange_ActivePokemonsHonorsConfig(t *testing.T) {
+	ps := newEnrichParityService(t)
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: true}}
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+	r, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange error: %v", err)
+	}
+
+	// activePokemons is the key the weatherchange templates iterate — it must
+	// be present (and non-empty) once the config flag is on.
+	active, ok := r.perLang["activePokemons"].([]map[string]any)
+	if !ok {
+		t.Fatalf("perLang[activePokemons] = %v (%T), want []map[string]any — the key {{#each activePokemons}} reads", r.perLang["activePokemons"], r.perLang["activePokemons"])
+	}
+	if len(active) == 0 {
+		t.Errorf("perLang[activePokemons] is empty, want the affected-pokemon list so the template renders it")
+	}
+}
+
+// TestEnrichWeatherChange_ActivePokemonsNilCfg guards the nil-cfg fallback the
+// original hardcode existed to protect: the enrich-parity harness leaves
+// ps.cfg nil, so the flag reads false and activePokemons stays absent (the
+// always-present enrichedActivePokemons still carries the data) — no panic.
+func TestEnrichWeatherChange_ActivePokemonsNilCfg(t *testing.T) {
+	ps := newEnrichParityService(t)
+	if ps.cfg != nil {
+		t.Fatalf("harness precondition: ps.cfg = %v, want nil", ps.cfg)
+	}
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+	r, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange error: %v", err)
+	}
+	if _, present := r.perLang["activePokemons"]; present {
+		t.Errorf("nil cfg: perLang[activePokemons] present, want absent (flag defaults off)")
+	}
+	if _, ok := r.perLang["enrichedActivePokemons"].([]map[string]any); !ok {
+		t.Errorf("nil cfg: perLang[enrichedActivePokemons] missing, want the always-present affected list")
+	}
+}
+
+// TestEnrichWeatherChange_TilePreservedWhenFlagOn locks in the tile-selection
+// fix. When [weather] show_altered_pokemon_static_map is on, enricher.Weather
+// returns no base tile — it defers to the per-user tile that WeatherTranslate
+// builds with active-pokemon markers. enrichWeatherChange must carry that
+// pending through (mirroring the live consumeWeatherChanges "use per-user tile
+// if available" selection); discarding it (the original perLang, _ = ... form)
+// made the weather-change tile vanish from !poracle-test even though
+// production shows it. The flag-off arm confirms the base tile still comes
+// from enricher.Weather.
+func TestEnrichWeatherChange_TilePreservedWhenFlagOn(t *testing.T) {
+	ps := newEnrichParityService(t)
+	// A .test URL never resolves (RFC 6761), so the tile workers fail fast
+	// with no real egress; SubmitTile returns the pending synchronously
+	// regardless, which is all this test inspects.
+	resolver := staticmap.New(staticmap.Config{Provider: "tileservercache", ProviderURL: "http://tiles.test"})
+	t.Cleanup(resolver.Close)
+	ps.enricher.StaticMap = resolver
+
+	raw := loadTestdataSample(t, "weatherchange", "rain")
+
+	// Flag ON: base tile is nil, per-user tile must be carried through.
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: true}}
+	on, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange (flag on) error: %v", err)
+	}
+	if on.tilePending == nil {
+		t.Error("flag on: tilePending = nil, want the per-user weather tile carried through from WeatherTranslate")
+	}
+
+	// Flag OFF: base tile is produced by enricher.Weather as before.
+	ps.cfg = &config.Config{Weather: config.WeatherConfig{ShowAlteredPokemonStaticMap: false}}
+	off, err := ps.enrichWeatherChange(raw, "en", false)
+	if err != nil {
+		t.Fatalf("enrichWeatherChange (flag off) error: %v", err)
+	}
+	if off.tilePending == nil {
+		t.Error("flag off: tilePending = nil, want the base weather tile from enricher.Weather")
 	}
 }
 
