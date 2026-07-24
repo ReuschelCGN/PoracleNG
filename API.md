@@ -333,8 +333,8 @@ Use `level: 90` for all levels.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `reward_type` | int | required | Reward type (2=item, 3=stardust, 4=candy, 7=pokemon, 12=mega energy) |
-| `reward` | int | 0 | Reward ID (pokemon ID, item ID, or stardust amount) |
+| `reward_type` | int | required | Reward type (2=item, 3=stardust, 4=candy, 7=pokemon, 8=pokecoins, 12=mega energy) |
+| `reward` | int | 0 | Reward ID (pokemon ID, item ID, or stardust/pokecoin amount) |
 | `form` | int | 0 | Form ID (for pokemon rewards) |
 | `shiny` | bool | false | Shiny only |
 | `amount` | int | 0 | Minimum reward amount |
@@ -1045,7 +1045,7 @@ Returns test webhook scenarios from `testdata.json`. The editor can use these as
 }
 ```
 
-Available test scenarios: boring, hundo, great-rank1, great-rank9, ultra1, unencountered, boosted, shiny (pokemon); egg1, level1, egg5, level5, egg6, level3 (raid); invasion, lure, giovanni, kecleon, goldstop, goldlure, showcase, pokemoncontest (pokestop); teamchange (gym); level1, level3 (max_battle); quest-item, quest-stardust, quest-pokemon, quest-energy (quest); edit, new, remove, etc. (fort_update).
+Available test scenarios: boring, hundo, great-rank1, great-rank9, ultra1, unencountered, boosted, shiny (pokemon); egg1, level1, egg5, level5, egg6, level3 (raid); invasion, lure, giovanni, kecleon, goldstop, goldlure, showcase, pokemoncontest (pokestop); teamchange (gym); level1, level3 (max_battle); quest-item, quest-stardust, quest-pokecoins, quest-pokemon, quest-energy (quest); edit, new, remove, etc. (fort_update).
 
 ### GET/POST /api/dts/reload
 

@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/pokemon/poracleng/processor/internal/breaker"
 )
 
 // defaultIntersectionBaseURL is the GeoNames OSM intersection endpoint. The
@@ -48,25 +49,17 @@ type IntersectionConfig struct {
 }
 
 // Intersection fetches the nearest street intersection for a coordinate from
-// GeoNames, with optional shared-cache backing. Reuses a single HTTP client,
-// bounds concurrency, and trips a circuit breaker so a GeoNames outage can't
-// park webhook workers on doomed requests.
+// GeoNames, with optional shared-cache backing. Reuses a single HTTP client
+// and routes every lookup through a shared circuit breaker (which also bounds
+// concurrency), so a GeoNames outage can't park webhook workers on doomed
+// requests.
 type Intersection struct {
 	usernames   []string
 	cache       *Cache
 	cacheDetail int
 	client      *http.Client
-	sem         chan struct{}
+	breaker     *breaker.Breaker[string]
 	baseURL     string // overridable in tests
-
-	// Circuit breaker (mirrors Geocoder): after failureThreshold consecutive
-	// failures the circuit opens for cooldown, then allows one half-open probe.
-	failureThreshold    int
-	cooldown            time.Duration
-	mu                  sync.Mutex
-	consecutiveErrors   int
-	circuitOpenSince    time.Time
-	halfOpenProbeActive bool
 }
 
 // NewIntersection builds an Intersection from config. Returns a usable (no-op
@@ -84,23 +77,18 @@ func NewIntersection(cfg IntersectionConfig) *Intersection {
 	if conc <= 0 {
 		conc = 5
 	}
-	threshold := cfg.FailureThreshold
-	if threshold <= 0 {
-		threshold = 5
-	}
-	cooldownMs := cfg.CooldownMs
-	if cooldownMs <= 0 {
-		cooldownMs = 30000
-	}
 	return &Intersection{
-		usernames:        cfg.Usernames,
-		cache:            cfg.Cache,
-		cacheDetail:      detail,
-		client:           &http.Client{Timeout: time.Duration(timeout) * time.Millisecond},
-		sem:              make(chan struct{}, conc),
-		baseURL:          defaultIntersectionBaseURL,
-		failureThreshold: threshold,
-		cooldown:         time.Duration(cooldownMs) * time.Millisecond,
+		usernames:   cfg.Usernames,
+		cache:       cfg.Cache,
+		cacheDetail: detail,
+		client:      &http.Client{Timeout: time.Duration(timeout) * time.Millisecond},
+		breaker: breaker.New[string](breaker.Config{
+			Name:             "geonames-intersection",
+			FailureThreshold: cfg.FailureThreshold,
+			Cooldown:         time.Duration(cfg.CooldownMs) * time.Millisecond,
+			Concurrency:      conc,
+		}),
+		baseURL: defaultIntersectionBaseURL,
 	}
 }
 
@@ -134,8 +122,10 @@ func (i *Intersection) GetIntersection(lat, lon float64) string {
 		}
 	}
 
-	result, ok := i.fetch(lat, lon)
-	if !ok {
+	result, err := i.breaker.Do(func() (string, error) {
+		return i.fetch(lat, lon)
+	})
+	if err != nil {
 		// Transient failure or open circuit — don't cache, so a later sighting
 		// retries once the service recovers.
 		return ""
@@ -146,68 +136,10 @@ func (i *Intersection) GetIntersection(lat, lon float64) string {
 	return result
 }
 
-// circuitAllows reports whether a request may proceed. When the circuit is
-// open and still within cooldown, it denies; after cooldown it lets exactly
-// one half-open probe through.
-func (i *Intersection) circuitAllows() bool {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	if i.consecutiveErrors < i.failureThreshold {
-		return true
-	}
-	if time.Since(i.circuitOpenSince) < i.cooldown {
-		return false
-	}
-	if i.halfOpenProbeActive {
-		return false
-	}
-	i.halfOpenProbeActive = true
-	return true
-}
-
-// recordSuccess closes the circuit after a healthy response.
-func (i *Intersection) recordSuccess() {
-	i.mu.Lock()
-	i.consecutiveErrors = 0
-	i.halfOpenProbeActive = false
-	i.mu.Unlock()
-}
-
-// recordFailure advances the failure count and opens the circuit at the
-// threshold.
-func (i *Intersection) recordFailure() {
-	i.mu.Lock()
-	i.consecutiveErrors++
-	i.halfOpenProbeActive = false
-	if i.consecutiveErrors >= i.failureThreshold {
-		i.circuitOpenSince = time.Now()
-	}
-	i.mu.Unlock()
-}
-
-// fetch performs one GeoNames request, gated by the circuit breaker and
-// concurrency limiter. The bool reports whether the call produced a usable
-// answer (true even when the answer is "no intersection", which is a cacheable
-// fact); false means a transient error or open circuit not worth caching.
-func (i *Intersection) fetch(lat, lon float64) (string, bool) {
-	if !i.circuitAllows() {
-		log.Debugf("GeoNames intersection: circuit open, skipping %f,%f", lat, lon)
-		return "", false
-	}
-
-	i.sem <- struct{}{}
-	defer func() { <-i.sem }()
-
-	// Classify the outcome for the circuit breaker exactly once on return.
-	healthy := false
-	defer func() {
-		if healthy {
-			i.recordSuccess()
-		} else {
-			i.recordFailure()
-		}
-	}()
-
+// fetch performs one GeoNames request. A nil error means a usable answer
+// (including "no intersection nearby", returned as "" — a cacheable fact); a
+// non-nil error is a transient failure that counts toward tripping the breaker.
+func (i *Intersection) fetch(lat, lon float64) (string, error) {
 	username := i.usernames[rand.IntN(len(i.usernames))]
 
 	q := url.Values{}
@@ -221,38 +153,37 @@ func (i *Intersection) fetch(lat, lon float64) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		log.Debugf("GeoNames intersection: build request: %v", err)
-		return "", false
+		return "", err
 	}
 
 	resp, err := i.client.Do(req)
 	if err != nil {
 		log.Warnf("GeoNames intersection request failed for %f,%f: %v", lat, lon, err)
-		return "", false
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Warnf("GeoNames intersection: HTTP %d for %f,%f", resp.StatusCode, lat, lon)
-		return "", false
+		return "", fmt.Errorf("geonames: http %d", resp.StatusCode)
 	}
 
 	var result geonamesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Warnf("GeoNames intersection: decode response: %v", err)
-		return "", false
+		return "", err
 	}
 
 	// API-level error (e.g. credit exhaustion) — surface it and trip the breaker.
 	if result.Status != nil {
 		log.Warnf("GeoNames intersection: API error %d for %f,%f: %s", result.Status.Value, lat, lon, result.Status.Message)
-		return "", false
+		return "", fmt.Errorf("geonames: api error %d: %s", result.Status.Value, result.Status.Message)
 	}
 
-	healthy = true
 	if result.Intersection.Street1 != "" && result.Intersection.Street2 != "" {
-		return fmt.Sprintf("%s & %s", result.Intersection.Street1, result.Intersection.Street2), true
+		return fmt.Sprintf("%s & %s", result.Intersection.Street1, result.Intersection.Street2), nil
 	}
 
 	// Successful call, genuinely no intersection nearby — cacheable.
-	return "", true
+	return "", nil
 }

@@ -97,6 +97,22 @@ func TestV2Quest_CreateSingleElementArray_OK(t *testing.T) {
 	}
 }
 
+// TestV2Quest_PokecoinsRoundTrip verifies pokecoins (reward_type 8) stores its
+// minimum amount in the Reward column (mirroring stardust) and round-trips.
+func TestV2Quest_PokecoinsRoundTrip(t *testing.T) {
+	r, qs, _, restore := newV2QuestTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/quest", `[{"reward_type":8,"reward":10}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := qs.AllRows()
+	if len(rows) != 1 || rows[0].RewardType != 8 || rows[0].Reward != 10 {
+		t.Fatalf("expected 1 stored row reward_type=8 reward=10 (min pokecoin amount), got %+v", rows)
+	}
+}
+
 // --- reward_type required + discrete-set validation -------------------------
 
 func TestV2Quest_RejectsMissingRewardType(t *testing.T) {
@@ -129,7 +145,7 @@ func TestV2Quest_RejectsBadRewardType(t *testing.T) {
 }
 
 func TestV2Quest_AcceptsAllValidRewardTypes(t *testing.T) {
-	for _, rt := range []int{2, 3, 4, 7, 12} {
+	for _, rt := range []int{2, 3, 4, 7, 8, 12} {
 		r, qs, _, restore := newV2QuestTestAPI(t)
 		body := `[{"reward_type":` + itoa(int64(rt)) + `}]`
 		w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/quest", body)

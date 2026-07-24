@@ -135,7 +135,7 @@ func (e *Enricher) NestTranslate(base map[string]any, nest *webhook.NestWebhook,
 	form := nest.Form
 
 	tr := e.Translations.For(lang)
-	TranslateMonsterNamesEng(m, e.GameData, tr, e.Translations, pokemonID, form, 0)
+	TranslateMonsterNamesEng(m, e.GameData, tr, e.Translations, pokemonID, form, 0, 0)
 
 	monster := e.GameData.GetMonster(pokemonID, form)
 	if monster != nil {

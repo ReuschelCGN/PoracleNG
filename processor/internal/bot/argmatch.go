@@ -31,7 +31,7 @@ type ArgMatcher struct {
 	// need to type underscores or quotes for known multi-word names.
 	// See collapseMultiWord.
 	bareMultiWord     map[string]bool            // items + pokemon names (multi-word entries only)
-	prefixedMultiWord map[string]map[string]bool // "move" → multi-word move names, "form" → form names
+	prefixedMultiWord map[string]map[string]bool // "move" → multi-word move names, "form" → form names, "costume" → costume names
 }
 
 // NewArgMatcher builds the pre-computed lookup tables for argument matching.
@@ -167,8 +167,9 @@ func NewArgMatcher(bundle *i18n.Bundle, gd *gamedata.GameData, resolver *Pokemon
 func (am *ArgMatcher) buildMultiWordVocabularies(languages []string) {
 	am.bareMultiWord = make(map[string]bool)
 	am.prefixedMultiWord = map[string]map[string]bool{
-		"move": {},
-		"form": {},
+		"move":    {},
+		"form":    {},
+		"costume": {},
 	}
 
 	if am.gameData != nil {
@@ -199,6 +200,9 @@ func (am *ArgMatcher) buildMultiWordVocabularies(languages []string) {
 			}
 			for id := range formIDs {
 				add(am.prefixedMultiWord["form"], tr, gamedata.FormTranslationKey(id))
+			}
+			for id := range am.gameData.Costumes {
+				add(am.prefixedMultiWord["costume"], tr, gamedata.CostumeTranslationKey(id))
 			}
 		}
 	}
@@ -304,9 +308,9 @@ var knownPrefixKeys = []string{
 	"arg.prefix.rarity", "arg.prefix.maxrarity",
 	"arg.prefix.size", "arg.prefix.maxsize",
 	"arg.prefix.d", "arg.prefix.t", "arg.prefix.gen", "arg.prefix.cap", "arg.prefix.mega",
-	"arg.prefix.form", "arg.prefix.template", "arg.prefix.move", "arg.prefix.language",
+	"arg.prefix.form", "arg.prefix.costume", "arg.prefix.template", "arg.prefix.move", "arg.prefix.language",
 	"arg.prefix.gym",
-	"arg.prefix.stardust", "arg.prefix.energy", "arg.prefix.candy",
+	"arg.prefix.stardust", "arg.prefix.pokecoin", "arg.prefix.energy", "arg.prefix.candy",
 	"arg.prefix.minspawn",
 	"arg.prefix.great", "arg.prefix.greathigh", "arg.prefix.greatcp",
 	"arg.prefix.ultra", "arg.prefix.ultrahigh", "arg.prefix.ultracp",
@@ -322,7 +326,7 @@ var knownKeywordKeys = []string{
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
 	"arg.gmax", "arg.mega",
 	"arg.pokestop", "arg.gym", "arg.station", "arg.location", "arg.new", "arg.removal", "arg.photo", "arg.name", "arg.description", "arg.include_empty",
-	"arg.stardust", "arg.energy", "arg.candy",
+	"arg.stardust", "arg.pokecoin", "arg.energy", "arg.candy",
 	"arg.slot_changes", "arg.battle_changes",
 }
 
@@ -620,6 +624,38 @@ func (am *ArgMatcher) tryPrefixString(tok, key, lang string, result *ParsedArgs)
 		}
 	}
 	return false
+}
+
+// ResolveCostume resolves the raw value captured from a `costume:` token
+// (parsed.Strings["costume"]) to a costume ID. Numeric values ("0", "5")
+// are returned as-is. Otherwise the name is lowercase-matched against
+// costume_{id} translations in the user's language, then English —
+// mirroring filterByForm's translation lookup for form names
+// (internal/bot/commands/helpers.go). Returns (0, false) when nothing
+// matches.
+func (am *ArgMatcher) ResolveCostume(name, lang string) (int, bool) {
+	if n, err := strconv.Atoi(name); err == nil {
+		return n, true
+	}
+	if am.gameData == nil || am.bundle == nil {
+		return 0, false
+	}
+	lower := strings.ToLower(name)
+	for _, tryLang := range []string{lang, "en"} {
+		if tryLang == "" {
+			continue
+		}
+		tr := am.bundle.For(tryLang)
+		if tr == nil {
+			continue
+		}
+		for id := range am.gameData.Costumes {
+			if strings.ToLower(tr.T(gamedata.CostumeTranslationKey(id))) == lower {
+				return id, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // tryPrefixStringList matches patterns like "area:berlin", "area:X,Y,Z".

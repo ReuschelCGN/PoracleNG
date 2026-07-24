@@ -1070,11 +1070,38 @@
               "array",
               "null"
             ]
+          },
+          "types": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DtsTypeInfo"
+            },
+            "type": "object"
           }
         },
         "required": [
           "status",
-          "testdata"
+          "testdata",
+          "types"
+        ],
+        "type": "object"
+      },
+      "DtsTypeInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "derived": {
+            "type": "boolean"
+          },
+          "templateType": {
+            "type": "string"
+          },
+          "webhookType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "webhookType",
+          "templateType",
+          "derived"
         ],
         "type": "object"
       },
@@ -2500,7 +2527,7 @@
             "description": "Delivery destination + render context (id, type, language, template, location)"
           },
           "type": {
-            "description": "Webhook type: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle",
+            "description": "DTS template-type name (monster, monsterChanged, maxbattle, ...) OR raw webhook type (pokemon, raid, invasion, quest, pokestop, gym, nest, fort_update/fort-update, max_battle/max-battle, ...) — resolved case-insensitively (see internal/api's resolveTestWireType)",
             "type": "string"
           },
           "webhook": {
@@ -2517,6 +2544,9 @@
       "TestDataEntry": {
         "additionalProperties": false,
         "properties": {
+          "dtsType": {
+            "type": "string"
+          },
           "location": {
             "type": "string"
           },
@@ -5482,6 +5512,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -5786,6 +5824,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -6087,6 +6133,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -6450,7 +6504,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6458,7 +6512,7 @@
                   ]
                 },
                 "reward_type": {
-                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -6564,7 +6618,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6572,7 +6626,7 @@
                   ]
                 },
                 "reward_type": {
-                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -6678,7 +6732,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6686,7 +6740,7 @@
                   ]
                 },
                 "reward_type": {
-                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -6750,6 +6804,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "Human-readable rule description (present only with ?include_descriptions=true)",
                   "type": "string"
@@ -6907,6 +6969,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "Human-readable rule description (present only with ?include_descriptions=true)",
                   "type": "string"
@@ -7061,6 +7131,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -8156,6 +8234,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -8514,7 +8600,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8522,7 +8608,7 @@
                   ]
                 },
                 "reward_type": {
-                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -8581,6 +8667,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -10123,6 +10217,14 @@
                     "null"
                   ]
                 },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "def": {
                   "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
                   "format": "int64",
@@ -10481,7 +10583,7 @@
                   ]
                 },
                 "reward": {
-                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+                  "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -10489,7 +10591,7 @@
                   ]
                 },
                 "reward_type": {
-                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+                  "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -10548,6 +10650,14 @@
                   "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
                   "type": [
                     "boolean",
+                    "null"
+                  ]
+                },
+                "costume": {
+                  "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
                     "null"
                   ]
                 },
@@ -11114,6 +11224,14 @@
               "null"
             ]
           },
+          "costume": {
+            "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "def": {
             "description": "Minimum DEF IV (0-15). Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard.",
             "format": "int64",
@@ -11519,7 +11637,7 @@
             ]
           },
           "reward": {
-            "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon' (stored as 0 = any). Returned as null when at its wildcard.",
+            "description": "Reward selector (game-master id; meaning depends on reward_type: item id (2), stardust amount (3), pokecoin amount (8), pokemon/candy id (4/7/12)). Omit (or send 0) to match ANY reward of that category — i.e. {reward_type:2} is 'all items', {reward_type:7} is 'all pokemon', {reward_type:8} is 'any pokecoin amount' (stored as 0 = any). Returned as null when at its wildcard.",
             "format": "int64",
             "type": [
               "integer",
@@ -11527,7 +11645,7 @@
             ]
           },
           "reward_type": {
-            "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 12 (mega_energy) (required).",
+            "description": "Reward category (game-master proto id; no wildcard); one of 2 (item) | 3 (stardust) | 4 (candy) | 7 (pokemon) | 8 (pokecoins) | 12 (mega_energy) (required).",
             "format": "int64",
             "type": "integer"
           },
@@ -11565,6 +11683,14 @@
             "description": "Auto-delete the alert on expiry (clean bitmask bit 1). Omit to disable (default false). Returned as null when false.",
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "costume": {
+            "description": "Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume.",
+            "format": "int64",
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -12997,14 +13123,26 @@
     },
     "/dts/testdata": {
       "get": {
-        "description": "Returns {status, testdata}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use.",
+        "description": "Returns {status, testdata, types}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use. ?dtsType=<name> resolves via the shared DTS-type alias table (including the pokestop invasion/lure and raid/egg payload-shape splits) and tags each returned entry with dtsType; the legacy ?type=<webhookType> filter is unchanged and untagged. types is the full DTS-type -> source map for client discovery.",
         "operationId": "get-dts-testdata",
         "parameters": [
           {
+            "description": "Legacy filter: exact raw webhook type (e.g. pokemon, raid, pokestop). Returns every entry of that type, untagged. Takes precedence over dtsType if both are set.",
             "explode": false,
             "in": "query",
             "name": "type",
             "schema": {
+              "description": "Legacy filter: exact raw webhook type (e.g. pokemon, raid, pokestop). Returns every entry of that type, untagged. Takes precedence over dtsType if both are set.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "DTS template type name (e.g. monster, egg, invasion, lure, incident, monsterChanged) or raw webhook type, resolved via the shared alias table. Returns only the entries that preview that type — including the server-side pokestop invasion/lure and raid/egg splits — each tagged with dtsType.",
+            "explode": false,
+            "in": "query",
+            "name": "dtsType",
+            "schema": {
+              "description": "DTS template type name (e.g. monster, egg, invasion, lure, incident, monsterChanged) or raw webhook type, resolved via the shared alias table. Returns only the entries that preview that type — including the server-side pokestop invasion/lure and raid/egg splits — each tagged with dtsType.",
               "type": "string"
             }
           }
@@ -14388,7 +14526,7 @@
                     "type": "object"
                   },
                   "type": {
-                    "description": "Webhook type: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle",
+                    "description": "DTS template-type name (monster, monsterChanged, maxbattle, ...) OR raw webhook type (pokemon, raid, invasion, quest, pokestop, gym, nest, fort_update/fort-update, max_battle/max-battle, ...) — resolved case-insensitively (see internal/api's resolveTestWireType)",
                     "type": "string"
                   },
                   "webhook": {

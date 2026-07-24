@@ -34,6 +34,7 @@ import (
 type v2RaidRule struct {
 	PokemonID *int    `json:"pokemon_id,omitempty" nullable:"true" doc:"Omit pokemon_id to track by raid level (any boss); give a Pokédex id for a specific boss. Omitting stores the by-level sentinel 9000. Returned as null when tracking by level."`
 	Form      *int    `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
+	Costume   *int    `json:"costume,omitempty" nullable:"true" doc:"Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume."`
 	Level     *int    `json:"level,omitempty" nullable:"true" doc:"Raid tier. Only applies when tracking by level (no pokemon_id) — omit for any tier (stored 90), or give a tier >= 1. With a specific pokemon_id, level is ignored (stored placeholder 9000, matching the bot). Single int — POST multiple rule objects for multiple tiers. Returned as null when stored 90 (any tier) or 9000 (level unused)."`
 	Team      *string `json:"team,omitempty" nullable:"true" enum:"harmony,mystic,valor,instinct,any" doc:"Controlling team: harmony|mystic|valor|instinct|any (0|1|2|3|4). Omit to match any team (defaults to 'any', stored as 4). Returned as null when 'any'."`
 	Exclusive *bool   `json:"exclusive,omitempty" nullable:"true" doc:"Match EX-raids only. Omit to match regardless (default false). Returned as null when false."`
@@ -108,6 +109,7 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		Team:                  team,
 		PokemonID:             pokemonID,
 		Form:                  valueOr(req.Form, 0),
+		Costume:               valueOr(req.Costume, 9000),
 		Level:                 level,
 		Exclusive:             db.IntBool(valueOr(req.Exclusive, false)),
 		Move:                  valueOr(req.Move, 9000),
@@ -145,6 +147,7 @@ func raidRowToRule(row *db.RaidTrackingAPI) v2RaidRule {
 	return v2RaidRule{
 		PokemonID: ptrUnless(row.PokemonID, 9000),
 		Form:      ptrUnless(row.Form, 0),
+		Costume:   ptrUnless(row.Costume, 9000),
 		// level has no meaningful tier when stored 9000 (specific-pokemon
 		// placeholder, incl. legacy bot rows) or 90 (by-level any-tier).
 		Level:                 raidLevelOrNull(row.Level),

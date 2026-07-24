@@ -101,7 +101,7 @@ func (e *Enricher) WeatherTranslate(base map[string]any, oldWeatherID, newWeathe
 				"disappearTime": pok.DisappearTime,
 			}
 			nameInfo := make(map[string]any)
-			TranslateMonsterNamesEng(nameInfo, gd, tr, e.Translations, pok.PokemonID, pok.Form, 0)
+			TranslateMonsterNamesEng(nameInfo, gd, tr, e.Translations, pok.PokemonID, pok.Form, 0, 0)
 			entry["name"] = nameInfo["name"]
 			entry["nameEng"] = nameInfo["nameEng"]
 			entry["formName"] = nameInfo["formName"]

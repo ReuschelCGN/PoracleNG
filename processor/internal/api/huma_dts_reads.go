@@ -334,21 +334,26 @@ func RegisterDTSPartials(api huma.API, ts dtsTemplateReader) {
 	})
 }
 
-// dtsTestdataInput carries the optional type filter query param.
+// dtsTestdataInput carries the optional type/dtsType filter query params.
 type dtsTestdataInput struct {
-	Type string `query:"type"`
+	Type    string `query:"type" doc:"Legacy filter: exact raw webhook type (e.g. pokemon, raid, pokestop). Returns every entry of that type, untagged. Takes precedence over dtsType if both are set."`
+	DtsType string `query:"dtsType" doc:"DTS template type name (e.g. monster, egg, invasion, lure, incident, monsterChanged) or raw webhook type, resolved via the shared alias table. Returns only the entries that preview that type — including the server-side pokestop invasion/lure and raid/egg splits — each tagged with dtsType."`
 }
 
 // RegisterDTSTestdata registers GET /api/dts/testdata, returning test webhook
 // scenarios merged from config + fallback testdata.json. Replaces gin
 // HandleDTSTestdata. A missing testdata.json yields 404.
 // dtsTestdataOutput is the typed body for GET /api/dts/testdata: {status,
-// testdata}. testdata is null when a type filter matches nothing (preserved via
-// a nil slice marshalling to null, matching the legacy handler).
+// testdata, types}. testdata is null when a type/dtsType filter matches
+// nothing (preserved via a nil slice marshalling to null, matching the
+// legacy handler). types is the full DTS-type -> source map (see dtsmap),
+// always present, so clients can discover every addressable DTS type name
+// without a separate request.
 type dtsTestdataOutput struct {
 	Body struct {
-		Status   string          `json:"status"`
-		Testdata []TestDataEntry `json:"testdata"`
+		Status   string                 `json:"status"`
+		Testdata []TestDataEntry        `json:"testdata"`
+		Types    map[string]dtsTypeInfo `json:"types"`
 	}
 }
 
@@ -356,14 +361,15 @@ func RegisterDTSTestdata(api huma.API, configDir, fallbackDir string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-dts-testdata", Method: "GET", Path: "/dts/testdata",
 		Summary: "Test webhook scenarios from testdata.json", Tags: []string{"dts"},
-		Description: "Returns {status, testdata}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use.",
+		Description: "Returns {status, testdata, types}: the named test webhook scenarios from the bundled fallbacks/testdata.json merged with the operator's config/testdata.json — the same scenarios poracle-test and POST /test use. ?dtsType=<name> resolves via the shared DTS-type alias table (including the pokestop invasion/lure and raid/egg payload-shape splits) and tags each returned entry with dtsType; the legacy ?type=<webhookType> filter is unchanged and untagged. types is the full DTS-type -> source map for client discovery.",
 		Security: []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsTestdataInput) (*dtsTestdataOutput, error) {
 		entries := loadTestdata(configDir, fallbackDir)
 		if entries == nil {
 			return nil, huma.Error404NotFound("testdata.json not found")
 		}
-		if in.Type != "" {
+		switch {
+		case in.Type != "":
 			var filtered []TestDataEntry
 			for _, e := range entries {
 				if e.Type == in.Type {
@@ -371,10 +377,13 @@ func RegisterDTSTestdata(api huma.API, configDir, fallbackDir string) {
 				}
 			}
 			entries = filtered
+		case in.DtsType != "":
+			entries = filterByDTSType(entries, in.DtsType)
 		}
 		out := &dtsTestdataOutput{}
 		out.Body.Status = "ok"
 		out.Body.Testdata = entries
+		out.Body.Types = dtsTypeInfoMap()
 		return out, nil
 	})
 }

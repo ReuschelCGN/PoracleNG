@@ -132,6 +132,26 @@ func rsvpChanged(oldRSVPs, newRSVPs []RaidRSVP) bool {
 
 // CheckInvasion returns true if this invasion was already seen (duplicate).
 // Key: {pokestop_id}I{incident_expiration}
+// CheckShowcase deduplicates showcase fires. Identity is the stop + contest end
+// time + a rank-1 fingerprint: Golbat only fires the pokéstop webhook on rank-1
+// movement, so including the fingerprint lets each meaningful leaderboard change
+// through (to reach the edit path) while collapsing repeats of the same state.
+func (dc *DuplicateCache) CheckShowcase(pokestopID string, showcaseExpiry int64, rank1Fingerprint string) bool {
+	key := fmt.Sprintf("%sSC%d:%s", pokestopID, showcaseExpiry, rank1Fingerprint)
+
+	if dc.cache.Get(key) != nil {
+		return true
+	}
+
+	now := time.Now().Unix()
+	remaining := showcaseExpiry - now + 300
+	if remaining <= 0 {
+		remaining = 60
+	}
+	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	return false
+}
+
 func (dc *DuplicateCache) CheckInvasion(pokestopID string, expiration int64) bool {
 	key := fmt.Sprintf("%sI%d", pokestopID, expiration)
 

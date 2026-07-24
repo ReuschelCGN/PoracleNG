@@ -69,6 +69,23 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*formReply}
 	}
 
+	// Resolve costume filter: 9000 = any (default when the arg is absent),
+	// 0 = no costume, N = specific costume. Mirrors applyFormFilter's
+	// not-found path for an unresolved name.
+	costume := 9000
+	if costumeArg, ok := parsed.Strings["costume"]; ok {
+		id, resolved := ctx.ArgMatcher.ResolveCostume(costumeArg, ctx.Language)
+		if !resolved {
+			return []bot.Reply{{
+				React: "🙅",
+				Text: tr.Tf("msg.costume_not_found",
+					ctx.EscapeForCode(costumeArg),
+					bot.CommandPrefix(ctx)),
+			}}
+		}
+		costume = id
+	}
+
 	// Reject bare "!track everything" with no meaningful filters for non-admins.
 	// Filters like IV, CP, level, PVP league, type, or gender meaningfully narrow results.
 	// "shiny" alone doesn't — almost everything can be shiny.
@@ -155,6 +172,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				ProfileNo: ctx.ProfileNo,
 				PokemonID: mon.PokemonID,
 				Form:      mon.Form,
+				Costume:   costume,
 				Ping:      pings,
 				Distance:  filters.distance,
 				MinIV:     filters.minIV,
@@ -177,15 +195,15 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				// rules matching every pokemon regardless of weight,
 				// insert the matcher-no-op range explicitly: MaxWeight 0
 				// would otherwise reject every encountered pokemon.
-				MinWeight:        0,
-				MaxWeight:        9000000,
-				MinTime:          filters.minTime,
-				Rarity:           filters.rarity,
-				MaxRarity:        filters.maxRarity,
-				Size:             filters.size,
-				MaxSize:          filters.maxSize,
-				Template:         filters.template,
-				Clean:            filters.clean,
+				MinWeight:             0,
+				MaxWeight:             9000000,
+				MinTime:               filters.minTime,
+				Rarity:                filters.rarity,
+				MaxRarity:             filters.maxRarity,
+				Size:                  filters.size,
+				MaxSize:               filters.maxSize,
+				Template:              filters.template,
+				Clean:                 filters.clean,
 				PVPRankingLeague:      pe.League,
 				PVPRankingBest:        pe.Best,
 				PVPRankingWorst:       pe.Worst,
@@ -289,9 +307,10 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.cap"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
 		{Type: bot.ParamKeyword, Key: "arg.mega"},
-		{Type: bot.ParamPrefixString,     Key: "arg.prefix.form"},
-		{Type: bot.ParamPrefixString,     Key: "arg.prefix.template"},
-		{Type: bot.ParamPrefixString,     Key: "arg.prefix.location"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.costume"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
+		{Type: bot.ParamPrefixString, Key: "arg.prefix.location"},
 		{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 		{Type: bot.ParamKeyword, Key: "arg.remove"},
 		{Type: bot.ParamKeyword, Key: "arg.clean"},

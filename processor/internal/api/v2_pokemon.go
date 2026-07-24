@@ -23,6 +23,8 @@ type v2PokemonRule struct {
 
 	Form *int `json:"form,omitempty" nullable:"true" doc:"Form id (game-master). Omit to match any form (stored as 0 = any). Returned as null when at its wildcard."`
 
+	Costume *int `json:"costume,omitempty" nullable:"true" doc:"Costume id. Omit/null = any (stored 9000). 0 = no costume. N = that costume."`
+
 	MinIV *int `json:"min_iv,omitempty" nullable:"true" doc:"Minimum IV %. Omit to impose no lower bound (stored as -1 = no lower bound). Returned as null when at its wildcard."`
 	MaxIV *int `json:"max_iv,omitempty" nullable:"true" doc:"Maximum IV %. Omit to impose no upper bound (stored as 100 = the IV ceiling, i.e. no upper bound). Returned as null when at its wildcard."`
 
@@ -121,6 +123,7 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 		Distance:              distance,
 		PokemonID:             req.PokemonID,
 		Form:                  valueOr(req.Form, 0),
+		Costume:               valueOr(req.Costume, 9000),
 		MinIV:                 valueOr(req.MinIV, -1),
 		MaxIV:                 valueOr(req.MaxIV, 100),
 		MinCP:                 valueOr(req.MinCP, 0),
@@ -165,6 +168,7 @@ func pokemonRowToRule(row *db.MonsterTrackingAPI) v2PokemonRule {
 	return v2PokemonRule{
 		PokemonID:             row.PokemonID,
 		Form:                  ptrUnless(row.Form, 0),
+		Costume:               ptrUnless(row.Costume, 9000),
 		MinIV:                 ptrUnless(row.MinIV, -1),
 		MaxIV:                 ptrUnless(row.MaxIV, 100),
 		MinCP:                 ptrUnless(row.MinCP, 0),
