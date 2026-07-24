@@ -65,6 +65,19 @@ type Capabilities struct {
 	// accepts a JSON object (not just a string). Lets editors send
 	// Form-mode authored response templates without flattening.
 	ButtonResponseObject bool `json:"buttonResponseObject"`
+
+	// DerivedDtsTypes reports whether this binary carries the enhanced DTS
+	// enricher: GET /api/dts/testdata returns the DTS-type→source `types`
+	// map and honours the ?dtsType=<name> filter, and POST /api/dts/enrich
+	// accepts DTS type names — including the derived types (monsterChanged,
+	// incident, questSummary, weatherchange, rsvpChanges) and showcase. A
+	// single flag stands for that whole feature since those pieces ship
+	// together (they were added by the same change as this flag), so "flag
+	// present and true" is exactly equivalent to "enricher available".
+	// Editors that see the flag can detect support from the unauthenticated
+	// /health response and skip probing /api/dts/testdata; when the key is
+	// absent they fall back to structural detection (presence of `types`).
+	DerivedDtsTypes bool `json:"derivedDtsTypes"`
 }
 
 // HandleHealth returns a Gin handler that responds with a small health
@@ -93,5 +106,6 @@ func BuildCapabilities() Capabilities {
 		Autocreate:           true,
 		TomlDts:              true,
 		ButtonResponseObject: true,
+		DerivedDtsTypes:      true,
 	}
 }
