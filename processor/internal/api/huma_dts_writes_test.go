@@ -206,6 +206,19 @@ func TestHumaDTSSaveTemplates_MissingFields400(t *testing.T) {
 	}
 }
 
+func TestHumaDTSSaveTemplates_AgnosticHelpEmptyPlatformOK(t *testing.T) {
+	r, api := newFeaturesTestAPI(t)
+	RegisterDTSSaveTemplates(api, &stubDTSWriter{})
+
+	// help is platform-agnostic: platform="" must be accepted (not 400) so an
+	// override can shadow the "" fallback instead of duplicating it.
+	body := []byte(`[{"type":"help","id":"fort","platform":"","template":"x"}]`)
+	w := postJSON(t, r, "/api/dts/templates", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for agnostic help with empty platform, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestHumaDTSSaveTemplates_Readonly403(t *testing.T) {
 	r, api := newFeaturesTestAPI(t)
 	ts := &stubDTSWriter{saveErr: errors.New("cannot overwrite readonly entry")}

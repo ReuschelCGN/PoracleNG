@@ -256,7 +256,11 @@ func RegisterDTSSaveTemplates(api huma.API, ts dtsSaveWriter) {
 		}
 
 		for i, entry := range entries {
-			if entry.Type == "" || entry.Platform == "" {
+			// Platform is required except for platform-agnostic types (e.g.
+			// help), whose fallbacks carry an empty platform. Allowing "" for
+			// those lets an override keep the fallback's key and shadow it,
+			// instead of surfacing as a duplicate alongside the fallback.
+			if entry.Type == "" || (entry.Platform == "" && !dts.IsPlatformAgnosticType(entry.Type)) {
 				msg := fmt.Sprintf("entry %d missing required fields (type=%q, platform=%q, id=%q)", i, entry.Type, entry.Platform, entry.ID)
 				log.Warnf("dts save: %s", msg)
 				return nil, huma.Error400BadRequest(msg)
