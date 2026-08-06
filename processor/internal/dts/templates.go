@@ -966,6 +966,15 @@ func (ts *TemplateStore) LogSummary() {
 		}
 	}
 	for key := range seen {
+		// Platform-agnostic types (help) are selected by topic id
+		// (help/fort, help/track, …), not via the per-platform
+		// default-template fallback, so having no default is expected — not a
+		// misconfiguration. Warning here is noise (the render-time
+		// "no DTS template found … no default template configured" error in
+		// renderForUsers remains the real safety net for alert types).
+		if IsPlatformAgnosticType(key.typ) {
+			continue
+		}
 		if !hasDefault[key] {
 			log.Warnf("DTS: no default template for type=%q platform=%q", key.typ, key.platform)
 		}
