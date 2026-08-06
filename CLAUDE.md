@@ -874,6 +874,8 @@ Discord/Telegram fetch to display the image.
 
 Why `URLWithBytes` exists: before this mode, a single event fanning out to N Discord-upload destinations plus a Telegram destination triggered N separate downloads of the public URL from the processor (one per destination, inside each job's critical section). Each download was a chance for Cloudflare-style proxy buffering to fail — losing the map for that destination. `URLWithBytes` collapses those N downloads into one, routes it through the internal URL, and guarantees the same bytes for every Discord destination in the batch.
 
+**Per-message byte gating** (`tileBytesForMessage` in `cmd/processor/render.go`): the batch tile mode is decided once for all matched users, but the bytes are attached **per rendered message** — only when that message's embed image URL equals the resolved `staticMap` tile URL. A single event fans out to many templates: one may render `{{staticMap}}` (gets the bytes), another may set a static image (`"image":{"url":"https://…/x.png"}`) or a **hand-built** tileserver URL (`https://…/staticmap/poracle-monster?imgUrl={{imgUrl}}&…`). The hand-built case is exactly why gating happens here and not on `tileMode` alone: `UsesTile` matches the substring `staticmap`, so a hand-built URL trips it and the batch generates bytes even though that template renders its own URL. Without gating, delivery's `len(StaticMapData) > 0 && imageURL != ""` short-circuit would upload the poracle tile over the operator's chosen image. Gating returns nil bytes for those messages so delivery downloads their real image instead.
+
 ## Configuration
 
 Single TOML file at `config/config.toml`, used by the processor. See `config/config.example.toml` for all options with comments.
