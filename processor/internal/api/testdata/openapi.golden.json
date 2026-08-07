@@ -695,30 +695,6 @@
         ],
         "type": "object"
       },
-      "DtsEnrichRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "language": {
-            "description": "Locale code string (defaults to en)"
-          },
-          "platform": {
-            "description": "Target platform string (defaults to discord)"
-          },
-          "type": {
-            "description": "Webhook type string: pokemon, raid, invasion, quest, pokestop, gym, nest, fort-update, max-battle"
-          },
-          "webhook": {
-            "description": "Raw webhook message payload (open shape; depends on the type field)"
-          }
-        },
-        "required": [
-          "type",
-          "webhook",
-          "language",
-          "platform"
-        ],
-        "type": "object"
-      },
       "DtsEnrichResponse": {
         "additionalProperties": false,
         "properties": {
@@ -901,34 +877,6 @@
         ],
         "type": "object"
       },
-      "DtsRenderRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "description": "Template id string (the configured template name/number)"
-          },
-          "language": {
-            "description": "Locale code string, e.g. en, de"
-          },
-          "platform": {
-            "description": "Target platform string: discord or telegram"
-          },
-          "type": {
-            "description": "Template type string, e.g. monster, raid, egg, quest"
-          },
-          "view": {
-            "description": "Arbitrary template-variable map (open shape)"
-          }
-        },
-        "required": [
-          "type",
-          "id",
-          "platform",
-          "language",
-          "view"
-        ],
-        "type": "object"
-      },
       "DtsRenderResponse": {
         "additionalProperties": false,
         "properties": {
@@ -976,51 +924,6 @@
         "required": [
           "status",
           "message"
-        ],
-        "type": "object"
-      },
-      "DtsSendTestRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "language": {
-            "description": "Locale code string (defaults to en)"
-          },
-          "platform": {
-            "description": "Target platform string (defaults to discord)"
-          },
-          "target": {
-            "$ref": "#/components/schemas/DtsSendTestTarget",
-            "description": "Delivery destination (id required; type defaults to discord:user)"
-          },
-          "template": {
-            "description": "Polymorphic template value (string or object) — open shape"
-          },
-          "variables": {
-            "description": "Arbitrary template-variable map — open shape"
-          }
-        },
-        "required": [
-          "template",
-          "variables",
-          "target",
-          "language",
-          "platform"
-        ],
-        "type": "object"
-      },
-      "DtsSendTestTarget": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "description": "Destination ID string (required; type defaults to discord:user)"
-          },
-          "type": {
-            "description": "Destination type string, e.g. discord:user, discord:channel, telegram:user"
-          }
-        },
-        "required": [
-          "id",
-          "type"
         ],
         "type": "object"
       },
@@ -2088,98 +1991,6 @@
         },
         "type": "object"
       },
-      "ResolveRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "destinations": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "discord": {
-            "$ref": "#/components/schemas/ResolveRequestDiscordStruct"
-          },
-          "telegram": {
-            "$ref": "#/components/schemas/ResolveRequestTelegramStruct"
-          }
-        },
-        "required": [
-          "discord",
-          "telegram",
-          "destinations"
-        ],
-        "type": "object"
-      },
-      "ResolveRequestDiscordStruct": {
-        "additionalProperties": false,
-        "properties": {
-          "channels": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "guilds": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "users": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "users",
-          "roles",
-          "channels",
-          "guilds"
-        ],
-        "type": "object"
-      },
-      "ResolveRequestTelegramStruct": {
-        "additionalProperties": false,
-        "properties": {
-          "chats": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "chats"
-        ],
-        "type": "object"
-      },
       "ResolveResult": {
         "additionalProperties": false,
         "properties": {
@@ -2519,28 +2330,6 @@
         ],
         "type": "object"
       },
-      "TestBodyShape": {
-        "additionalProperties": false,
-        "properties": {
-          "target": {
-            "$ref": "#/components/schemas/TestTargetJSON",
-            "description": "Delivery destination + render context (id, type, language, template, location)"
-          },
-          "type": {
-            "description": "DTS template-type name (monster, monsterChanged, maxbattle, ...) OR raw webhook type (pokemon, raid, invasion, quest, pokestop, gym, nest, fort_update/fort-update, max_battle/max-battle, ...) — resolved case-insensitively (see internal/api's resolveTestWireType)",
-            "type": "string"
-          },
-          "webhook": {
-            "description": "Raw webhook message payload (arbitrary JSON; shape depends on the type field)"
-          }
-        },
-        "required": [
-          "type",
-          "target",
-          "webhook"
-        ],
-        "type": "object"
-      },
       "TestDataEntry": {
         "additionalProperties": false,
         "properties": {
@@ -2563,44 +2352,6 @@
           "test",
           "location",
           "webhook"
-        ],
-        "type": "object"
-      },
-      "TestTargetJSON": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "language": {
-            "type": "string"
-          },
-          "latitude": {
-            "format": "double",
-            "type": "number"
-          },
-          "longitude": {
-            "format": "double",
-            "type": "number"
-          },
-          "name": {
-            "type": "string"
-          },
-          "template": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "type",
-          "language",
-          "template",
-          "latitude",
-          "longitude"
         ],
         "type": "object"
       },

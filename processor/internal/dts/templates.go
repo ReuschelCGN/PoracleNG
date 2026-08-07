@@ -966,6 +966,15 @@ func (ts *TemplateStore) LogSummary() {
 		}
 	}
 	for key := range seen {
+		// Platform-agnostic types (help) are selected by topic id
+		// (help/fort, help/track, …), not via the per-platform
+		// default-template fallback, so having no default is expected — not a
+		// misconfiguration. Warning here is noise (the render-time
+		// "no DTS template found … no default template configured" error in
+		// renderForUsers remains the real safety net for alert types).
+		if IsPlatformAgnosticType(key.typ) {
+			continue
+		}
 		if !hasDefault[key] {
 			log.Warnf("DTS: no default template for type=%q platform=%q", key.typ, key.platform)
 		}
@@ -1057,6 +1066,22 @@ func entryKey(e *DTSEntry) string {
 	return e.Type + "|" + e.Platform + "|" + e.Language + "|" + strings.ToLower(e.ID.String())
 }
 
+// platformAgnosticTypes are DTS template types whose bundled fallbacks carry
+// an empty platform ("") — they render the same regardless of destination
+// platform, so a user override should stay platform-agnostic too. Keeping an
+// override agnostic makes its entryKey match the fallback's, so the override
+// cleanly shadows the fallback instead of appearing as a second entry. Today
+// only "help" (per-command help text, loaded from fallbacks/dts/help/*.json)
+// is agnostic; add future agnostic types here.
+var platformAgnosticTypes = map[string]bool{"help": true}
+
+// IsPlatformAgnosticType reports whether a DTS type is platform-agnostic and
+// may therefore be saved with an empty platform. Non-agnostic types (monster,
+// raid, …) still require a concrete platform on save.
+func IsPlatformAgnosticType(dtsType string) bool {
+	return platformAgnosticTypes[dtsType]
+}
+
 // dedupEntriesPreferLast returns a slice containing each entry keyed by
 // entryKey, keeping only the last occurrence. Load order is
 // fallback → config/dts.json → config/dts/*.json, so the "last" entry is
@@ -1098,13 +1123,18 @@ func dedupEntriesPreferLast(entries []DTSEntry) []DTSEntry {
 }
 
 // entryFilename generates a filename for saving an entry to config/dts/.
-// Format: {type}-{id}-{platform}[-{lang}].json
+// Format: {type}-{id}[-{platform}][-{lang}].json. The platform segment is
+// omitted for platform-agnostic entries (empty platform) so they get a clean
+// "help-fort.json" rather than a trailing-dash "help-fort-.json".
 func entryFilename(e *DTSEntry) string {
 	id := strings.ToLower(e.ID.String())
 	if id == "" {
 		id = "default"
 	}
-	name := e.Type + "-" + id + "-" + e.Platform
+	name := e.Type + "-" + id
+	if e.Platform != "" {
+		name += "-" + e.Platform
+	}
 	if e.Language != "" {
 		name += "-" + e.Language
 	}
