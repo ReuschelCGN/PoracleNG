@@ -42,6 +42,14 @@ type Job struct {
 	StaticMapData []byte          `json:"-"` // inline tile image bytes
 	Language      string          `json:"-"` // matched user's language (for hooks notifications)
 
+	// Template is the per-user tracking-rule template as requested (the raw
+	// value, typically "" = config default). It is stored on the reply-index
+	// TrackedMessage so a later change event can rebuild the recipient's
+	// MatchedUser with the SAME template — otherwise monsterChanged follow-ups
+	// resolve to the default. Ephemeral (render → queue → tracker); not
+	// persisted with the job.
+	Template string `json:"-"`
+
 	// ReplyToID is an *ephemeral* field stamped on the Job by the delivery
 	// queue immediately before send when ReplyKey is set and the
 	// MessageTracker has a known prior message for (ReplyKey, Target). The

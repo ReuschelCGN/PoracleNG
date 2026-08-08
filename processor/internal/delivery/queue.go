@@ -406,6 +406,7 @@ func (fq *FairQueue) processJob(job *Job) {
 			MsgType:  job.MsgType,
 			Clean:    job.Clean,
 			ReplyKey: job.ReplyKey,
+			Template: job.Template,
 		}, ttl)
 		logref.Debugf(job.LogReference, "tracked message key=%s sentID=%s ttl=%v clean=%d replyKey=%q", key, sent.ID, ttl, job.Clean, job.ReplyKey)
 	}

@@ -269,7 +269,7 @@ func TestLookupReplyMessage_ReturnsFullPrior(t *testing.T) {
 
 	mt.Track("edit-clean", &TrackedMessage{
 		SentID: "msg-clean", Target: "userA", Type: "discord:user",
-		Clean: 1, ReplyKey: "enc-x",
+		Clean: 1, ReplyKey: "enc-x", Template: "5",
 	}, time.Hour)
 
 	got := mt.LookupReplyMessage("enc-x", "userA")
@@ -281,6 +281,9 @@ func TestLookupReplyMessage_ReturnsFullPrior(t *testing.T) {
 	}
 	if got.Clean != 1 {
 		t.Errorf("Clean = %d, want 1 (inherited by monsterChanged dispatch)", got.Clean)
+	}
+	if got.Template != "5" {
+		t.Errorf("Template = %q, want 5 (monsterChanged reuses the original template name)", got.Template)
 	}
 	if got.Type != "discord:user" {
 		t.Errorf("Type = %q, want discord:user", got.Type)

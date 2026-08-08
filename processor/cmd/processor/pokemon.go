@@ -195,7 +195,7 @@ func (ps *ProcessorService) ProcessPokemon(raw json.RawMessage) error {
 					// Prior already TTL-evicted; original is gone, nothing to reply to.
 					continue
 				}
-				if u := ps.rebuildMatchedUserForChange(targetID, prior.Clean); u != nil {
+				if u := ps.rebuildMatchedUserForChange(targetID, prior.Clean, prior.Template); u != nil {
 					priorOnlyUsers = append(priorOnlyUsers, *u)
 				}
 			}
@@ -439,12 +439,13 @@ func (ps *ProcessorService) perLangWithChangeFields(perLang map[string]map[strin
 
 // rebuildMatchedUserForChange synthesises a MatchedUser for a target
 // that had a prior alert for this encounter but no longer matches.
-// Clean is inherited from the prior tracked message so the
-// monsterChanged reply follows the same auto-delete behaviour as
-// the original. Template / Ping / Distance stay at zero values —
-// the T1 tracking rule isn't known here. Returns nil for unknown
-// or disabled humans; their reply-index entry expires on its own.
-func (ps *ProcessorService) rebuildMatchedUserForChange(targetID string, clean int) *webhook.MatchedUser {
+// Clean and Template are inherited from the prior tracked message so the
+// monsterChanged reply follows the same auto-delete behaviour AND uses the
+// same DTS template name as the original alert (rather than falling back to
+// the default). Ping / Distance stay at zero values — the T1 tracking rule
+// isn't known here. Returns nil for unknown or disabled humans; their
+// reply-index entry expires on its own.
+func (ps *ProcessorService) rebuildMatchedUserForChange(targetID string, clean int, template string) *webhook.MatchedUser {
 	if ps.humans == nil {
 		return nil
 	}
@@ -461,6 +462,7 @@ func (ps *ProcessorService) rebuildMatchedUserForChange(targetID string, clean i
 		Name:     human.Name,
 		Language: effectiveLanguage(webhook.MatchedUser{Language: human.Language}, ps.cfg.General.Locale),
 		Clean:    clean,
+		Template: template,
 	}
 }
 
