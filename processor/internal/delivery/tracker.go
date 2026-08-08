@@ -32,6 +32,14 @@ type TrackedMessage struct {
 	MsgType  string `json:"msg_type,omitempty"`
 	Clean    int    `json:"clean"`
 	ReplyKey string `json:"reply_key,omitempty"`
+	// Template is the source tracking rule's requested template (raw value,
+	// "" = config default). Change-event dispatch reads it back to rebuild a
+	// prior-only recipient's MatchedUser with the same template so the
+	// monsterChanged follow-up uses the same template name, not the default.
+	// Backward compat: entries persisted before this field existed
+	// deserialise with Template="" (config default) — same graceful fallback
+	// as the pre-existing behaviour.
+	Template string `json:"template,omitempty"`
 }
 
 // MessageTracker manages sent messages with TTL-based expiry and clean

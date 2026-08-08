@@ -209,6 +209,7 @@ func (ps *ProcessorService) processRenderJob(job RenderJob) {
 				MsgType:       job.AlertType,
 				StaticMapData: tileBytesForMessage(j.Message, job.TileImageData, tileURL),
 				Language:      j.Language,
+				Template:      j.TemplateRequested,
 				SnapshotData:  ps.buildSnapshot(job, j, tth),
 			})
 		}
