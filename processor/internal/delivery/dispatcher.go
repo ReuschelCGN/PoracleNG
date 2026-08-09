@@ -34,13 +34,12 @@ type DispatcherConfig struct {
 // rate-limit notification and ban farewell.
 func (d *Dispatcher) DispatchBypass(job *Job) {
 	job.BypassRateLimit = true
-	d.ch <- job
+	d.queue.enqueue(job, true)
 }
 
 // Dispatcher is the top-level entry point for message delivery.
-// It owns the job channel, fair queue, and message tracker.
+// It owns the fair queue and message tracker.
 type Dispatcher struct {
-	ch      chan *Job
 	queue   *FairQueue
 	tracker *MessageTracker
 
@@ -105,17 +104,15 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 
 	tracker := NewMessageTracker(cfg.CacheDir, senders)
 
-	queueSize := cfg.QueueSize
-	if queueSize <= 0 {
-		queueSize = 1000
-	}
-	ch := make(chan *Job, queueSize)
+	queueCfg := cfg.Queue
+	queueCfg.PerRouteBuffer = cfg.QueueSize // delivery_queue_size => per-route lane buffer
 
-	d := &Dispatcher{ch: ch, tracker: tracker}
-	d.queue = NewFairQueue(ch, senders, tracker, cfg.Queue, d)
+	d := &Dispatcher{tracker: tracker}
+	d.queue = NewFairQueue(senders, tracker, queueCfg, d)
 	// Route clean-deletion through the queue (serialised per destination +
 	// rate-limited). Set BEFORE Load so recovery-time cleans also route
-	// through it. Enqueued jobs sit in the buffered channel until Start().
+	// through it. Enqueued jobs sit in their destination lane's buffer until
+	// a drainer picks them up (lanes spawn on demand, no Start() needed).
 	tracker.SetCleanDeleteHook(d.enqueueCleanDelete)
 
 	if err := tracker.Load(); err != nil {
@@ -126,35 +123,30 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 }
 
 // enqueueCleanDelete is the tracker's clean-delete hook: it enqueues a delete
-// Job onto the FairQueue so the delete takes the per-destination lock +
-// WaitForRateLimit that sends do, serialising deletes with each other and with
-// sends to the same target (instead of firing concurrent DELETEs that 429 each
-// other). Non-blocking + panic-guarded: it can fire during shutdown (channel
-// closing) or under a saturated queue; a dropped clean is re-attempted on the
-// next startup load.
+// Job onto the FairQueue so the delete lands on the same destination lane as
+// sends, serialising deletes with each other and with sends to the same
+// target (instead of firing concurrent DELETEs that 429 each other). A full
+// lane drops the delete rather than blocking (block=false) — a dropped clean
+// is re-attempted on the next startup load. Panic-guarded because it can fire
+// during shutdown while the lane is closing.
 func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
-	defer func() { _ = recover() }() // ch may close mid-shutdown; drop safely
+	defer func() { _ = recover() }() // lane may close mid-shutdown; drop safely
 	job := &Job{
 		Type:         msg.Type,
 		Target:       msg.Target,
 		DeleteSentID: msg.SentID,
 		LogReference: msg.SentID,
 	}
-	select {
-	case d.ch <- job:
-	default:
-		log.Warnf("delivery: clean-delete queue full, dropping delete for %s:%s (re-cleaned on next load)", msg.Target, msg.SentID)
+	if !d.queue.enqueue(job, false) {
+		log.Warnf("delivery: clean-delete lane full, dropping delete for %s:%s (re-cleaned on next load)", msg.Target, msg.SentID)
 	}
 }
 
 // NewDispatcherWithSenders creates a Dispatcher with externally-provided senders (for testing).
 func NewDispatcherWithSenders(senders map[string]Sender, tracker *MessageTracker, queueSize int, queueCfg QueueConfig) *Dispatcher {
-	if queueSize <= 0 {
-		queueSize = 1000
-	}
-	ch := make(chan *Job, queueSize)
-	d := &Dispatcher{ch: ch, tracker: tracker}
-	d.queue = NewFairQueue(ch, senders, tracker, queueCfg, d)
+	queueCfg.PerRouteBuffer = queueSize
+	d := &Dispatcher{tracker: tracker}
+	d.queue = NewFairQueue(senders, tracker, queueCfg, d)
 	if tracker != nil { // some tests construct a dispatcher without a tracker
 		tracker.SetCleanDeleteHook(d.enqueueCleanDelete)
 	}
@@ -167,11 +159,10 @@ func (d *Dispatcher) Start() {
 }
 
 // Dispatch enqueues a job for delivery.
-func (d *Dispatcher) Dispatch(job *Job) {
-	d.ch <- job
-}
+func (d *Dispatcher) Dispatch(job *Job) { d.queue.enqueue(job, true) }
 
-// Stop closes the job channel, drains remaining jobs, and persists tracker state.
+// Stop closes every destination lane, drains remaining jobs, and persists
+// tracker state.
 func (d *Dispatcher) Stop() {
 	log.Info("delivery: stopping dispatcher...")
 	d.queue.Stop()
@@ -179,8 +170,11 @@ func (d *Dispatcher) Stop() {
 	log.Info("delivery: dispatcher stopped")
 }
 
-// QueueDepth returns the number of jobs waiting in the channel.
-func (d *Dispatcher) QueueDepth() int { return len(d.ch) }
+// QueueDepth returns the total number of jobs buffered across all destination lanes.
+func (d *Dispatcher) QueueDepth() int {
+	total, _, _, _, _ := d.queue.LaneStats()
+	return total
+}
 
 // TrackerSize returns the number of messages being tracked.
 func (d *Dispatcher) TrackerSize() int { return d.tracker.Size() }
