@@ -1243,3 +1243,39 @@ func TestLanes_ShutdownDrainsAllLanes(t *testing.T) {
 		t.Errorf("expected %d delivered before Stop returned, got %d", lanes*per, got)
 	}
 }
+
+// TestLanes_CleanDeleteDropsOnFullLane proves overflow policy D5's drop side:
+// enqueue(job, false) (clean-deletes) DROP on a full lane and return false,
+// rather than blocking like sends do. The drainer is parked on Delete (clean-
+// deletes invoke Sender.Delete, not Send) so the tiny two-slot buffer fills;
+// "enqueue until one drops" is timing-robust regardless of exactly when the
+// drainer picks up the first job. A different target's lane must stay
+// unaffected by the full "t" lane.
+func TestLanes_CleanDeleteDropsOnFullLane(t *testing.T) {
+	release := make(chan struct{})
+	sender := &laneMockSender{onDelete: func(string) { <-release }} // park the drainer
+	senders := map[string]Sender{"discord": sender}
+	fq, _ := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 1, PerRouteBuffer: 2})
+	fq.Start()
+	defer func() { close(release); fq.Stop() }()
+
+	accepted, dropped := 0, 0
+	for i := 0; i < 20; i++ {
+		if fq.enqueue(&Job{Type: "discord:channel", Target: "t", DeleteSentID: "t:" + strconv.Itoa(i)}, false) {
+			accepted++
+		} else {
+			dropped++
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("expected some clean-deletes to be accepted")
+	}
+	if dropped == 0 {
+		t.Error("expected some clean-deletes to be dropped on the full lane (drainer parked, buffer=2)")
+	}
+
+	// A different target's lane is unaffected.
+	if !fq.enqueue(&Job{Type: "discord:channel", Target: "other", DeleteSentID: "other:1"}, false) {
+		t.Error("a different target's lane should accept the clean-delete")
+	}
+}
