@@ -710,3 +710,31 @@ func TestDiscord_GlobalConcurrencyCap(t *testing.T) {
 		t.Error("expected some concurrency, got 0")
 	}
 }
+
+// TestDiscord_SetConcurrencyClampsToOne guards against a real 429-storm
+// regression: an operator setting concurrent_discord_destinations = 0 (a
+// plausible "off/default" idiom) must NOT produce unbounded Discord
+// concurrency. makeSem(n) returns nil (unlimited) for n<=0, so
+// SetConcurrency must clamp 0 (and negative values) to 1 before calling it.
+func TestDiscord_SetConcurrencyClampsToOne(t *testing.T) {
+	ds := NewDiscordSender("tok", false, 0)
+	ds.SetConcurrency(0, 0)
+	if ds.discordSem == nil {
+		t.Fatal("discordSem is nil (unlimited) after SetConcurrency(0, 0) — expected clamp to 1")
+	}
+	if cap(ds.discordSem) != 1 {
+		t.Errorf("discordSem cap = %d, want 1", cap(ds.discordSem))
+	}
+	if ds.webhookSem == nil {
+		t.Fatal("webhookSem is nil (unlimited) after SetConcurrency(0, 0) — expected clamp to 1")
+	}
+	if cap(ds.webhookSem) != 1 {
+		t.Errorf("webhookSem cap = %d, want 1", cap(ds.webhookSem))
+	}
+
+	ds2 := NewDiscordSender("tok", false, 0)
+	ds2.SetConcurrency(-5, -5)
+	if cap(ds2.discordSem) != 1 || cap(ds2.webhookSem) != 1 {
+		t.Errorf("negative concurrency not clamped: discordSem cap=%d webhookSem cap=%d, want 1/1", cap(ds2.discordSem), cap(ds2.webhookSem))
+	}
+}

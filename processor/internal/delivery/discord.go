@@ -93,9 +93,17 @@ func makeSem(n int) chan struct{} {
 	return make(chan struct{}, n)
 }
 
-// SetConcurrency sizes the per-subtype wire-call semaphores. n<=0 means
-// unlimited. Call once at construction, before any Send/Edit/Delete.
+// SetConcurrency sizes the per-subtype wire-call semaphores. n<=0 is clamped
+// to 1 (never unlimited) — an unset sender that never had SetConcurrency
+// called keeps nil sems, but a configured sender always caps at ≥1. Call once
+// at construction, before any Send/Edit/Delete.
 func (ds *DiscordSender) SetConcurrency(discord, webhook int) {
+	if discord <= 0 {
+		discord = 1
+	}
+	if webhook <= 0 {
+		webhook = 1
+	}
 	ds.discordSem = makeSem(discord)
 	ds.webhookSem = makeSem(webhook)
 }

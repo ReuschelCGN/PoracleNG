@@ -56,9 +56,16 @@ func NewTelegramSender(token string) *TelegramSender {
 	}
 }
 
-// SetConcurrency sizes the wire-call semaphore. n<=0 means unlimited. Call once
-// at construction, before any Send/Edit/Delete.
-func (ts *TelegramSender) SetConcurrency(n int) { ts.sem = makeSem(n) }
+// SetConcurrency sizes the wire-call semaphore. n<=0 is clamped to 1 (never
+// unlimited) — an unset sender that never had SetConcurrency called keeps a
+// nil sem, but a configured sender always caps at ≥1. Call once at
+// construction, before any Send/Edit/Delete.
+func (ts *TelegramSender) SetConcurrency(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	ts.sem = makeSem(n)
+}
 
 // TelegramInFlight reports current concurrent wire calls (for the [Status] log).
 func (ts *TelegramSender) TelegramInFlight() int { return int(ts.inFly.Load()) }

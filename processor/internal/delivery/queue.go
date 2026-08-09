@@ -105,16 +105,6 @@ type FairQueue struct {
 // drainer goroutine on first use. d is the owning Dispatcher; it may be nil
 // in tests that construct FairQueue directly and don't need pause support.
 func NewFairQueue(senders map[string]Sender, tracker *MessageTracker, cfg QueueConfig, d *Dispatcher) *FairQueue {
-	if cfg.ConcurrentDiscord <= 0 {
-		cfg.ConcurrentDiscord = 1
-	}
-	if cfg.ConcurrentWebhook <= 0 {
-		cfg.ConcurrentWebhook = 1
-	}
-	if cfg.ConcurrentTelegram <= 0 {
-		cfg.ConcurrentTelegram = 1
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	failThreshold := cfg.FailThreshold
 	if failThreshold <= 0 {

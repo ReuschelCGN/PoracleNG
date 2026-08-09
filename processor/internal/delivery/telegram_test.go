@@ -674,3 +674,25 @@ func TestTelegram_SemaphoreReleasedDuring429Backoff(t *testing.T) {
 		t.Fatal("chat_b never reached the wire — chat_a's 429 backoff pinned the only slot")
 	}
 }
+
+// TestTelegram_SetConcurrencyClampsToOne guards against a real 429-storm
+// regression: an operator setting concurrent_telegram_destinations = 0 (a
+// plausible "off/default" idiom) must NOT produce unbounded Telegram
+// concurrency. makeSem(n) returns nil (unlimited) for n<=0, so
+// SetConcurrency must clamp 0 (and negative values) to 1 before calling it.
+func TestTelegram_SetConcurrencyClampsToOne(t *testing.T) {
+	ts := NewTelegramSender("tok")
+	ts.SetConcurrency(0)
+	if ts.sem == nil {
+		t.Fatal("sem is nil (unlimited) after SetConcurrency(0) — expected clamp to 1")
+	}
+	if cap(ts.sem) != 1 {
+		t.Errorf("sem cap = %d, want 1", cap(ts.sem))
+	}
+
+	ts2 := NewTelegramSender("tok")
+	ts2.SetConcurrency(-3)
+	if cap(ts2.sem) != 1 {
+		t.Errorf("negative concurrency not clamped: sem cap=%d, want 1", cap(ts2.sem))
+	}
+}

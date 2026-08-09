@@ -126,8 +126,16 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 // Job onto the FairQueue so the delete lands on the same destination lane as
 // sends, serialising deletes with each other and with sends to the same
 // target (instead of firing concurrent DELETEs that 429 each other). A full
-// lane drops the delete rather than blocking (block=false) — a dropped clean
-// is re-attempted on the next startup load. Panic safety for a mid-shutdown
+// lane (or a queue that's already stopping) drops the delete rather than
+// blocking (block=false). This drop is NOT recovered on the next load: the
+// message reached this hook because it was just evicted from the tracker's
+// ttlcache, so MessageTracker.Save() — which only persists still-live
+// entries — never writes it, and Load() has nothing left to re-clean.
+// (Contrast with messages still tracked at shutdown: those ARE persisted and
+// re-cleaned on next load — see MessageTracker.Save/Load.) This is accepted
+// rather than guarded against: per-route lane buffering makes drops far less
+// likely than the old shared-buffer design, and blocking here would stall
+// the tracker's single eviction goroutine. Panic safety for a mid-shutdown
 // lane close now lives in FairQueue.enqueue, which covers every caller.
 func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
 	job := &Job{
@@ -137,7 +145,7 @@ func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
 		LogReference: msg.SentID,
 	}
 	if !d.queue.enqueue(job, false) {
-		log.Warnf("delivery: clean-delete lane full, dropping delete for %s:%s (re-cleaned on next load)", msg.Target, msg.SentID)
+		log.Warnf("delivery: clean-delete dropped for %s:%s (lane full or shutting down; message may remain until manually cleared)", msg.Target, msg.SentID)
 	}
 }
 

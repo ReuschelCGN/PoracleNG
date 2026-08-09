@@ -330,7 +330,7 @@ var (
 	})
 	DeliveryCleanDeleteDropped = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "poracle_delivery_clean_delete_dropped_total",
-		Help: "Clean-deletes dropped on a full lane (re-cleaned on next load)",
+		Help: "Clean-deletes dropped on a full or shutting-down lane (not recovered on next load)",
 	})
 	DeliveryLaneSpawned = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "poracle_delivery_lane_spawned_total",
