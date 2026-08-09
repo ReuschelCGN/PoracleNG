@@ -72,12 +72,17 @@ type FairQueue struct {
 	cancel context.CancelFunc
 
 	// Per-destination lanes. Each lane has one drainer goroutine; lanes spawn on
-	// first job for a target and reap after laneIdleTimeout idle. lanesMu guards
+	// first job for a target and reap after idleTimeout idle. lanesMu guards
 	// the map, each lane's pending, and stopped.
 	lanesMu     sync.Mutex
 	lanes       map[string]*lane
 	stopped     bool
 	perRouteBuf int
+
+	// idleTimeout defaults to laneIdleTimeout; it's a per-instance field (not a
+	// mutable global) solely so tests can shorten it without racing live
+	// drainers on shared state — never wired to config.
+	idleTimeout time.Duration
 
 	// Per-destination consecutive failure tracking. After failThreshold
 	// consecutive errors, the destination is disabled via onDisabled
@@ -122,6 +127,7 @@ func NewFairQueue(senders map[string]Sender, tracker *MessageTracker, cfg QueueC
 		cancel:            cancel,
 		lanes:             make(map[string]*lane),
 		perRouteBuf:       perRouteBuf,
+		idleTimeout:       laneIdleTimeout,
 		failThreshold:     failThreshold,
 		failBlockDuration: 5 * time.Minute,
 		onDisabled:        cfg.OnDisabled,
@@ -204,10 +210,10 @@ func (fq *FairQueue) recordCleanDropped(target string) {
 func (fq *FairQueue) BackpressureCount() int64 { return fq.backpressure.Load() }
 
 // runLane is one destination's drainer: it processes jobs FIFO and reaps itself
-// after laneIdleTimeout with an empty lane and no pending work.
+// after idleTimeout with an empty lane and no pending work.
 func (fq *FairQueue) runLane(l *lane) {
 	defer fq.wg.Done()
-	idle := time.NewTimer(laneIdleTimeout)
+	idle := time.NewTimer(fq.idleTimeout)
 	defer idle.Stop()
 	for {
 		select {
@@ -225,7 +231,7 @@ func (fq *FairQueue) runLane(l *lane) {
 			fq.lanesMu.Lock()
 			l.pending--
 			fq.lanesMu.Unlock()
-			idle.Reset(laneIdleTimeout)
+			idle.Reset(fq.idleTimeout)
 		case <-idle.C:
 			fq.lanesMu.Lock()
 			if l.pending == 0 {
@@ -235,7 +241,7 @@ func (fq *FairQueue) runLane(l *lane) {
 				return // reap: no work, no in-flight enqueue
 			}
 			fq.lanesMu.Unlock()
-			idle.Reset(laneIdleTimeout)
+			idle.Reset(fq.idleTimeout)
 		}
 	}
 }

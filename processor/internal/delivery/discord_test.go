@@ -665,9 +665,10 @@ func TestDiscord_SemaphoreReleasedDuring429Backoff(t *testing.T) {
 
 // TestDiscord_GlobalConcurrencyCap proves the wire-call concurrency semaphore
 // is a genuine cross-target cap, not an artifact of the FairQueue's
-// per-destination lock (which serializes same-target jobs to 1 regardless of
-// the configured concurrency — see TestFairQueueConcurrency, which only ever
-// hits target "user1" and so never exercises this). Calling postMessage
+// per-destination lanes (each target's single lane drainer serializes
+// same-target jobs to 1 regardless of the configured concurrency — see
+// TestFairQueueConcurrency, which only ever hits target "user1" and so never
+// exercises this). Calling postMessage
 // directly against 8 distinct channel targets, with no FairQueue involved,
 // isolates the sender's own discordSem: with SetConcurrency(2, 2), at most 2
 // requests may be on the wire at once even though every request targets a

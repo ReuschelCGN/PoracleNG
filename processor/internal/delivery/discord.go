@@ -144,10 +144,11 @@ func (ds *DiscordSender) Delete(ctx context.Context, sentID string) error {
 	if err != nil {
 		return err
 	}
-	// Clean-deletion is routed through the FairQueue, which already took the
-	// per-destination lock + WaitForRateLimit before calling Delete (so the
-	// proactive gate + serialisation happen there, same as sends). Here we only
-	// need the reactive 429 Retry-After backoff + header-driven limiter updates.
+	// Clean-deletion is routed through the FairQueue, whose lane drainer
+	// serialises this delete with sends to the same target; WaitForRateLimit
+	// already ran before calling Delete (so the proactive gate + serialisation
+	// happen there, same as sends). Here we only need the reactive 429
+	// Retry-After backoff + header-driven limiter updates.
 	respBody, status, err := ds.doWithRetry(ctx, http.MethodDelete, url, nil, "", auth, rlKey, "clean-delete")
 	if err != nil {
 		return err

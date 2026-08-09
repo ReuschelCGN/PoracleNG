@@ -1184,17 +1184,19 @@ func TestLanes_SlowTargetDoesNotBlockFreeTarget(t *testing.T) {
 	}
 }
 
-// TestLanes_ReapThenReuseDelivers proves a target's lane can be fully
-// drained and then reused without losing jobs. laneIdleTimeout is a 60s
-// const (deliberately not exposed as config — see queue.go), so this test
-// does not force a real reap; instead it drives the lane to empty (all 50
-// jobs delivered) and then re-enqueues a second wave to the same target,
-// asserting the lane (whether still alive and idle, or freshly
-// spawned-on-demand after a reap) delivers all of it. Either way the
-// counter-under-lock invariant (lane.pending guarded by lanesMu) is what
-// makes reap-vs-enqueue races safe; that invariant is exercised structurally
-// here and in the shutdown-drain test below.
-func TestLanes_ReapThenReuseDelivers(t *testing.T) {
+// TestLanes_ReuseAfterDrainDelivers proves a target's lane can be fully
+// drained and then reused without losing jobs. This test does NOT force a
+// real reap (the lane's drainer is likely still alive and idle, waiting out
+// idleTimeout, when the second wave arrives) — it only proves that draining
+// a lane to empty and then enqueuing more to the same target still delivers
+// everything, whether the lane is reused live or respawned fresh. The actual
+// reap path (idle timer fires, lane map entry deleted, drainer goroutine
+// exits) is covered by TestLanes_ReapsIdleLane below. The counter-under-lock
+// invariant (lane.pending guarded by lanesMu) is what makes reap-vs-enqueue
+// races safe in general; that invariant is exercised structurally here and
+// in the shutdown-drain test below, and directly raced in
+// TestLanes_ReapEnqueueRace.
+func TestLanes_ReuseAfterDrainDelivers(t *testing.T) {
 	var delivered atomic.Int32
 	sender := &laneMockSender{onSend: func(*Job) { delivered.Add(1) }}
 	senders := map[string]Sender{"discord": sender}
@@ -1205,15 +1207,95 @@ func TestLanes_ReapThenReuseDelivers(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
-	// Force a reap of target "t" without waiting 60s: delete via an idle tick by
-	// directly invoking the reap path is not exported, so instead assert delivery
-	// completes, then enqueue a second wave to prove re-creation works.
 	waitFor(t, func() bool { return delivered.Load() == 50 }, time.Second)
 
 	for i := 0; i < 50; i++ {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
 	waitFor(t, func() bool { return delivered.Load() == 100 }, time.Second)
+}
+
+// TestLanes_ReapsIdleLane proves the actual reap path: with idleTimeout
+// shortened, a lane that finishes all its work and sits idle gets deleted
+// from fq.lanes (LaneStats active hits 0) and its drainer goroutine exits.
+// idleTimeout is set BEFORE the first enqueue — the drainer that reads it
+// doesn't exist yet, so there is no concurrent read to race the write. After
+// the reap is observed, a second wave to the same target proves reap-then-
+// recreate works: the lane is respawned on demand and still delivers.
+func TestLanes_ReapsIdleLane(t *testing.T) {
+	var delivered atomic.Int32
+	sender := &laneMockSender{onSend: func(*Job) { delivered.Add(1) }}
+	senders := map[string]Sender{"discord": sender}
+	fq, enq := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 2})
+	fq.idleTimeout = 5 * time.Millisecond // set before any enqueue — no drainer yet to race
+	fq.Start()
+	defer fq.Stop()
+
+	for i := 0; i < 5; i++ {
+		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
+	}
+	waitFor(t, func() bool { return delivered.Load() == 5 }, time.Second)
+
+	// Prove the lane actually reaped: active lane count drops to 0.
+	waitFor(t, func() bool {
+		_, active, _, _, _ := fq.LaneStats()
+		return active == 0
+	}, time.Second)
+
+	// Reap-then-recreate: a fresh wave to the same target must still deliver.
+	for i := 0; i < 5; i++ {
+		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
+	}
+	waitFor(t, func() bool { return delivered.Load() == 10 }, time.Second)
+}
+
+// TestLanes_ReapEnqueueRace races enqueue against the reap timer under a tiny
+// idleTimeout: several goroutines hammer a small set of targets with short
+// sleeps between bursts (giving lanes a chance to drain and reap between
+// bursts), while enqueue may concurrently be spawning a fresh lane for a
+// target whose old lane is mid-reap. The counter-under-lock invariant
+// (lane.pending incremented under lanesMu before the lock is released, and
+// the reaper only deletes when pending==0 under the same lock) means every
+// enqueued job must still be delivered — none may be silently lost to a
+// reap racing the enqueue — and no send-on-closed-channel panic may occur.
+// This is the core risk the spec calls out; it's only meaningful run with
+// -race and repeated (-count=10+).
+func TestLanes_ReapEnqueueRace(t *testing.T) {
+	var delivered atomic.Int64
+	sender := &laneMockSender{onSend: func(*Job) { delivered.Add(1) }}
+	senders := map[string]Sender{"discord": sender}
+	fq, enq := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 8})
+	fq.idleTimeout = 2 * time.Millisecond // set before any enqueue — no drainer yet to race
+	fq.Start()
+	defer fq.Stop() // drains anything still buffered
+
+	const goroutines = 8
+	const perGoroutine = 50
+	const targets = 4
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < perGoroutine; j++ {
+				target := "t" + strconv.Itoa((g+j)%targets)
+				enq(&Job{Type: "discord:channel", Target: target, Message: json.RawMessage(`{}`)})
+				if j%5 == 0 {
+					// Give lanes a chance to drain + reap between bursts, so
+					// enqueue has a real chance of racing a reap in flight.
+					time.Sleep(3 * time.Millisecond)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	waitFor(t, func() bool { return delivered.Load() == goroutines*perGoroutine }, 5*time.Second)
+
+	if got := delivered.Load(); got != goroutines*perGoroutine {
+		t.Fatalf("expected %d delivered (no job lost to a reap race), got %d", goroutines*perGoroutine, got)
+	}
 }
 
 // TestLanes_ShutdownDrainsAllLanes proves Stop() blocks until every buffered
