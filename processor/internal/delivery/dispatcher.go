@@ -96,6 +96,13 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		senders["telegram"] = NewTelegramSender(cfg.TelegramToken)
 	}
 
+	if ds, ok := senders["discord"].(*DiscordSender); ok {
+		ds.SetConcurrency(cfg.Queue.ConcurrentDiscord, cfg.Queue.ConcurrentWebhook)
+	}
+	if ts, ok := senders["telegram"].(*TelegramSender); ok {
+		ts.SetConcurrency(cfg.Queue.ConcurrentTelegram)
+	}
+
 	tracker := NewMessageTracker(cfg.CacheDir, senders)
 
 	queueSize := cfg.QueueSize

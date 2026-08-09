@@ -55,18 +55,14 @@ type FairQueue struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Per-platform concurrency semaphores
-	discordSem  chan struct{}
-	webhookSem  chan struct{}
-	telegramSem chan struct{}
+	// workerCount is the fixed drain-pool size (sum of per-platform concurrency).
+	// Concurrency is now enforced by the senders per wire call (see DiscordSender
+	// /TelegramSender.SetConcurrency); this only sizes the shared worker pool.
+	// (Phase 2 removes the pool entirely in favour of per-destination lanes.)
+	workerCount int
 
 	// Per-destination locks ensure max 1 in-flight send per target
 	destLocks sync.Map // target string → *sync.Mutex
-
-	// Per-platform in-flight counters for metrics
-	discordInFlight  atomic.Int64
-	webhookInFlight  atomic.Int64
-	telegramInFlight atomic.Int64
 
 	// Per-destination consecutive failure tracking. After failThreshold
 	// consecutive errors, the destination is disabled via onDisabled
@@ -109,9 +105,7 @@ func NewFairQueue(ch chan *Job, senders map[string]Sender, tracker *MessageTrack
 		dispatcher:        d,
 		ctx:               ctx,
 		cancel:            cancel,
-		discordSem:        make(chan struct{}, cfg.ConcurrentDiscord),
-		webhookSem:        make(chan struct{}, cfg.ConcurrentWebhook),
-		telegramSem:       make(chan struct{}, cfg.ConcurrentTelegram),
+		workerCount:       cfg.ConcurrentDiscord + cfg.ConcurrentWebhook + cfg.ConcurrentTelegram,
 		failThreshold:     failThreshold,
 		failBlockDuration: 5 * time.Minute,
 		onDisabled:        cfg.OnDisabled,
@@ -122,8 +116,7 @@ func NewFairQueue(ch chan *Job, senders map[string]Sender, tracker *MessageTrack
 
 // Start launches worker goroutines (one per concurrency slot) that drain the job channel.
 func (fq *FairQueue) Start() {
-	total := cap(fq.discordSem) + cap(fq.webhookSem) + cap(fq.telegramSem)
-	for range total {
+	for range fq.workerCount {
 		fq.wg.Add(1)
 		go fq.worker()
 	}
@@ -155,26 +148,14 @@ func (fq *FairQueue) processJob(job *Job) {
 	destLock.Lock()
 	defer destLock.Unlock()
 
-	// 2. Wait for rate limits BEFORE acquiring semaphore so that
-	//    rate-limited goroutines don't hold concurrency slots.
+	// 2. Wait for rate limits. Per-platform wire concurrency is now enforced
+	//    by the sender itself (see DiscordSender/TelegramSender.roundTrip),
+	//    acquired per HTTP call rather than held across this whole job.
 	platform := PlatformFromType(job.Type)
 	if sender, ok := fq.senders[platform]; ok {
 		sender.WaitForRateLimit(job.Target)
 	}
 
-	// 3. Acquire platform semaphore (limits global concurrency per platform)
-	sem := fq.semaphoreFor(job.Type)
-	sem <- struct{}{}
-	defer func() { <-sem }()
-
-	// Track per-platform in-flight count
-	counter := fq.counterFor(job.Type)
-	counter.Add(1)
-	metrics.DeliveryInFlight.WithLabelValues(platform).Inc()
-	defer func() {
-		counter.Add(-1)
-		metrics.DeliveryInFlight.WithLabelValues(platform).Dec()
-	}()
 	sender, ok := fq.senders[platform]
 	if !ok {
 		logref.Warnf(job.LogReference, "delivery: no sender for platform %q (type=%s target=%s)", platform, job.Type, job.Target)
@@ -182,12 +163,13 @@ func (fq *FairQueue) processJob(job *Job) {
 	}
 
 	// Clean-delete job (routed here from the tracker's TTL eviction). It has
-	// already taken the per-destination lock + WaitForRateLimit + semaphore
-	// above, so deletes serialise with each other and with sends to this
-	// target — the fix for a burst of expiring alerts firing concurrent DELETEs
-	// that 429 each other into failure. Sender.Delete carries its own 429
-	// Retry-After backoff. No alert-limit accounting, tracking, snapshot, or
-	// failure-disable: a delete is cleanup, not a send.
+	// already taken the per-destination lock + WaitForRateLimit above, so
+	// deletes serialise with each other and with sends to this target — the
+	// fix for a burst of expiring alerts firing concurrent DELETEs that 429
+	// each other into failure. Sender.Delete carries its own 429 Retry-After
+	// backoff and acquires its own wire-call concurrency slot. No alert-limit
+	// accounting, tracking, snapshot, or failure-disable: a delete is cleanup,
+	// not a send.
 	if job.DeleteSentID != "" {
 		if err := sender.Delete(fq.ctx, job.DeleteSentID); err != nil {
 			logref.Warnf(job.LogReference, "delivery: clean delete failed for %s: %v", job.DeleteSentID, err)
@@ -428,40 +410,29 @@ func (fq *FairQueue) processJob(job *Job) {
 	}
 }
 
-func (fq *FairQueue) semaphoreFor(jobType string) chan struct{} {
-	if jobType == "webhook" {
-		return fq.webhookSem
+// DiscordDepth returns discord bot (channel/DM/thread) wire calls in flight.
+func (fq *FairQueue) DiscordDepth() int {
+	if ds, ok := fq.senders["discord"].(*DiscordSender); ok {
+		return ds.DiscordInFlight()
 	}
-	platform := PlatformFromType(jobType)
-	switch platform {
-	case "telegram":
-		return fq.telegramSem
-	default:
-		return fq.discordSem
-	}
+	return 0
 }
 
-func (fq *FairQueue) counterFor(jobType string) *atomic.Int64 {
-	if jobType == "webhook" {
-		return &fq.webhookInFlight
+// WebhookDepth returns discord webhook wire calls in flight.
+func (fq *FairQueue) WebhookDepth() int {
+	if ds, ok := fq.senders["discord"].(*DiscordSender); ok {
+		return ds.WebhookInFlight()
 	}
-	platform := PlatformFromType(jobType)
-	switch platform {
-	case "telegram":
-		return &fq.telegramInFlight
-	default:
-		return &fq.discordInFlight
-	}
+	return 0
 }
 
-// DiscordDepth returns the number of discord jobs currently in-flight.
-func (fq *FairQueue) DiscordDepth() int { return int(fq.discordInFlight.Load()) }
-
-// WebhookDepth returns the number of webhook jobs currently in-flight.
-func (fq *FairQueue) WebhookDepth() int { return int(fq.webhookInFlight.Load()) }
-
-// TelegramDepth returns the number of telegram jobs currently in-flight.
-func (fq *FairQueue) TelegramDepth() int { return int(fq.telegramInFlight.Load()) }
+// TelegramDepth returns telegram wire calls in flight.
+func (fq *FairQueue) TelegramDepth() int {
+	if ts, ok := fq.senders["telegram"].(*TelegramSender); ok {
+		return ts.TelegramInFlight()
+	}
+	return 0
+}
 
 // recordFailure increments the consecutive failure counter for a target.
 // When the threshold is reached, invokes the onDisabled callback and
