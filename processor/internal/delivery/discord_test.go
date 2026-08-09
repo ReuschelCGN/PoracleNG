@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -658,5 +660,53 @@ func TestDiscord_SemaphoreReleasedDuring429Backoff(t *testing.T) {
 		// pass: b reached the wire during a's backoff
 	case <-time.After(300 * time.Millisecond):
 		t.Fatal("target b never reached the wire — a's 429 backoff pinned the only slot")
+	}
+}
+
+// TestDiscord_GlobalConcurrencyCap proves the wire-call concurrency semaphore
+// is a genuine cross-target cap, not an artifact of the FairQueue's
+// per-destination lock (which serializes same-target jobs to 1 regardless of
+// the configured concurrency — see TestFairQueueConcurrency, which only ever
+// hits target "user1" and so never exercises this). Calling postMessage
+// directly against 8 distinct channel targets, with no FairQueue involved,
+// isolates the sender's own discordSem: with SetConcurrency(2, 2), at most 2
+// requests may be on the wire at once even though every request targets a
+// different channel.
+func TestDiscord_GlobalConcurrencyCap(t *testing.T) {
+	var cur, max atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := cur.Add(1)
+		for {
+			m := max.Load()
+			if c <= m || max.CompareAndSwap(m, c) {
+				break
+			}
+		}
+		time.Sleep(40 * time.Millisecond) // hold the slot
+		cur.Add(-1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"1"}`))
+	}))
+	defer srv.Close()
+
+	ds := NewDiscordSender("tok", false, 0)
+	ds.baseURL = srv.URL
+	ds.SetConcurrency(2, 2)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _ = ds.postMessage(context.Background(), "chan"+strconv.Itoa(i), json.RawMessage(`{"content":"x"}`), nil, "", "")
+		}(i)
+	}
+	wg.Wait()
+
+	if m := max.Load(); m > 2 {
+		t.Errorf("expected at most 2 concurrent discord wire calls, got %d", m)
+	}
+	if m := max.Load(); m == 0 {
+		t.Error("expected some concurrency, got 0")
 	}
 }
