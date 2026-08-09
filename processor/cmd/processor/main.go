@@ -805,6 +805,10 @@ func main() {
 		interval := time.Duration(cfg.Tuning.ReloadIntervalSecs) * time.Second
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		// Tracks the last-seen delivery.Dispatcher backpressure counter so the
+		// lane-summary block below can detect whether it advanced since the
+		// previous tick (escalates the status line to WARN when it has).
+		var lastBackpressureSeen int64
 		for {
 			select {
 			case <-periodicDone:
@@ -873,6 +877,25 @@ func main() {
 				metrics.DeliveryWebhookQueueDepth.Set(float64(proc.dispatcher.WebhookDepth()))
 				metrics.DeliveryTelegramQueueDepth.Set(float64(proc.dispatcher.TelegramDepth()))
 				metrics.DeliveryTrackerSize.Set(float64(proc.dispatcher.TrackerSize()))
+
+				total, active, maxDepth, deepestTarget, nearCap := proc.dispatcher.LaneStats()
+				statusParts = append(statusParts, fmt.Sprintf("Lanes:%d active, %d queued, deepest=%d (%s), %d near-cap",
+					active, total, maxDepth, deepestTarget, nearCap))
+				metrics.DeliveryActiveLanes.Set(float64(active))
+				metrics.DeliveryLaneQueued.Set(float64(total))
+				metrics.DeliveryLaneMaxDepth.Set(float64(maxDepth))
+				metrics.DeliveryLanesNearCapacity.Set(float64(nearCap))
+
+				// Escalate to WARN when a lane nears capacity OR backpressure
+				// advanced since the last sample — the "developing bad
+				// situation" signal.
+				bp := proc.dispatcher.BackpressureCount()
+				buf := proc.dispatcher.PerRouteBuffer()
+				if (buf > 0 && maxDepth >= buf*8/10) || bp > lastBackpressureSeen {
+					log.Warnf("[Status] delivery backing up: %d lanes, %d queued, deepest lane %d/%d (%s), %d near-cap, backpressure=%d",
+						active, total, maxDepth, buf, deepestTarget, nearCap, bp)
+				}
+				lastBackpressureSeen = bp
 			}
 			log.Infof("[Status] %s", strings.Join(statusParts, " | "))
 			if webhooks == 0 {
