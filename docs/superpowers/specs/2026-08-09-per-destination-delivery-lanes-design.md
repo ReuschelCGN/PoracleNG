@@ -43,7 +43,7 @@ serializes per-channel but still runs on the shared channel + workers).
 | D2 | **Per-destination lanes, spawn-on-demand + idle-reap.** A lane = a bounded buffered channel + one drainer goroutine, keyed by `job.Target`. Created on first job for a target; the drainer exits after an idle timeout with an empty lane and is re-created on the next job. Bounds goroutines/memory to *active* destinations. |
 | D3 | **Global per-platform concurrency cap retained, but held only during the wire call.** The platform semaphore (`discordSem`/`webhookSem`/`telegramSem`, existing sizes) wraps **only the in-flight HTTP request** — acquired/released *per attempt inside* `doWithRetry`/`doPostWithRetry`, NOT across the proactive `WaitForRateLimit` nor the 429 `Retry-After` backoff. A waiting or backing-off drainer therefore holds **no** slot, so a few rate-limited routes can't exhaust the semaphore and stall healthy routes. (This fixes a pre-existing bug: today the semaphore is held across the whole `Send`, backoff included.) |
 | D4 | **`delivery_queue_size` becomes the PER-ROUTE buffer** (default stays 200 — now "200 queued for a single route", not shared). |
-| D5 | **Overflow is per job kind, and bounded.** Sends (`Dispatch`) **block** when a route's lane is full — per-route backpressure to the render pool, only that route's dispatch blocks, not all. Bounded-and-block is deliberate: PoracleJS used an unbounded queue and ultimately failed under load; a bounded lane applies backpressure instead of growing without limit. A full-lane block is **logged** (rate-limited, naming the target) and counted (metric). Clean-deletes enqueue **non-blocking** (drop-on-full → logged + counted, re-cleaned on next startup load), so they never stall the tracker's eviction goroutine. |
+| D5 | **Overflow is per job kind, and bounded.** Sends (`Dispatch`) **block** when a route's lane is full — per-route backpressure to the render pool, only that route's dispatch blocks, not all. Bounded-and-block is deliberate: PoracleJS used an unbounded queue and ultimately failed under load; a bounded lane applies backpressure instead of growing without limit. A full-lane block is **logged** (rate-limited, naming the target) and counted (metric). Clean-deletes enqueue **non-blocking** (drop-on-full → logged + counted). A drop during normal operation is **unrecoverable at runtime**: the message reached the hook because it was just evicted from the tracker's ttlcache, so `Save()` (which persists only still-live entries) never writes it, and the next `Load()` has nothing left to re-clean — the message lingers until manually cleared. Only messages still tracked at shutdown are persisted and re-cleaned on next load. This is accepted rather than guarded against: per-route lane buffering makes drops far less likely than the old shared-buffer design, and blocking here would stall the tracker's single eviction goroutine. |
 
 ## Design
 
@@ -198,8 +198,12 @@ Unchanged from #182 except the hook enqueues to a **lane** instead of the shared
 channel: `MessageTracker.cleanDelete` → `cleanDeleteHook` → `Dispatcher.enqueueCleanDelete`
 → `fq.enqueue(&Job{DeleteSentID:…}, block=false)`. A hot channel's delete burst
 fills **its own** lane (200) and drains serially at its rate limit; excess drops
-and is re-cleaned on the next startup load. It no longer competes with sends to
-other channels for a shared buffer or shared workers.
+are **not recovered at runtime** — the message was already evicted from the
+tracker's ttlcache (that eviction is what triggered the clean-delete), so
+`Save()` never persists it and the next `Load()` has nothing left to re-clean;
+the message lingers until manually cleared. Only messages still tracked at
+shutdown are persisted and re-cleaned on next load. It no longer competes with
+sends to other channels for a shared buffer or shared workers.
 
 ### Dispatch / DispatchBypass
 
@@ -223,7 +227,13 @@ existing recover) so an eviction racing shutdown drops safely.
 ### Config
 
 - `delivery_queue_size` (default 200) → **per-route** lane buffer (doc + example
-  comment updated: "max buffered jobs per destination").
+  comment updated: "max buffered jobs per destination"). This is a **semantic
+  change**, not just a doc update: on the old shared-channel model the buffer
+  was allocated once, total; now every *active* lane eagerly allocates its own
+  `make(chan *Job, delivery_queue_size)`, so buffered-job memory scales as
+  `O(delivery_queue_size × active_lanes)`. An operator who raised this value
+  under the old shared-queue model to survive bursts gets a multiplicative
+  memory blow-up under the new one and should lower it back down.
 - `concurrent_discord_destinations` / `_webhooks` / `concurrent_telegram_destinations`
   → **global** per-platform concurrent-API-call caps (semaphores). Sizes
   unchanged; they now live on the senders and gate only the wire call (D3).
@@ -331,6 +341,22 @@ advanced since the last sample, the reporter escalates that line to `WARN` (the
 - **Ordering across a reap** — a target reaped then re-created starts a fresh
   lane; since reap only happens with an empty lane + no pending, no reordering of
   live jobs occurs.
+- **Route isolation is not absolute (D5 caveat)** — isolation is enforced at the
+  delivery layer, not the dispatch layer. `Dispatch` is called by render
+  workers, and a blocking send on a full lane (`enqueue(job, block=true)`) parks
+  the calling render worker until that lane drains. A permanently-stuck (e.g.
+  persistently rate-limited) lane can therefore back-pressure into the *shared*
+  render pool via the render→deliver handoff — other routes don't stall
+  directly, but the render pool that feeds all routes can. This is still
+  strictly better than the old shared-channel design (which blocked *every*
+  `Dispatch` globally once the single 200-job buffer filled), and in practice
+  is bounded by the Phase-1 alert pre-filter (`internal/ratelimit`), which caps
+  a destination's inflow well under the lane size before render/enqueue even
+  happens. That pre-filter does not cover everything, though: clean-deletes use
+  `block=false` (they drop, not block, so they don't contribute to this), but
+  bypass and summary traffic are dispatched without going through the
+  pre-filter — accepted because that traffic is low-volume. A deadline/shed on
+  the blocking send was considered and explicitly deferred.
 
 ## Out of scope / deferred
 

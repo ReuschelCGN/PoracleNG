@@ -398,7 +398,7 @@ var configSchema = []ConfigSection{
 			{Name: "concurrent_discord_destinations", Type: "int", Default: 10, Description: "Concurrent Discord DM/channel sends per bot", Advanced: true},
 			{Name: "concurrent_telegram_destinations", Type: "int", Default: 10, Description: "Concurrent Telegram sends per bot", Advanced: true},
 			{Name: "concurrent_discord_webhooks", Type: "int", Default: 10, Description: "Concurrent Discord webhook sends", Advanced: true},
-			{Name: "delivery_queue_size", Type: "int", Default: 200, Description: "Maximum buffered delivery jobs", Advanced: true},
+			{Name: "delivery_queue_size", Type: "int", Default: 200, Description: "Max buffered delivery jobs PER destination lane", Advanced: true},
 			{Name: "validation_timeout_ms", Type: "int", Default: 1500, Description: "External validation hook: per-call HTTP timeout in milliseconds", Advanced: true},
 			{Name: "validation_max_concurrent", Type: "int", Default: 16, Description: "External validation hook: cap on parallel validator calls per webhook event", Advanced: true},
 		},

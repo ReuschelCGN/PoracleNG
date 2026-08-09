@@ -152,6 +152,12 @@ func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
 // NewDispatcherWithSenders creates a Dispatcher with externally-provided senders (for testing).
 func NewDispatcherWithSenders(senders map[string]Sender, tracker *MessageTracker, queueSize int, queueCfg QueueConfig) *Dispatcher {
 	queueCfg.PerRouteBuffer = queueSize
+	if ds, ok := senders["discord"].(*DiscordSender); ok {
+		ds.SetConcurrency(queueCfg.ConcurrentDiscord, queueCfg.ConcurrentWebhook)
+	}
+	if ts, ok := senders["telegram"].(*TelegramSender); ok {
+		ts.SetConcurrency(queueCfg.ConcurrentTelegram)
+	}
 	d := &Dispatcher{tracker: tracker}
 	d.queue = NewFairQueue(senders, tracker, queueCfg, d)
 	if tracker != nil { // some tests construct a dispatcher without a tracker
