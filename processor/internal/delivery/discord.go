@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -28,6 +29,16 @@ type DiscordSender struct {
 	uploadImages bool
 	deleteDelay  time.Duration
 	dmChannels   sync.Map // userID → DM channelID
+
+	// Per-subtype wire-call concurrency semaphores (nil = unlimited). A slot is
+	// held only across a single HTTP round-trip (see roundTrip), never during
+	// WaitForRateLimit or 429/5xx backoff, so a rate-limited route can't pin the
+	// pool. discordSem gates bot calls (channel/DM/thread); webhookSem gates
+	// webhook calls. Selected by the `auth` flag (auth => bot => discordSem).
+	discordSem   chan struct{}
+	webhookSem   chan struct{}
+	discordInFly atomic.Int64
+	webhookInFly atomic.Int64
 
 	// Tile URL rewrite: when re-downloading a tile for multipart upload,
 	// substitute the public tileserver base with the internal one so our
@@ -73,6 +84,26 @@ func NewDiscordSender(token string, uploadImages bool, deleteDelayMs int) *Disco
 		deleteDelay:  time.Duration(deleteDelayMs) * time.Millisecond,
 	}
 }
+
+// makeSem returns a semaphore of capacity n, or nil for n<=0 (unlimited).
+func makeSem(n int) chan struct{} {
+	if n <= 0 {
+		return nil
+	}
+	return make(chan struct{}, n)
+}
+
+// SetConcurrency sizes the per-subtype wire-call semaphores. n<=0 means
+// unlimited. Call once at construction, before any Send/Edit/Delete.
+func (ds *DiscordSender) SetConcurrency(discord, webhook int) {
+	ds.discordSem = makeSem(discord)
+	ds.webhookSem = makeSem(webhook)
+}
+
+// DiscordInFlight / WebhookInFlight report current concurrent wire calls per
+// subtype (for the [Status] log and per-platform depth gauges).
+func (ds *DiscordSender) DiscordInFlight() int { return int(ds.discordInFly.Load()) }
+func (ds *DiscordSender) WebhookInFlight() int { return int(ds.webhookInFly.Load()) }
 
 // Platform returns the platform identifier.
 func (ds *DiscordSender) Platform() string { return "discord" }
@@ -216,15 +247,12 @@ func (ds *DiscordSender) ensureDMChannel(ctx context.Context, userID, logRef str
 	}
 
 	body := fmt.Sprintf(`{"recipient_id":"%s"}`, userID)
-	resp, err := ds.doRequest(ctx, http.MethodPost, ds.baseURL+"/users/@me/channels",
-		strings.NewReader(body), "application/json", true)
+	respBody, status, _, err := ds.roundTrip(ctx, http.MethodPost, ds.baseURL+"/users/@me/channels",
+		[]byte(body), "application/json", true)
 	if err != nil {
 		return "", fmt.Errorf("creating DM channel: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+	if status != http.StatusOK {
 		code := extractErrorCode(respBody)
 		if code == 50007 || code == 10003 || code == 10013 {
 			return "", &PermanentError{
@@ -232,16 +260,14 @@ func (ds *DiscordSender) ensureDMChannel(ctx context.Context, userID, logRef str
 				Reason: fmt.Sprintf("discord error code %d", code),
 			}
 		}
-		return "", fmt.Errorf("creating DM channel returned status %d: %s", resp.StatusCode, respBody)
+		return "", fmt.Errorf("creating DM channel returned status %d: %s", status, respBody)
 	}
-
 	var result struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("decoding DM channel response: %w", err)
 	}
-
 	ds.dmChannels.Store(userID, result.ID)
 	logref.Infof(logRef, "discord: created DM channel %s for user %s", result.ID, userID)
 	return result.ID, nil
@@ -384,24 +410,68 @@ func (ds *DiscordSender) sendWithRetry(ctx context.Context, url string, body io.
 	return nil, fmt.Errorf("discord API returned status %d: %s", status, respBody)
 }
 
+// roundTrip executes ONE Discord HTTP request while holding a platform
+// concurrency slot, and releases the slot before returning — so the caller's
+// 429/5xx backoff runs slot-free. auth selects the bot (discordSem) vs webhook
+// (webhookSem) semaphore. Returns the response body, status, and headers.
+func (ds *DiscordSender) roundTrip(ctx context.Context, method, url string, bodyBytes []byte, contentType string, auth bool) ([]byte, int, http.Header, error) {
+	sem, inFly := ds.discordSem, &ds.discordInFly
+	if !auth {
+		sem, inFly = ds.webhookSem, &ds.webhookInFly
+	}
+	if sem != nil {
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+		case <-ctx.Done():
+			return nil, 0, nil, ctx.Err()
+		}
+	}
+	inFly.Add(1)
+	metrics.DeliveryInFlight.WithLabelValues("discord").Inc()
+	defer func() {
+		inFly.Add(-1)
+		metrics.DeliveryInFlight.WithLabelValues("discord").Dec()
+	}()
+
+	var body io.Reader
+	if bodyBytes != nil {
+		body = bytes.NewReader(bodyBytes)
+	}
+	resp, err := ds.doRequest(ctx, method, url, body, contentType, auth)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	respBody, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, resp.StatusCode, resp.Header, fmt.Errorf("reading response body: %w", readErr)
+	}
+	return respBody, resp.StatusCode, resp.Header, nil
+}
+
 // doWithRetry executes an HTTP request against Discord with the same
 // header-driven limiter updates, 429 Retry-After backoff, and 5xx retry the
 // send path uses — so edits and clean-deletes get the same treatment as posts
 // instead of a single unguarded request. It does NOT call rateLimiter.Wait; the
 // proactive per-route/global gate is the caller's job (the FairQueue does it for
-// send/edit; Delete does it itself since clean-deletion bypasses the queue).
-// Returns the final response body and status after retries; bodyBytes may be nil
-// (DELETE). rateLimitKey is the destination (channel/webhook) so every method to
-// a destination shares one limiter bucket.
+// send/edit; Delete does it itself since clean-deletion bypasses the queue) —
+// and acquires a concurrency slot per attempt via roundTrip, released before
+// any backoff sleep. Returns the final response body and status after retries;
+// bodyBytes may be nil (DELETE). rateLimitKey is the destination
+// (channel/webhook) so every method to a destination shares one limiter bucket.
 func (ds *DiscordSender) doWithRetry(ctx context.Context, method, url string, bodyBytes []byte, contentType string, auth bool, rateLimitKey, logRef string) ([]byte, int, error) {
 	const maxRetries = 5
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		var body io.Reader
-		if bodyBytes != nil {
-			body = bytes.NewReader(bodyBytes)
-		}
-		resp, err := ds.doRequest(ctx, method, url, body, contentType, auth)
+		respBody, status, header, err := ds.roundTrip(ctx, method, url, bodyBytes, contentType, auth)
 		if err != nil {
+			if status != 0 {
+				// read error after a response — surface it (non-retryable)
+				return nil, status, err
+			}
+			if ctx.Err() != nil {
+				return nil, 0, ctx.Err()
+			}
 			logref.Warnf(logRef, "discord: %s to %s failed (attempt %d/%d): %v", method, rateLimitKey, attempt+1, maxRetries+1, err)
 			if attempt < maxRetries {
 				select {
@@ -414,14 +484,9 @@ func (ds *DiscordSender) doWithRetry(ctx context.Context, method, url string, bo
 			return nil, 0, err
 		}
 
-		ds.rateLimiter.Update(rateLimitKey, resp.Header)
-		respBody, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", readErr)
-		}
+		ds.rateLimiter.Update(rateLimitKey, header)
 
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if status == http.StatusTooManyRequests {
 			var rl struct {
 				RetryAfter float64 `json:"retry_after"`
 			}
@@ -433,25 +498,25 @@ func (ds *DiscordSender) doWithRetry(ctx context.Context, method, url string, bo
 			if attempt < maxRetries {
 				select {
 				case <-ctx.Done():
-					return respBody, resp.StatusCode, ctx.Err()
+					return respBody, status, ctx.Err()
 				case <-time.After(d):
 				}
 				continue
 			}
-			return respBody, resp.StatusCode, nil
+			return respBody, status, nil
 		}
 
-		if resp.StatusCode >= 500 && attempt < maxRetries {
-			logref.Warnf(logRef, "discord: %s to %s status=%d (attempt %d/%d), retrying", method, rateLimitKey, resp.StatusCode, attempt+1, maxRetries+1)
+		if status >= 500 && attempt < maxRetries {
+			logref.Warnf(logRef, "discord: %s to %s status=%d (attempt %d/%d), retrying", method, rateLimitKey, status, attempt+1, maxRetries+1)
 			select {
 			case <-ctx.Done():
-				return respBody, resp.StatusCode, ctx.Err()
+				return respBody, status, ctx.Err()
 			case <-time.After(time.Duration(attempt+1) * time.Second):
 			}
 			continue
 		}
 
-		return respBody, resp.StatusCode, nil
+		return respBody, status, nil
 	}
 	return nil, 0, fmt.Errorf("discord API: max retries exceeded")
 }

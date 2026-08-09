@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func newTestDiscordSender(serverURL string) *DiscordSender {
@@ -602,5 +603,60 @@ func TestDiscordWebhookSkipsMessageReference(t *testing.T) {
 
 	if strings.Contains(string(gotBody), "message_reference") {
 		t.Errorf("webhook body should NOT contain message_reference, got: %s", gotBody)
+	}
+}
+
+// TestDiscord_SemaphoreReleasedDuring429Backoff proves the wire-call
+// concurrency slot is released while a request is backing off from a 429 —
+// not held for the duration of the retry sleep. With SetConcurrency(1,1),
+// target "a" 429s once and backs off ~0.4s; if the slot were held across
+// that backoff (the pre-fix behaviour), a concurrent request to a different
+// target "b" would be starved until "a" finishes.
+func TestDiscord_SemaphoreReleasedDuring429Backoff(t *testing.T) {
+	// srv: target "a" 429s once (retry_after 0.4s) then 204s; target "b" 204s immediately.
+	var aHits atomic.Int32
+	bDone := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/channels/a/"):
+			if aHits.Add(1) == 1 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"retry_after":0.4}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1"}`))
+		case strings.Contains(r.URL.Path, "/channels/b/"):
+			close(bDone)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"2"}`))
+		}
+	}))
+	defer srv.Close()
+
+	ds := NewDiscordSender("tok", false, 0)
+	ds.baseURL = srv.URL
+	ds.SetConcurrency(1, 1) // ONE discord slot
+
+	// Start the "a" send (it will 429 and back off ~0.4s).
+	go func() {
+		_, _ = ds.postMessage(context.Background(), "a", json.RawMessage(`{"content":"a"}`), nil, "", "")
+	}()
+
+	// Give "a" a head start so it wins the single slot and hits its 429
+	// before "b" tries to acquire the slot — otherwise this wouldn't exercise
+	// the backoff-release behavior at all.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_, _ = ds.postMessage(context.Background(), "b", json.RawMessage(`{"content":"b"}`), nil, "", "")
+	}()
+
+	// "b" must acquire the single slot while "a" is backing off (slot released).
+	select {
+	case <-bDone:
+		// pass: b reached the wire during a's backoff
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("target b never reached the wire — a's 429 backoff pinned the only slot")
 	}
 }
