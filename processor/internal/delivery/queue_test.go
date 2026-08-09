@@ -1110,3 +1110,136 @@ func TestFairQueueStop(t *testing.T) {
 		t.Errorf("expected all 5 jobs to be processed on stop, got %d", len(sendCalls))
 	}
 }
+
+// laneMockSender is a minimal Sender for lane-isolation/reap/shutdown tests.
+// It hooks BOTH Send and Delete so tests can park either path (clean-deletes
+// invoke Delete, not Send).
+type laneMockSender struct {
+	onSend   func(*Job)
+	onDelete func(sentID string)
+}
+
+func (m *laneMockSender) Send(_ context.Context, job *Job) (*SentMessage, error) {
+	if m.onSend != nil {
+		m.onSend(job)
+	}
+	return &SentMessage{ID: "sent-" + job.Target}, nil
+}
+func (m *laneMockSender) Delete(_ context.Context, sentID string) error {
+	if m.onDelete != nil {
+		m.onDelete(sentID)
+	}
+	return nil
+}
+func (m *laneMockSender) Edit(_ context.Context, _ string, _ json.RawMessage, _ []byte) error {
+	return nil
+}
+func (m *laneMockSender) WaitForRateLimit(string) {}
+func (m *laneMockSender) Platform() string        { return "discord" }
+
+// waitFor polls cond until true or the deadline; fails the test on timeout.
+func waitFor(t *testing.T, cond func() bool, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("condition not met within %v", d)
+}
+
+// TestLanes_SlowTargetDoesNotBlockFreeTarget proves the headline property of
+// per-destination lanes (Phase 2): a target parked mid-send does not delay
+// delivery to an unrelated target. Before Phase 2 (shared channel + worker
+// pool), a parked worker could starve other destinations under a saturated
+// pool; with one lane + drainer per target, "free" delivers immediately
+// while "slow" sits blocked in its own goroutine.
+func TestLanes_SlowTargetDoesNotBlockFreeTarget(t *testing.T) {
+	release := make(chan struct{})
+	freeDone := make(chan struct{})
+	sender := &laneMockSender{
+		onSend: func(job *Job) {
+			if job.Target == "slow" {
+				<-release // park the slow lane
+			} else {
+				close(freeDone)
+			}
+		},
+	}
+	senders := map[string]Sender{"discord": sender}
+	fq, enq := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 4})
+	fq.Start()
+	defer func() { close(release); fq.Stop() }()
+
+	enq(&Job{Type: "discord:channel", Target: "slow", Message: json.RawMessage(`{}`)})
+	enq(&Job{Type: "discord:channel", Target: "free", Message: json.RawMessage(`{}`)})
+
+	select {
+	case <-freeDone:
+		// pass: free lane delivered while slow lane parked
+	case <-time.After(time.Second):
+		t.Fatal("free target blocked behind a parked slow target — lanes not isolated")
+	}
+}
+
+// TestLanes_ReapThenReuseDelivers proves a target's lane can be fully
+// drained and then reused without losing jobs. laneIdleTimeout is a 60s
+// const (deliberately not exposed as config — see queue.go), so this test
+// does not force a real reap; instead it drives the lane to empty (all 50
+// jobs delivered) and then re-enqueues a second wave to the same target,
+// asserting the lane (whether still alive and idle, or freshly
+// spawned-on-demand after a reap) delivers all of it. Either way the
+// counter-under-lock invariant (lane.pending guarded by lanesMu) is what
+// makes reap-vs-enqueue races safe; that invariant is exercised structurally
+// here and in the shutdown-drain test below.
+func TestLanes_ReapThenReuseDelivers(t *testing.T) {
+	var delivered atomic.Int32
+	sender := &laneMockSender{onSend: func(*Job) { delivered.Add(1) }}
+	senders := map[string]Sender{"discord": sender}
+	fq, enq := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 2})
+	fq.Start()
+	defer fq.Stop()
+
+	for i := 0; i < 50; i++ {
+		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
+	}
+	// Force a reap of target "t" without waiting 60s: delete via an idle tick by
+	// directly invoking the reap path is not exported, so instead assert delivery
+	// completes, then enqueue a second wave to prove re-creation works.
+	waitFor(t, func() bool { return delivered.Load() == 50 }, time.Second)
+
+	for i := 0; i < 50; i++ {
+		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
+	}
+	waitFor(t, func() bool { return delivered.Load() == 100 }, time.Second)
+}
+
+// TestLanes_ShutdownDrainsAllLanes proves Stop() blocks until every buffered
+// job across every lane has been delivered, not just until the drainers
+// exit. Ten lanes are pre-loaded with five jobs apiece (each Send taking
+// 1ms), then Stop() is called with none of them consumed yet; Stop must not
+// return until all 50 have gone through processJob.
+func TestLanes_ShutdownDrainsAllLanes(t *testing.T) {
+	var delivered atomic.Int32
+	sender := &laneMockSender{onSend: func(*Job) {
+		time.Sleep(time.Millisecond)
+		delivered.Add(1)
+	}}
+	senders := map[string]Sender{"discord": sender}
+	fq, enq := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 4})
+	fq.Start()
+
+	const lanes, per = 10, 5
+	for l := 0; l < lanes; l++ {
+		for j := 0; j < per; j++ {
+			enq(&Job{Type: "discord:channel", Target: "t" + strconv.Itoa(l), Message: json.RawMessage(`{}`)})
+		}
+	}
+	fq.Stop() // must block until every buffered job is delivered
+
+	if got := delivered.Load(); got != lanes*per {
+		t.Errorf("expected %d delivered before Stop returned, got %d", lanes*per, got)
+	}
+}
