@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type telegramCall struct {
@@ -617,5 +619,58 @@ func TestTelegramSendWithoutReplyToID(t *testing.T) {
 	}
 	if _, ok := c[0].Body["allow_sending_without_reply"]; ok {
 		t.Errorf("expected no allow_sending_without_reply when ReplyToID empty, got body: %v", c[0].Body)
+	}
+}
+
+// TestTelegram_SemaphoreReleasedDuring429Backoff — under SetConcurrency(1), a
+// 429 for chat_a must free the wire-call slot for chat_b's request while
+// chat_a is sleeping out its Retry-After backoff. chat_b's send is gated on
+// aStarted (closed when chat_a's first request lands) so it can only reach
+// the wire during chat_a's backoff window, not before chat_a even starts —
+// that's what makes the assertion below mean something.
+func TestTelegram_SemaphoreReleasedDuring429Backoff(t *testing.T) {
+	aStarted := make(chan struct{})
+	bDone := make(chan struct{})
+	var aHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		isA := strings.Contains(string(body), `"chat_a"`)
+		w.Header().Set("Content-Type", "application/json")
+		if isA && aHits.Add(1) == 1 {
+			close(aStarted)
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"parameters":{"retry_after":1}}`))
+			return
+		}
+		if !isA {
+			close(bDone)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
+	}))
+	defer srv.Close()
+
+	ts := NewTelegramSender("tok")
+	ts.baseURL = srv.URL
+	ts.SetConcurrency(1)
+
+	go func() {
+		_, _ = ts.sendMessage(context.Background(), "chat_a", 0, "hi", "HTML", false, "", "")
+	}()
+
+	select {
+	case <-aStarted:
+	case <-time.After(time.Second):
+		t.Fatal("chat_a never reached the wire")
+	}
+
+	go func() {
+		_, _ = ts.sendMessage(context.Background(), "chat_b", 0, "hi", "HTML", false, "", "")
+	}()
+
+	select {
+	case <-bDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("chat_b never reached the wire — chat_a's 429 backoff pinned the only slot")
 	}
 }

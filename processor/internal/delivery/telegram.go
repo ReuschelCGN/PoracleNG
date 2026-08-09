@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pokemon/poracleng/processor/internal/logref"
@@ -34,11 +35,16 @@ type TelegramSender struct {
 	client  *http.Client
 
 	// Rate-limit introspection state.
-	rlMu               sync.Mutex
-	counter429         [60]int32 // 60-slot ring, one slot per minute
-	counter429Mins     [60]int64 // Unix minute when the slot was last written
-	currentBackoffUntil time.Time // zero if not backing off
-	nowFunc            func() time.Time // injectable for tests; nil → time.Now
+	rlMu                sync.Mutex
+	counter429          [60]int32        // 60-slot ring, one slot per minute
+	counter429Mins      [60]int64        // Unix minute when the slot was last written
+	currentBackoffUntil time.Time        // zero if not backing off
+	nowFunc             func() time.Time // injectable for tests; nil → time.Now
+
+	// Wire-call concurrency semaphore (nil = unlimited). Held only across a
+	// single HTTP round-trip (see roundTrip), never during 429 backoff.
+	sem   chan struct{}
+	inFly atomic.Int64
 }
 
 // NewTelegramSender creates a new Telegram sender.
@@ -49,6 +55,13 @@ func NewTelegramSender(token string) *TelegramSender {
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
+
+// SetConcurrency sizes the wire-call semaphore. n<=0 means unlimited. Call once
+// at construction, before any Send/Edit/Delete.
+func (ts *TelegramSender) SetConcurrency(n int) { ts.sem = makeSem(n) }
+
+// TelegramInFlight reports current concurrent wire calls (for the [Status] log).
+func (ts *TelegramSender) TelegramInFlight() int { return int(ts.inFly.Load()) }
 
 // now returns the current time, using the injected nowFunc when set (tests only).
 func (ts *TelegramSender) now() time.Time {
@@ -511,6 +524,37 @@ func (ts *TelegramSender) sendVenue(ctx context.Context, chatID string, topicID 
 	return ts.callWithRetry(ctx, "sendVenue", body, logRef)
 }
 
+// roundTrip posts ONE Telegram request while holding a concurrency slot, and
+// releases the slot before returning so the caller's 429/5xx backoff runs
+// slot-free. Returns the response body and status.
+func (ts *TelegramSender) roundTrip(ctx context.Context, method string, jsonBody []byte) ([]byte, int, error) {
+	if ts.sem != nil {
+		select {
+		case ts.sem <- struct{}{}:
+			defer func() { <-ts.sem }()
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		}
+	}
+	ts.inFly.Add(1)
+	metrics.DeliveryInFlight.WithLabelValues("telegram").Inc()
+	defer func() {
+		ts.inFly.Add(-1)
+		metrics.DeliveryInFlight.WithLabelValues("telegram").Dec()
+	}()
+
+	resp, err := ts.doPostRaw(ctx, method, jsonBody)
+	if err != nil {
+		return nil, 0, err
+	}
+	respBody, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", readErr)
+	}
+	return respBody, resp.StatusCode, nil
+}
+
 // callWithRetry posts to a Telegram API method with retry logic.
 func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body map[string]any, logRef string) (int, error) {
 	jsonBody, err := json.Marshal(body)
@@ -528,8 +572,14 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 			}
 		}
 
-		resp, err := ts.doPostRaw(ctx, method, jsonBody)
+		respBody, status, err := ts.roundTrip(ctx, method, jsonBody)
 		if err != nil {
+			if status != 0 {
+				return 0, fmt.Errorf("reading response body: %w", err)
+			}
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
 			if attempt < maxRetries {
 				time.Sleep(time.Second)
 				continue
@@ -537,13 +587,7 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 			return 0, err
 		}
 
-		respBody, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return 0, fmt.Errorf("reading response body: %w", readErr)
-		}
-
-		if resp.StatusCode == http.StatusOK {
+		if status == http.StatusOK {
 			var tgResp telegramResponse
 			if err := json.Unmarshal(respBody, &tgResp); err != nil {
 				return 0, fmt.Errorf("decoding telegram response: %w", err)
@@ -554,7 +598,7 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 			}
 		}
 
-		if resp.StatusCode == http.StatusForbidden {
+		if status == http.StatusForbidden {
 			logref.Warnf(logRef, "telegram: permanent error for %s %s: %s", method, body["chat_id"], respBody)
 			return 0, &PermanentError{
 				Err:    fmt.Errorf("telegram %s: forbidden (status 403): %s", method, respBody),
@@ -562,7 +606,7 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 			}
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if status == http.StatusTooManyRequests {
 			var tgResp telegramResponse
 			json.Unmarshal(respBody, &tgResp) //nolint:errcheck
 			retryAfter := 1
@@ -588,12 +632,12 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 		}
 
 		if attempt < maxRetries {
-			logref.Warnf(logRef, "telegram: %s to %s failed (attempt %d/%d): status=%d", method, body["chat_id"], attempt+1, maxRetries+1, resp.StatusCode)
+			logref.Warnf(logRef, "telegram: %s to %s failed (attempt %d/%d): status=%d", method, body["chat_id"], attempt+1, maxRetries+1, status)
 			time.Sleep(time.Second)
 			continue
 		}
 
-		return 0, fmt.Errorf("telegram %s returned status %d: %s", method, resp.StatusCode, respBody)
+		return 0, fmt.Errorf("telegram %s returned status %d: %s", method, status, respBody)
 	}
 	return 0, fmt.Errorf("telegram %s: max retries exceeded", method)
 }
@@ -620,8 +664,14 @@ func (ts *TelegramSender) doPostWithRetry(ctx context.Context, method string, bo
 			}
 		}
 
-		resp, err := ts.doPostRaw(ctx, method, jsonBody)
+		respBody, status, err := ts.roundTrip(ctx, method, jsonBody)
 		if err != nil {
+			if status != 0 {
+				return nil, status, fmt.Errorf("reading response body: %w", err)
+			}
+			if ctx.Err() != nil {
+				return nil, 0, ctx.Err()
+			}
 			if attempt < maxRetries {
 				time.Sleep(time.Second)
 				continue
@@ -629,13 +679,7 @@ func (ts *TelegramSender) doPostWithRetry(ctx context.Context, method string, bo
 			return nil, 0, err
 		}
 
-		respBody, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", readErr)
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if status == http.StatusTooManyRequests {
 			var tgResp telegramResponse
 			json.Unmarshal(respBody, &tgResp) //nolint:errcheck
 			retryAfter := 1
@@ -647,30 +691,29 @@ func (ts *TelegramSender) doPostWithRetry(ctx context.Context, method string, bo
 			// Cap retry to 60s — values like 23501s indicate a permanent block.
 			if retryAfter > 60 {
 				logref.Warnf(logRef, "telegram: 429 for %s %s, retry_after=%ds is excessive — capping to 60s and giving up (attempt %d/%d)", method, body["chat_id"], retryAfter, attempt+1, maxRetries+1)
-				return respBody, resp.StatusCode, fmt.Errorf("telegram rate limit too long: %ds", retryAfter)
+				return respBody, status, fmt.Errorf("telegram rate limit too long: %ds", retryAfter)
 			}
 			logref.Warnf(logRef, "telegram: 429 for %s %s, retry_after=%ds (attempt %d/%d)", method, body["chat_id"], retryAfter, attempt+1, maxRetries+1)
 			backoffUntil := ts.now().Add(time.Duration(retryAfter) * time.Second)
 			ts.setBackoffUntil(backoffUntil)
 			select {
 			case <-ctx.Done():
-				return respBody, resp.StatusCode, ctx.Err()
+				return respBody, status, ctx.Err()
 			case <-time.After(time.Until(backoffUntil)):
 			}
 			continue
 		}
 
-		if resp.StatusCode >= 500 && attempt < maxRetries {
-			logref.Warnf(logRef, "telegram: %s to %s failed (attempt %d/%d): status=%d", method, body["chat_id"], attempt+1, maxRetries+1, resp.StatusCode)
+		if status >= 500 && attempt < maxRetries {
+			logref.Warnf(logRef, "telegram: %s to %s failed (attempt %d/%d): status=%d", method, body["chat_id"], attempt+1, maxRetries+1, status)
 			time.Sleep(time.Second)
 			continue
 		}
 
-		return respBody, resp.StatusCode, nil
+		return respBody, status, nil
 	}
 	return nil, 0, fmt.Errorf("telegram %s: max retries exceeded", method)
 }
-
 
 // doPostRaw posts raw JSON to the Telegram API.
 func (ts *TelegramSender) doPostRaw(ctx context.Context, method string, body []byte) (*http.Response, error) {
@@ -821,4 +864,3 @@ func normalizeTelegramParseMode(mode string) string {
 		return mode
 	}
 }
-
