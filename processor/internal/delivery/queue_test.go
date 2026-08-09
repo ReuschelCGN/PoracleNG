@@ -1279,3 +1279,26 @@ func TestLanes_CleanDeleteDropsOnFullLane(t *testing.T) {
 		t.Error("a different target's lane should accept the clean-delete")
 	}
 }
+
+// TestLaneStats proves LaneStats reports real per-lane aggregates: one lane
+// parked in-flight (the drainer's onSend blocks on release) plus six more
+// buffered behind it in the same lane's channel yields depth 6 (the in-flight
+// job isn't in the channel anymore), active lane count 1, and the deepest
+// target name.
+func TestLaneStats(t *testing.T) {
+	release := make(chan struct{})
+	sender := &laneMockSender{onSend: func(*Job) { <-release }}
+	senders := map[string]Sender{"discord": sender}
+	fq, _ := newTestFairQueue(t, senders, QueueConfig{ConcurrentDiscord: 1, PerRouteBuffer: 10})
+	fq.Start()
+	defer func() { close(release); fq.Stop() }()
+
+	// One lane parked in-flight + 6 buffered => depth 6, active 1.
+	for i := 0; i < 7; i++ {
+		fq.enqueue(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)}, true)
+	}
+	waitFor(t, func() bool {
+		total, active, maxDepth, target, _ := fq.LaneStats()
+		return active == 1 && total == 6 && maxDepth == 6 && target == "t"
+	}, time.Second)
+}

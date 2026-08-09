@@ -91,6 +91,12 @@ type FairQueue struct {
 
 	rateLimiter    *ratelimit.Limiter
 	rateLimitHooks RateLimitHooks
+
+	// backpressure counts send enqueues that blocked on a full lane.
+	// lastBackpressureLog throttles the corresponding warn log to once per 5s
+	// (unix nanoseconds, read/written via CompareAndSwap).
+	backpressure        atomic.Int64
+	lastBackpressureLog atomic.Int64
 }
 
 // NewFairQueue creates a FairQueue that dispatches jobs through the
@@ -150,9 +156,17 @@ func (fq *FairQueue) enqueue(job *Job, block bool) bool {
 		fq.lanes[job.Target] = l
 		fq.wg.Add(1)
 		go fq.runLane(l)
+		metrics.DeliveryLaneSpawned.Inc()
 	}
 	l.pending++ // reserve BEFORE releasing the lock so the reaper can't drop us
 	fq.lanesMu.Unlock()
+
+	// A concurrent Stop() can close l.ch after we passed the stopped check and
+	// released the lock; sending on a closed channel panics. Recover so a
+	// shutdown race drops the job (returns false) instead of crashing the
+	// caller. A channel send is the only panic source below this point, so this
+	// masks nothing else.
+	defer func() { _ = recover() }()
 
 	if block {
 		select {
@@ -160,7 +174,7 @@ func (fq *FairQueue) enqueue(job *Job, block bool) bool {
 			return true
 		default:
 			// Lane full — record + throttle-log backpressure, then block.
-			fq.recordBackpressure(l.target) // added in Phase 3; no-op stub for now
+			fq.recordBackpressure(l.target)
 			l.ch <- job
 			return true
 		}
@@ -172,15 +186,32 @@ func (fq *FairQueue) enqueue(job *Job, block bool) bool {
 		fq.lanesMu.Lock()
 		l.pending--
 		fq.lanesMu.Unlock()
-		fq.recordCleanDropped(l.target) // added in Phase 3; no-op stub for now
+		fq.recordCleanDropped(l.target)
 		return false
 	}
 }
 
-// recordBackpressure / recordCleanDropped are fleshed out in Phase 3
-// (metrics + throttled logging). Kept as methods here so enqueue is final.
-func (fq *FairQueue) recordBackpressure(target string) {}
-func (fq *FairQueue) recordCleanDropped(target string) {}
+// recordBackpressure is called when a send blocks on a full lane. It counts the
+// event and logs at most once per 5s per queue (naming the target), so a hot
+// lane doesn't flood the log.
+func (fq *FairQueue) recordBackpressure(target string) {
+	metrics.DeliveryLaneBackpressure.Inc()
+	fq.backpressure.Add(1)
+	now := time.Now().UnixNano()
+	last := fq.lastBackpressureLog.Load()
+	if now-last > int64(5*time.Second) && fq.lastBackpressureLog.CompareAndSwap(last, now) {
+		log.Warnf("delivery: lane full, applying backpressure to sends for %s", target)
+	}
+}
+
+// recordCleanDropped is called when a clean-delete is dropped on a full lane.
+func (fq *FairQueue) recordCleanDropped(target string) {
+	metrics.DeliveryCleanDeleteDropped.Inc()
+}
+
+// BackpressureCount returns the cumulative count of send enqueues that blocked
+// on a full lane. Used by the [Status] reporter to detect a developing backlog.
+func (fq *FairQueue) BackpressureCount() int64 { return fq.backpressure.Load() }
 
 // runLane is one destination's drainer: it processes jobs FIFO and reaps itself
 // after laneIdleTimeout with an empty lane and no pending work.
@@ -210,6 +241,7 @@ func (fq *FairQueue) runLane(l *lane) {
 			if l.pending == 0 {
 				delete(fq.lanes, l.target)
 				fq.lanesMu.Unlock()
+				metrics.DeliveryLaneReaped.Inc()
 				return // reap: no work, no in-flight enqueue
 			}
 			fq.lanesMu.Unlock()

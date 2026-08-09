@@ -127,10 +127,9 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 // sends, serialising deletes with each other and with sends to the same
 // target (instead of firing concurrent DELETEs that 429 each other). A full
 // lane drops the delete rather than blocking (block=false) — a dropped clean
-// is re-attempted on the next startup load. Panic-guarded because it can fire
-// during shutdown while the lane is closing.
+// is re-attempted on the next startup load. Panic safety for a mid-shutdown
+// lane close now lives in FairQueue.enqueue, which covers every caller.
 func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
-	defer func() { _ = recover() }() // lane may close mid-shutdown; drop safely
 	job := &Job{
 		Type:         msg.Type,
 		Target:       msg.Target,
@@ -175,6 +174,17 @@ func (d *Dispatcher) QueueDepth() int {
 	total, _, _, _, _ := d.queue.LaneStats()
 	return total
 }
+
+// LaneStats exposes per-lane aggregates for the [Status] reporter.
+func (d *Dispatcher) LaneStats() (totalQueued, active, maxDepth int, deepestTarget string, nearCap int) {
+	return d.queue.LaneStats()
+}
+
+// BackpressureCount exposes the cumulative full-lane backpressure count.
+func (d *Dispatcher) BackpressureCount() int64 { return d.queue.BackpressureCount() }
+
+// PerRouteBuffer is the configured per-lane buffer size (for near-capacity math).
+func (d *Dispatcher) PerRouteBuffer() int { return d.queue.perRouteBuf }
 
 // TrackerSize returns the number of messages being tracked.
 func (d *Dispatcher) TrackerSize() int { return d.tracker.Size() }
