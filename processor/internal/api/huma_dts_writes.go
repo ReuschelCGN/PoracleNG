@@ -142,7 +142,7 @@ func (b dtsRenderBody) MarshalJSON() ([]byte, error) {
 
 // Schema documents the render request wrapper, loosened to be permissive.
 func (dtsRenderBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(dtsRenderRequest{}),
+	return openObjectSchema(r, reflect.TypeFor[dtsRenderRequest](),
 		"DTS render request: {type,id,platform,language,view}. `view` is an OPEN template-variable map; the template is selected by type/id/platform/language.")
 }
 
@@ -317,7 +317,7 @@ func (b dtsEnrichBody) MarshalJSON() ([]byte, error) {
 
 // Schema documents the enrich request wrapper, loosened to be permissive.
 func (dtsEnrichBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(dtsEnrichRequest{}),
+	return openObjectSchema(r, reflect.TypeFor[dtsEnrichRequest](),
 		"DTS enrich request: {type,language,platform,webhook}. `webhook` is an OPEN payload; required fields (type, webhook) are enforced by the handler.")
 }
 
@@ -429,7 +429,7 @@ func (b dtsSendTestBody) MarshalJSON() ([]byte, error) {
 
 // Schema documents the sendtest request wrapper, loosened to be permissive.
 func (dtsSendTestBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(dtsSendTestRequest{}),
+	return openObjectSchema(r, reflect.TypeFor[dtsSendTestRequest](),
 		"DTS sendtest request: {template,variables,target,language,platform}. `template` and `variables` are OPEN; required fields (template, target.id) are enforced by the handler.")
 }
 

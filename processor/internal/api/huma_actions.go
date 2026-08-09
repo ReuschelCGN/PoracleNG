@@ -101,7 +101,7 @@ type testBodyShape struct {
 
 // Schema documents the test request wrapper, loosened to be permissive.
 func (testBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(testBodyShape{}),
+	return openObjectSchema(r, reflect.TypeFor[testBodyShape](),
 		"poracle-test request: {type, target, webhook}. `webhook` is an OPEN polymorphic webhook payload; required fields (type, target.id, webhook) are enforced by the handler.")
 }
 
@@ -318,7 +318,7 @@ func (b resolveBody) MarshalJSON() ([]byte, error) {
 // resolveRequest schema is never contaminated — see reference_huma_gotchas),
 // then `required` is cleared and additionalProperties opened.
 func (resolveBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(resolveRequest{}),
+	return openObjectSchema(r, reflect.TypeFor[resolveRequest](),
 		"Resolve request. All sections are optional: {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}.")
 }
 

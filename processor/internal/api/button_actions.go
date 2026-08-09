@@ -9,10 +9,10 @@ import (
 // build a dropdown of available actions and per-action parameter
 // hints when an operator adds a new button to a template.
 type ActionInfo struct {
-	Name      string   `json:"name"`
-	Scopes    []string `json:"scopes"`               // accepted scope values; empty when scope isn't required
-	RequiredScope bool `json:"required_scope"`       // true when scope must be set (mute, unsubscribe)
-	Params    []string `json:"params,omitempty"`     // documented param keys handlers look up in def.Params
+	Name          string   `json:"name"`
+	Scopes        []string `json:"scopes"`           // accepted scope values; empty when scope isn't required
+	RequiredScope bool     `json:"required_scope"`   // true when scope must be set (mute, unsubscribe)
+	Params        []string `json:"params,omitempty"` // documented param keys handlers look up in def.Params
 }
 
 // describeAction returns the editor-facing description for an action

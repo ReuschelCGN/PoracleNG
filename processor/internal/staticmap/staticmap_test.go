@@ -317,7 +317,7 @@ func TestCircuitBreaker(t *testing.T) {
 	})
 
 	// Three failing POSTs trip the breaker.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if got := r.GetPregeneratedTileURL("monster", map[string]any{}, "staticMap"); got != "" {
 			t.Fatalf("call %d: expected empty on tileserver 500, got %q", i, got)
 		}
@@ -328,7 +328,7 @@ func TestCircuitBreaker(t *testing.T) {
 	}
 
 	// Further calls are short-circuited — the tileserver is not contacted.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if got := r.GetPregeneratedTileURL("monster", map[string]any{}, "staticMap"); got != "" {
 			t.Fatalf("expected empty during circuit break, got %q", got)
 		}

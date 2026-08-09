@@ -528,8 +528,8 @@ func TestRowText_MonsterShowsOverrides(t *testing.T) {
 
 	// Override location label only.
 	rule := &db.MonsterTracking{
-		PokemonID:             25,
-		MinIV:                 -1, MaxIV: 100,
+		PokemonID: 25,
+		MinIV:     -1, MaxIV: 100,
 		MinCP: 0, MaxCP: 9000,
 		MinLevel: 0, MaxLevel: 55,
 		MaxATK: 15, MaxDEF: 15, MaxSTA: 15,

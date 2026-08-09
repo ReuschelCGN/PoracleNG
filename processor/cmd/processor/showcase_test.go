@@ -66,11 +66,11 @@ func TestProcessShowcase_Wiring(t *testing.T) {
 	}
 	n := strings.Join(strings.Fields(string(src)), " ")
 	for _, want := range []string{
-		"showcaseActive(sc.ShowcaseExpiry",                 // expiry gate
-		"CheckShowcase(sc.PokestopID, sc.ShowcaseExpiry",   // dedup with fingerprint
-		`EditKey: fmt.Sprintf("showcase:%s:%d"`,            // edit-mode key
-		"OverrideCleanTTH: sc.ShowcaseExpiry",              // clean-deletion TTH = contest end
-		`TemplateType: "showcase"`,                         // dedicated showcase display model
+		"showcaseActive(sc.ShowcaseExpiry",               // expiry gate
+		"CheckShowcase(sc.PokestopID, sc.ShowcaseExpiry", // dedup with fingerprint
+		`EditKey: fmt.Sprintf("showcase:%s:%d"`,          // edit-mode key
+		"OverrideCleanTTH: sc.ShowcaseExpiry",            // clean-deletion TTH = contest end
+		`TemplateType: "showcase"`,                       // dedicated showcase display model
 	} {
 		if !strings.Contains(n, want) {
 			t.Errorf("showcase.go missing wiring: %q", want)

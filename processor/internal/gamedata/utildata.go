@@ -39,8 +39,8 @@ type UtilData struct {
 	// showcase_focus_{type}, not util.json (emoji lives here for theming).
 	ShowcaseFocus map[string]ShowcaseFocusInfo
 	PowerUpCost   map[string]PowerUpCostEntry // level string → {stardust, candy, xlCandy}
-	CpMultipliers    map[string]float64          // level string → CP multiplier
-	Emojis           map[string]string           // emoji key → unicode
+	CpMultipliers map[string]float64          // level string → CP multiplier
+	Emojis        map[string]string           // emoji key → unicode
 }
 
 // PowerUpCostEntry holds the cost to power up one half-level.

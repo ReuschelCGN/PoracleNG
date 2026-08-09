@@ -67,7 +67,6 @@ func TestHumaDTSTestdata_RealFixture_AllDTSTypesResolve(t *testing.T) {
 	}
 
 	for name := range dtsmap.TypeMap() {
-		name := name
 		t.Run(fmt.Sprintf("dtsType=%s", name), func(t *testing.T) {
 			td := get(name)
 			if dtsTypeAllowEmpty[name] {

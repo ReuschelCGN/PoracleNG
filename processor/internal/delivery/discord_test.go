@@ -695,7 +695,7 @@ func TestDiscord_GlobalConcurrencyCap(t *testing.T) {
 	ds.SetConcurrency(2, 2)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

@@ -16,9 +16,9 @@ import (
 
 // TrackedMessage represents a sent message being tracked for clean deletion or editing.
 type TrackedMessage struct {
-	SentID   string `json:"sent_id"`
-	Target   string `json:"target"`
-	Type     string `json:"type"` // "discord:user", "telegram:group", etc.
+	SentID string `json:"sent_id"`
+	Target string `json:"target"`
+	Type   string `json:"type"` // "discord:user", "telegram:group", etc.
 	// MsgType is the source webhook alert type ("raid", "egg", "pokemon", etc.)
 	// — distinct from Type, which is the destination type ("discord:user").
 	// Used by the raid handler's partitionRaidUsers first-visible check.

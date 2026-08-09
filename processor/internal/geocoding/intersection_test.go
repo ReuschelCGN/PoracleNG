@@ -143,13 +143,13 @@ func TestIntersection_CircuitBreakerOpensAfterFailures(t *testing.T) {
 	i.baseURL = srv.URL
 
 	// First 3 calls hit the server and fail, tripping the breaker.
-	for n := 0; n < 3; n++ {
+	for n := range 3 {
 		if got := i.GetIntersection(float64(n), 0); got != "" {
 			t.Fatalf("call %d: got %q, want empty", n, got)
 		}
 	}
 	// Subsequent calls are short-circuited — no further HTTP.
-	for n := 0; n < 5; n++ {
+	for n := range 5 {
 		i.GetIntersection(float64(100+n), 0)
 	}
 	if c := calls.Load(); c != 3 {
@@ -189,7 +189,7 @@ func TestIntersection_CircuitBreakerResetsOnSuccess(t *testing.T) {
 	// Breaker reset: 4 more failures shouldn't open it (counter started over).
 	fail.Store(true)
 	before := calls.Load()
-	for n := 0; n < 4; n++ {
+	for n := range 4 {
 		i.GetIntersection(float64(10+n), 0)
 	}
 	if c := calls.Load() - before; c != 4 {

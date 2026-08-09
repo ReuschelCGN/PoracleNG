@@ -399,9 +399,7 @@ func (ps *ProcessorService) enrichShowcase(raw json.RawMessage, language string,
 	var perLang map[string]any
 	if ps.enricher.GameData != nil && ps.enricher.Translations != nil {
 		perLang = ps.enricher.InvasionTranslate(base, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, language)
-		for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, language) {
-			perLang[k] = v
-		}
+		maps.Copy(perLang, ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, language))
 	}
 
 	return &enrichResult{

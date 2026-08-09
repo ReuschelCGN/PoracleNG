@@ -381,7 +381,7 @@ func TestFairQueue_CleanDeleteSerializedPerTarget(t *testing.T) {
 	fq.Start()
 
 	const n = 20
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fq.enqueue(&Job{Type: "discord:channel", Target: "chan1", DeleteSentID: "chan1:msg" + strconv.Itoa(i)}, false)
 	}
 	fq.Stop() // closes every lane and drains all drainers
@@ -909,8 +909,8 @@ func (c *counterSender) Delete(_ context.Context, _ string) error { return nil }
 func (c *counterSender) Edit(_ context.Context, _ string, _ json.RawMessage, _ []byte) error {
 	return nil
 }
-func (c *counterSender) Platform() string             { return c.platform }
-func (c *counterSender) WaitForRateLimit(_ string)    {}
+func (c *counterSender) Platform() string          { return c.platform }
+func (c *counterSender) WaitForRateLimit(_ string) {}
 func (c *counterSender) getSendCalls() []*Job {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1204,12 +1204,12 @@ func TestLanes_ReuseAfterDrainDelivers(t *testing.T) {
 	fq.Start()
 	defer fq.Stop()
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
 	waitFor(t, func() bool { return delivered.Load() == 50 }, time.Second)
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
 	waitFor(t, func() bool { return delivered.Load() == 100 }, time.Second)
@@ -1231,7 +1231,7 @@ func TestLanes_ReapsIdleLane(t *testing.T) {
 	fq.Start()
 	defer fq.Stop()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
 	waitFor(t, func() bool { return delivered.Load() == 5 }, time.Second)
@@ -1243,7 +1243,7 @@ func TestLanes_ReapsIdleLane(t *testing.T) {
 	}, time.Second)
 
 	// Reap-then-recreate: a fresh wave to the same target must still deliver.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		enq(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)})
 	}
 	waitFor(t, func() bool { return delivered.Load() == 10 }, time.Second)
@@ -1274,11 +1274,11 @@ func TestLanes_ReapEnqueueRace(t *testing.T) {
 	const targets = 4
 
 	var wg sync.WaitGroup
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
-			for j := 0; j < perGoroutine; j++ {
+			for j := range perGoroutine {
 				target := "t" + strconv.Itoa((g+j)%targets)
 				enq(&Job{Type: "discord:channel", Target: target, Message: json.RawMessage(`{}`)})
 				if j%5 == 0 {
@@ -1314,8 +1314,8 @@ func TestLanes_ShutdownDrainsAllLanes(t *testing.T) {
 	fq.Start()
 
 	const lanes, per = 10, 5
-	for l := 0; l < lanes; l++ {
-		for j := 0; j < per; j++ {
+	for l := range lanes {
+		for range per {
 			enq(&Job{Type: "discord:channel", Target: "t" + strconv.Itoa(l), Message: json.RawMessage(`{}`)})
 		}
 	}
@@ -1342,7 +1342,7 @@ func TestLanes_CleanDeleteDropsOnFullLane(t *testing.T) {
 	defer func() { close(release); fq.Stop() }()
 
 	accepted, dropped := 0, 0
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if fq.enqueue(&Job{Type: "discord:channel", Target: "t", DeleteSentID: "t:" + strconv.Itoa(i)}, false) {
 			accepted++
 		} else {
@@ -1376,7 +1376,7 @@ func TestLaneStats(t *testing.T) {
 	defer func() { close(release); fq.Stop() }()
 
 	// One lane parked in-flight + 6 buffered => depth 6, active 1.
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		fq.enqueue(&Job{Type: "discord:channel", Target: "t", Message: json.RawMessage(`{}`)}, true)
 	}
 	waitFor(t, func() bool {

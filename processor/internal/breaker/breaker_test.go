@@ -22,7 +22,7 @@ func TestBreaker_OpensAfterThreshold(t *testing.T) {
 	var calls atomic.Int32
 	b := New[int](Config{Name: "t", FailureThreshold: 3, Cooldown: time.Minute})
 
-	for n := 0; n < 3; n++ {
+	for n := range 3 {
 		_, err := b.Do(func() (int, error) { calls.Add(1); return 0, errBoom })
 		if !errors.Is(err, errBoom) {
 			t.Fatalf("call %d: err = %v, want errBoom", n, err)
@@ -45,7 +45,7 @@ func TestBreaker_SuccessResetsConsecutive(t *testing.T) {
 	b.Do(func() (int, error) { return 0, errBoom })
 	b.Do(func() (int, error) { return 1, nil })
 	var ran int
-	for n := 0; n < 2; n++ {
+	for n := range 2 {
 		_, err := b.Do(func() (int, error) { ran++; return 0, errBoom })
 		if errors.Is(err, ErrOpen) {
 			t.Fatalf("call %d unexpectedly ErrOpen — consecutive count not reset", n)
@@ -102,10 +102,8 @@ func TestBreaker_ConcurrencyLimits(t *testing.T) {
 	b := New[int](Config{Name: "t", Concurrency: limit})
 	var inFlight, maxSeen atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			b.Do(func() (int, error) {
 				n := inFlight.Add(1)
 				for {
@@ -118,7 +116,7 @@ func TestBreaker_ConcurrencyLimits(t *testing.T) {
 				inFlight.Add(-1)
 				return 0, nil
 			})
-		}()
+		})
 	}
 	wg.Wait()
 	if m := maxSeen.Load(); m > limit {
@@ -129,7 +127,7 @@ func TestBreaker_ConcurrencyLimits(t *testing.T) {
 func TestGate_OpensAndReturnsErrOpen(t *testing.T) {
 	var calls atomic.Int32
 	g := NewGate(Config{Name: "g", FailureThreshold: 2, Cooldown: time.Minute})
-	for n := 0; n < 2; n++ {
+	for n := range 2 {
 		if err := g.Do(func() error { calls.Add(1); return errBoom }); !errors.Is(err, errBoom) {
 			t.Fatalf("call %d err = %v, want errBoom", n, err)
 		}

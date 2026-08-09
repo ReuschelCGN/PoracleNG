@@ -276,9 +276,9 @@ func TestV2Mutes_DeleteAll_EmptyOK(t *testing.T) {
 func TestV2Mutes_Delete_Validation(t *testing.T) {
 	r, _ := newV2MutesTestAPI(t)
 	for _, q := range []string{
-		"?scope=gym",          // value required for gym
-		"?value=g1",           // value without scope
-		"?scope=weather&value=x", // unknown scope
+		"?scope=gym",                // value required for gym
+		"?value=g1",                 // value without scope
+		"?scope=weather&value=x",    // unknown scope
 		"?scope=everything&value=x", // everything takes no value
 	} {
 		t.Run(q, func(t *testing.T) {

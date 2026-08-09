@@ -33,7 +33,7 @@ func RegisterGeofenceAll(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-all", Method: "GET", Path: "/geofence/all",
 		Summary: "All geofence data", Tags: []string{"geofence"},
 		Description: "Returns every loaded geofence (file- and Koji-sourced) as {status, geofence}: name, display metadata, and polygon path per fence.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*geofenceAllOutput, error) {
 		st := stateMgr.Get()
 		out := &geofenceAllOutput{}
@@ -60,7 +60,7 @@ func RegisterGeofenceHash(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-hash", Method: "GET", Path: "/geofence/all/hash",
 		Summary: "MD5 hashes of geofence paths", Tags: []string{"geofence"},
 		Description: "Returns {status, areas}: an MD5 hash of each geofence's polygon path keyed by area name, so clients can detect geofence changes without downloading the full polygon data.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*geofenceHashOutput, error) {
 		st := stateMgr.Get()
 		areas := make(map[string]string, len(st.Fences))
@@ -121,7 +121,7 @@ func RegisterGeofenceGeoJSON(api huma.API, stateMgr *state.Manager) {
 		OperationID: "get-geofence-geojson", Method: "GET", Path: "/geofence/all/geojson",
 		Summary: "Geofences as a GeoJSON FeatureCollection", Tags: []string{"geofence"},
 		Description: "Exports all loaded geofences as a standard GeoJSON FeatureCollection wrapped in {status, geoJSON}, suitable for map display or import into other tools.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*geofenceGeoJSONOutput, error) {
 		st := stateMgr.Get()
 
@@ -201,7 +201,7 @@ func RegisterConfigSchema(api huma.API) {
 		OperationID: "get-config-schema", Method: "GET", Path: "/config/schema",
 		Summary: "Config editor schema", Tags: []string{"config"},
 		Description: "Returns {status, sections}: per-section field metadata (names, types, defaults, descriptions) describing the editable config surface. Drives the config-editor UI; pair with GET /config/values for current values.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, _ *struct{}) (*configSchemaOutput, error) {
 		out := &configSchemaOutput{}
 		out.Body.Status = "ok"
@@ -312,7 +312,7 @@ func RegisterMasterdataGrunts(api huma.API, gd *gamedata.GameData) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-masterdata-grunts", Method: "GET", Path: "/masterdata/grunts",
-		Summary:     "Grunt types",
+		Summary: "Grunt types",
 		Description: "Returns the poracle-v2 grunts map keyed by grunt id (an empty object when game data is unavailable). Keys are " +
 			"arbitrary grunt ids; each value is a poracle2Grunt (type, gender, grunt category, per-slot reward flags, encounters).",
 		Tags:     []string{"masterdata"},
@@ -350,7 +350,7 @@ func RegisterSnapshotGet(api huma.API, store SnapshotReader) {
 		OperationID: "get-snapshot", Method: "GET", Path: "/snapshots/{messageID}",
 		Summary: "Inspect a delivered-message snapshot", Tags: []string{"snapshots"},
 		Description: "Returns the stored enrichment snapshot for a delivered message, addressed by message id plus the `target` query (destination id). Admin diagnostics for the buttons/snapshots feature. 503 when [snapshots] is disabled; 404 when the snapshot has expired or never existed.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(ctx context.Context, in *snapshotGetInput) (*snapshotGetOutput, error) {
 		// proc.snapshotStore is a nil snapshots.Store interface when
 		// [snapshots] enabled = false; passed through the SnapshotReader

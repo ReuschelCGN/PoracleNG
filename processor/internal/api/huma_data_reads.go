@@ -195,7 +195,7 @@ func RegisterGeocode(api huma.API, geocoder ForwardGeocoder) {
 		OperationID: "get-geocode-forward", Method: "GET", Path: "/geocode/forward",
 		Summary: "Forward geocode lookup", Tags: []string{"geocode"},
 		Description: "Resolves a free-text place query (`q`) to coordinates via the configured geocoding provider. Returns an array of candidate results (lat/lon plus address detail); an empty array when nothing matched. 503 when no geocoder is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *geocodeQueryInput) (*geocodeForwardOutput, error) {
 		// Guard against both an interface-nil and a typed-nil
 		// *geocoding.Geocoder (proc.enricher.Geocoder is nil when geocoding

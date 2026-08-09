@@ -20,12 +20,12 @@ func TestResolveLevel(t *testing.T) {
 		{"info", log.InfoLevel},
 		{"warn", log.WarnLevel},
 		{"error", log.ErrorLevel},
-		{"verbose", log.InfoLevel},  // legacy Winston alias
-		{"silly", log.TraceLevel},   // legacy Winston alias
-		{"VERBOSE", log.InfoLevel},  // case-insensitive
+		{"verbose", log.InfoLevel},   // legacy Winston alias
+		{"silly", log.TraceLevel},    // legacy Winston alias
+		{"VERBOSE", log.InfoLevel},   // case-insensitive
 		{"  silly ", log.TraceLevel}, // trimmed
-		{"", log.InfoLevel},         // empty → default
-		{"nonsense", log.InfoLevel}, // unknown → default
+		{"", log.InfoLevel},          // empty → default
+		{"nonsense", log.InfoLevel},  // unknown → default
 	}
 	for _, c := range cases {
 		if got := resolveLevel(c.in); got != c.want {
