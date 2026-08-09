@@ -41,9 +41,9 @@ serializes per-channel but still runs on the shared channel + workers).
 |---|----------|
 | D1 | **Supersede #182.** One redesign PR carries the clean-delete fix; #182 closes. #182's building blocks are reused: `doWithRetry`/`doPostWithRetry` (429 Retry-After backoff), `Job.DeleteSentID`, the `MessageTracker` clean-delete hook, and the removal of `Delete`'s self-`Wait`. |
 | D2 | **Per-destination lanes, spawn-on-demand + idle-reap.** A lane = a bounded buffered channel + one drainer goroutine, keyed by `job.Target`. Created on first job for a target; the drainer exits after an idle timeout with an empty lane and is re-created on the next job. Bounds goroutines/memory to *active* destinations. |
-| D3 | **Global per-platform concurrency cap retained.** Each drainer acquires the platform semaphore (`discordSem`/`webhookSem`/`telegramSem`, existing sizes) around the actual API call, so N active lanes never fire N simultaneous requests (protects the global 50/sec bucket + socket limits). Isolation from lanes; global safety from the cap. |
+| D3 | **Global per-platform concurrency cap retained, but held only during the wire call.** The platform semaphore (`discordSem`/`webhookSem`/`telegramSem`, existing sizes) wraps **only the in-flight HTTP request** — acquired/released *per attempt inside* `doWithRetry`/`doPostWithRetry`, NOT across the proactive `WaitForRateLimit` nor the 429 `Retry-After` backoff. A waiting or backing-off drainer therefore holds **no** slot, so a few rate-limited routes can't exhaust the semaphore and stall healthy routes. (This fixes a pre-existing bug: today the semaphore is held across the whole `Send`, backoff included.) |
 | D4 | **`delivery_queue_size` becomes the PER-ROUTE buffer** (default stays 200 — now "200 queued for a single route", not shared). |
-| D5 | **Overflow is per job kind.** Sends (`Dispatch`) block when a route's lane is full (per-route backpressure to the render pool — only that route's dispatch blocks, not all). Clean-deletes enqueue **non-blocking** (drop-on-full → re-cleaned on next startup load), so they never stall the tracker's eviction goroutine. |
+| D5 | **Overflow is per job kind, and bounded.** Sends (`Dispatch`) **block** when a route's lane is full — per-route backpressure to the render pool, only that route's dispatch blocks, not all. Bounded-and-block is deliberate: PoracleJS used an unbounded queue and ultimately failed under load; a bounded lane applies backpressure instead of growing without limit. A full-lane block is **logged** (rate-limited, naming the target) and counted (metric). Clean-deletes enqueue **non-blocking** (drop-on-full → logged + counted, re-cleaned on next startup load), so they never stall the tracker's eviction goroutine. |
 
 ## Design
 
@@ -62,12 +62,15 @@ type lane struct {
 
 ### FairQueue changes
 
-- Remove `ch` (shared), `destLocks`, the fixed `worker()` pool.
-- Add `lanesMu sync.Mutex` + `lanes map[string]*lane`.
-- Keep `discordSem`/`webhookSem`/`telegramSem` (global caps), `rateLimiter`,
-  `failCounts`, `tracker`, `dispatcher` — the whole `processJob` pipeline is
-  reused, just moved into the drainer and keyed off a lane instead of the shared
-  channel.
+- Remove `ch` (shared), `destLocks`, the fixed `worker()` pool, and the
+  `discordSem`/`webhookSem`/`telegramSem` fields (the semaphores move to the
+  senders per D3).
+- Add `lanesMu sync.Mutex` + `lanes map[string]*lane`, a `stopped bool`, and
+  `perRouteBuf int` (from `delivery_queue_size`, the per-lane channel size).
+- Keep `rateLimiter` wiring, `failCounts`, `tracker`, `dispatcher` — the whole
+  `processJob` pipeline is reused, just moved into the drainer and keyed off a
+  lane instead of the shared channel.
+- `const laneIdleTimeout = 60 * time.Second` (not configurable — a const).
 
 ### Enqueue (race-safe lane get-or-create)
 
@@ -113,7 +116,7 @@ standard "counter-under-lock" reap-safety pattern.
 ```
 func (fq *FairQueue) runLane(l *lane) {
     defer fq.wg.Done()             // registered on spawn
-    idle := time.NewTimer(fq.laneIdleTimeout)
+    idle := time.NewTimer(laneIdleTimeout)
     for {
         select {
         case job, ok := <-l.ch:
@@ -121,7 +124,7 @@ func (fq *FairQueue) runLane(l *lane) {
             if !idle.Stop() { <-idle.C }
             fq.processJob(job)      // full existing pipeline (below)
             fq.lanesMu.Lock(); l.pending--; fq.lanesMu.Unlock()
-            idle.Reset(fq.laneIdleTimeout)
+            idle.Reset(laneIdleTimeout)
         case <-idle.C:
             fq.lanesMu.Lock()
             if l.pending == 0 {
@@ -130,18 +133,64 @@ func (fq *FairQueue) runLane(l *lane) {
                 return              // reap: no work, no in-flight enqueue
             }
             fq.lanesMu.Unlock()
-            idle.Reset(fq.laneIdleTimeout)
+            idle.Reset(laneIdleTimeout)
         }
     }
 }
 ```
 
-`processJob` keeps everything it does today **minus the destLock** (lane
-serialization is inherent — one drainer per target): `WaitForRateLimit(target)`
-→ acquire platform semaphore → alert-limit `Check` (Phase-2) → Send/Edit/Delete
-(with `doWithRetry` 429 backoff) → tracking / snapshot write / reply-index /
-failure-disable, OR the `DeleteSentID` clean-delete branch. `WaitForRateLimit`
-stays before the semaphore so a backing-off lane doesn't hold a concurrency slot.
+`processJob` keeps everything it does today **minus the destLock and the
+semaphore** (lane serialization is inherent — one drainer per target; the
+semaphore moves into the sender, see below): `WaitForRateLimit(target)` (no slot)
+→ clean-delete branch (`DeleteSentID`) OR [edit-before-send → pause gate →
+expired-squash → disabled check → alert-limit `Check` (Phase-2) → `Send`] →
+tracking / snapshot write / reply-index / failure-disable.
+
+### Concurrency: the semaphore is held only during the wire call (D3)
+
+**The problem this fixes.** Today `processJob` acquires the semaphore
+(`sem <- struct{}{}`, `queue.go:167`) and holds it across the whole
+`Send`/`Delete`. But `Send` → `doWithRetry` **sleeps through the 429
+`Retry-After` backoff while still holding the slot**. So in exactly the
+rate-limited scenario, a handful of backing-off destinations pin every slot and
+stall all healthy routes — and with per-lane drainers that's N sleeping drainers
+each holding a slot. The proactive `WaitForRateLimit` is already correctly
+*outside* the semaphore (`queue.go:158-163`); only the reactive 429 backoff is
+inside it.
+
+**The rule.** A platform semaphore slot is occupied **only while a request is
+genuinely on the wire** — never during a wait or a backoff sleep. Two waits, both
+kept slot-free:
+
+1. **Proactive `WaitForRateLimit(target)`** — stays in the drainer, before the
+   alert-limit `Check` (preserving today's ordering), and acquires no slot. A
+   lane waiting on its route's rate limit holds nothing.
+2. **Reactive 429/5xx backoff** — moves *inside* the semaphore's grip today; the
+   fix is to make the semaphore grip finer than the retry loop.
+
+**The change.** Move the semaphore (and the `DeliveryInFlight{platform}` gauge)
+off the `FairQueue` and into the senders, acquired **per HTTP attempt** inside
+`doWithRetry` / `doPostWithRetry`:
+
+```
+for attempt := 0; attempt <= maxRetries; attempt++ {
+    acquire(sem)                       // slot held...
+    resp, status := ds.doRequest(...)  // ...only across the wire call
+    release(sem)                        // ...released before we interpret
+    if status == 429 { sleep(retryAfter); continue }  // backoff holds NO slot
+    if status >= 500 { sleep(backoff);   continue }
+    return resp, status
+}
+```
+
+Net: N lanes stuck in rate-limit wait or 429 backoff consume **zero** slots
+between attempts, and `DeliveryInFlight` now reads true wire concurrency. The
+semaphores (`discordSem` for channel/DM/thread, `webhookSem` for webhooks,
+`telegramSem`) are constructed on the senders from the same config sizes; the
+DiscordSender selects channel-vs-webhook the same way it already resolves routing
+(via `resolveMessageURL`'s target/sentID shape). The `FairQueue` no longer owns
+the semaphore objects or the fixed worker pool; the drainer's `processJob` keeps
+calling `sender.WaitForRateLimit(target)` before `Check` exactly as today.
 
 ### Clean-delete integration (from #182, retargeted)
 
@@ -176,21 +225,66 @@ existing recover) so an eviction racing shutdown drops safely.
 - `delivery_queue_size` (default 200) → **per-route** lane buffer (doc + example
   comment updated: "max buffered jobs per destination").
 - `concurrent_discord_destinations` / `_webhooks` / `concurrent_telegram_destinations`
-  → **global** per-platform concurrent-API-call caps (semaphores), unchanged.
-- New (optional) `delivery_lane_idle_secs` (default ~60) — idle timeout before a
-  lane's drainer is reaped.
+  → **global** per-platform concurrent-API-call caps (semaphores). Sizes
+  unchanged; they now live on the senders and gate only the wire call (D3).
+- **No new config knob.** The lane idle timeout is a `const laneIdleTimeout =
+  60 * time.Second` — deliberately not exposed (one less thing to tune wrong).
+
+### Instrumentation
+
+The goal: make a *developing* bad situation visible before it becomes a global
+stall, without exploding metric cardinality (no per-target Prometheus labels).
+Two surfaces:
+
+**1. Aggregate gauges/counters** (extend `internal/metrics`, all bounded
+cardinality — no target label):
+
+| Metric | Kind | Meaning |
+|--------|------|---------|
+| `delivery_active_lanes` | gauge | live lanes right now (spawned − reaped) |
+| `delivery_lane_queued_total` | gauge | sum of `len(l.ch)` across lanes — total buffered backlog |
+| `delivery_lane_max_depth` | gauge | deepest single lane's `len(l.ch)` — the head-of-line signal |
+| `delivery_lanes_near_capacity` | gauge | count of lanes with `len(l.ch) ≥ 80% × perRouteBuf` |
+| `delivery_lane_backpressure_total` | counter | send-enqueue blocked on a full lane (D5) |
+| `delivery_clean_delete_dropped_total` | counter | clean-delete dropped on a full lane (D5) |
+| `delivery_lane_spawned_total` / `delivery_lane_reaped_total` | counters | lane lifecycle churn |
+| `delivery_inflight{platform}` | gauge (existing) | semaphore occupancy — now = true wire concurrency (D3) |
+
+The four lane gauges are computed by a cheap walk of the `lanes` map under
+`lanesMu` when the periodic `[Status]` reporter samples (once per interval — not
+per job), so no hot-path cost. A `FairQueue.LaneStats()` method returns
+`(active, totalQueued, maxDepth, deepestTarget, nearCap)` in one lock pass.
+
+**2. The periodic `[Status]` health log** (`cmd/processor/main.go`, the existing
+`Delivery: Discord:%d+%d Telegram:%d Tracked:%d RateLimited:%d` line) gains a
+lane summary and — critically — **names the worst offender** so an operator can
+act:
+
+```
+Delivery: Discord:3+1 Telegram:0 Tracked:812 RateLimited:2 | Lanes:14 active, 190 queued, deepest=173 (channel:1377245284236660836), 2 near-cap
+```
+
+`deepestTarget` is logged as a *field value*, not a metric label, so cardinality
+stays bounded. When `maxDepth ≥ 80% × perRouteBuf` OR `backpressure_total`
+advanced since the last sample, the reporter escalates that line to `WARN` (the
+"we're getting into a bad situation" signal). D5's per-event full-lane logs
+(rate-limited, naming the target) remain the fine-grained trail.
 
 ## What carries over vs. changes
 
-- **Reused as-is**: `doWithRetry` / `doPostWithRetry` (429 backoff), `Job.DeleteSentID`,
-  `MessageTracker.cleanDelete` + `cleanDeleteHook`, `Delete` self-`Wait` removal,
-  the whole per-job pipeline (rate-limit `Check`, tracking, snapshot, reply
-  threading, edit-before-send, failure-disable), the platform semaphores, the
-  `DiscordRateLimiter`.
+- **Reused as-is**: `Job.DeleteSentID`, `MessageTracker.cleanDelete` +
+  `cleanDeleteHook`, `Delete` self-`Wait` removal, the whole per-job pipeline
+  (rate-limit `Check`, tracking, snapshot, reply threading, edit-before-send,
+  failure-disable), the `DiscordRateLimiter`, the platform semaphore *sizes*
+  (from config).
+- **Moved (per D3)**: the platform semaphores + the `DeliveryInFlight{platform}`
+  gauge from `FairQueue` onto the senders, with `acquire`/`release` inside
+  `doWithRetry` / `doPostWithRetry` so a slot wraps only the wire call, not the
+  backoff. `WaitForRateLimit` stays a drainer call (before `Check`), unchanged.
 - **Removed**: shared `ch`, `destLocks`, fixed `worker()` pool + `Start()`'s
-  "spawn N workers".
+  "spawn N workers", the `FairQueue`'s semaphore fields.
 - **Added**: `lane`, `lanes` map + `lanesMu`, `runLane` drainer, spawn/reap
-  lifecycle, `enqueue`.
+  lifecycle, `enqueue`, `LaneStats()`, the lane metrics + `[Status]` lane summary.
 
 ## Testing
 
@@ -206,8 +300,17 @@ existing recover) so an eviction racing shutdown drops safely.
   a reaped-then-re-enqueued target still delivers.
 - **Global cap**: with `concurrent_discord_destinations=2` and many active
   lanes, at most 2 concurrent Discord API calls.
-- **Overflow**: a full lane blocks a send (backpressure) but drops a clean-delete
-  (non-blocking); other lanes unaffected.
+- **Semaphore released during waits (D3)**: a sender parked in `WaitForRateLimit`
+  or 429 `Retry-After` backoff must hold **zero** semaphore slots. Assert that
+  with `concurrent_discord_destinations=1` and lane A's sender in backoff, a job
+  to lane B still acquires the slot and completes (i.e. A's backoff didn't pin
+  the only slot). This is the direct regression test for the pre-existing bug.
+- **Overflow**: a full lane blocks a send (backpressure, `backpressure_total`
+  increments) but drops a clean-delete (non-blocking, `clean_delete_dropped_total`
+  increments); other lanes unaffected.
+- **Instrumentation**: `LaneStats()` returns correct `(active, totalQueued,
+  maxDepth, deepestTarget, nearCap)` for a hand-built set of lanes; the WARN
+  escalation fires when `maxDepth ≥ 80% × perRouteBuf`.
 - **Shutdown**: buffered jobs across many lanes all deliver before `Stop()`
   returns; `-race` clean.
 - **Clean-delete end-to-end**: eviction burst on one channel serializes on its
@@ -233,4 +336,5 @@ existing recover) so an eviction racing shutdown drops safely.
 
 - Priority between sends and clean-deletes within a lane (FIFO for now).
 - Cross-platform fairness knobs beyond the existing per-platform caps.
-- Persisting per-lane depth metrics (add a gauge if useful, not required).
+- **Per-target** Prometheus time series (deliberately avoided — the deepest
+  target is a log field, not a metric label, to keep cardinality bounded).
