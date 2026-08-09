@@ -181,6 +181,22 @@ func (fq *FairQueue) processJob(job *Job) {
 		return
 	}
 
+	// Clean-delete job (routed here from the tracker's TTL eviction). It has
+	// already taken the per-destination lock + WaitForRateLimit + semaphore
+	// above, so deletes serialise with each other and with sends to this
+	// target — the fix for a burst of expiring alerts firing concurrent DELETEs
+	// that 429 each other into failure. Sender.Delete carries its own 429
+	// Retry-After backoff. No alert-limit accounting, tracking, snapshot, or
+	// failure-disable: a delete is cleanup, not a send.
+	if job.DeleteSentID != "" {
+		if err := sender.Delete(fq.ctx, job.DeleteSentID); err != nil {
+			logref.Warnf(job.LogReference, "delivery: clean delete failed for %s: %v", job.DeleteSentID, err)
+		} else {
+			metrics.DeliveryCleanTotal.Inc()
+		}
+		return
+	}
+
 	start := time.Now()
 
 	// If job has EditKey, try editing existing message first.

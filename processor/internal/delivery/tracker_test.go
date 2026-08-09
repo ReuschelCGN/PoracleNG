@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -126,6 +127,37 @@ func TestTrackerCleanOnExpiry(t *testing.T) {
 	}
 	if deleted[0] != "msg-clean-1" {
 		t.Errorf("expected deleted msg-clean-1, got %s", deleted[0])
+	}
+}
+
+// TestTracker_CleanDeleteRoutesThroughHook verifies that when a clean-delete
+// hook is installed (the Dispatcher wires it to enqueue onto the FairQueue),
+// TTL eviction routes the delete through the hook instead of firing the
+// direct-Delete fallback goroutine.
+func TestTracker_CleanDeleteRoutesThroughHook(t *testing.T) {
+	mt, mock := newTestTracker(t)
+
+	var hookCalls atomic.Int32
+	var gotSentID atomic.Value
+	mt.SetCleanDeleteHook(func(msg *TrackedMessage) {
+		hookCalls.Add(1)
+		gotSentID.Store(msg.SentID)
+	})
+
+	mt.Track("clean:discord:channel:chan-1:msg-hooked", &TrackedMessage{
+		SentID: "msg-hooked", Target: "chan-1", Type: "discord:channel", Clean: 1,
+	}, 50*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+
+	if got := hookCalls.Load(); got != 1 {
+		t.Fatalf("expected clean-delete to route through the hook once, got %d", got)
+	}
+	if got, _ := gotSentID.Load().(string); got != "msg-hooked" {
+		t.Errorf("hook got sentID %q, want msg-hooked", got)
+	}
+	if d := mock.getDeleted(); len(d) != 0 {
+		t.Errorf("hook path must not call the sender's Delete directly, but got %v", d)
 	}
 }
 

@@ -105,12 +105,10 @@ func (ds *DiscordSender) Delete(ctx context.Context, sentID string) error {
 	if err != nil {
 		return err
 	}
-	// Clean-deletion bypasses the FairQueue, so gate here on the same per-route
-	// + global rate limiter posts use (same bucket per channel/webhook), then
-	// let doWithRetry back off on 429s with Retry-After. A burst of expiring
-	// alerts (many areas at once) would otherwise fire unthrottled DELETEs,
-	// 429, and leave the expired messages sitting in the channel.
-	ds.rateLimiter.Wait(rlKey)
+	// Clean-deletion is routed through the FairQueue, which already took the
+	// per-destination lock + WaitForRateLimit before calling Delete (so the
+	// proactive gate + serialisation happen there, same as sends). Here we only
+	// need the reactive 429 Retry-After backoff + header-driven limiter updates.
 	respBody, status, err := ds.doWithRetry(ctx, http.MethodDelete, url, nil, "", auth, rlKey, "clean-delete")
 	if err != nil {
 		return err

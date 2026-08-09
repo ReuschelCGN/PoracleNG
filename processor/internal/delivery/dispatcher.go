@@ -97,9 +97,6 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 	}
 
 	tracker := NewMessageTracker(cfg.CacheDir, senders)
-	if err := tracker.Load(); err != nil {
-		log.Warnf("delivery: failed to load tracker cache: %v", err)
-	}
 
 	queueSize := cfg.QueueSize
 	if queueSize <= 0 {
@@ -109,8 +106,38 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 
 	d := &Dispatcher{ch: ch, tracker: tracker}
 	d.queue = NewFairQueue(ch, senders, tracker, cfg.Queue, d)
+	// Route clean-deletion through the queue (serialised per destination +
+	// rate-limited). Set BEFORE Load so recovery-time cleans also route
+	// through it. Enqueued jobs sit in the buffered channel until Start().
+	tracker.SetCleanDeleteHook(d.enqueueCleanDelete)
+
+	if err := tracker.Load(); err != nil {
+		log.Warnf("delivery: failed to load tracker cache: %v", err)
+	}
 
 	return d, nil
+}
+
+// enqueueCleanDelete is the tracker's clean-delete hook: it enqueues a delete
+// Job onto the FairQueue so the delete takes the per-destination lock +
+// WaitForRateLimit that sends do, serialising deletes with each other and with
+// sends to the same target (instead of firing concurrent DELETEs that 429 each
+// other). Non-blocking + panic-guarded: it can fire during shutdown (channel
+// closing) or under a saturated queue; a dropped clean is re-attempted on the
+// next startup load.
+func (d *Dispatcher) enqueueCleanDelete(msg *TrackedMessage) {
+	defer func() { _ = recover() }() // ch may close mid-shutdown; drop safely
+	job := &Job{
+		Type:         msg.Type,
+		Target:       msg.Target,
+		DeleteSentID: msg.SentID,
+		LogReference: msg.SentID,
+	}
+	select {
+	case d.ch <- job:
+	default:
+		log.Warnf("delivery: clean-delete queue full, dropping delete for %s:%s (re-cleaned on next load)", msg.Target, msg.SentID)
+	}
 }
 
 // NewDispatcherWithSenders creates a Dispatcher with externally-provided senders (for testing).
@@ -121,6 +148,9 @@ func NewDispatcherWithSenders(senders map[string]Sender, tracker *MessageTracker
 	ch := make(chan *Job, queueSize)
 	d := &Dispatcher{ch: ch, tracker: tracker}
 	d.queue = NewFairQueue(ch, senders, tracker, queueCfg, d)
+	if tracker != nil { // some tests construct a dispatcher without a tracker
+		tracker.SetCleanDeleteHook(d.enqueueCleanDelete)
+	}
 	return d
 }
 

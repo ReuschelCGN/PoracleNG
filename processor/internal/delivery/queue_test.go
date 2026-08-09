@@ -331,6 +331,75 @@ func TestFairQueueEditFallback(t *testing.T) {
 	}
 }
 
+// deleteTrackingSender records max Delete concurrency + delete/send counts.
+type deleteTrackingSender struct {
+	concurrent    atomic.Int32
+	maxConcurrent atomic.Int32
+	deletes       atomic.Int32
+	sends         atomic.Int32
+}
+
+func (s *deleteTrackingSender) Send(_ context.Context, job *Job) (*SentMessage, error) {
+	s.sends.Add(1)
+	return &SentMessage{ID: "sent-" + job.Target}, nil
+}
+
+func (s *deleteTrackingSender) Delete(_ context.Context, _ string) error {
+	cur := s.concurrent.Add(1)
+	for {
+		old := s.maxConcurrent.Load()
+		if cur <= old || s.maxConcurrent.CompareAndSwap(old, cur) {
+			break
+		}
+	}
+	time.Sleep(5 * time.Millisecond) // hold the slot to expose any concurrency
+	s.concurrent.Add(-1)
+	s.deletes.Add(1)
+	return nil
+}
+
+func (s *deleteTrackingSender) Edit(_ context.Context, _ string, _ json.RawMessage, _ []byte) error {
+	return nil
+}
+func (s *deleteTrackingSender) WaitForRateLimit(string) {}
+func (s *deleteTrackingSender) Platform() string        { return "discord" }
+
+// TestFairQueue_CleanDeleteSerializedPerTarget proves the fix for the reported
+// 429 storm: many clean-deletes to the SAME channel are serialised (max 1
+// in-flight) by the per-destination lock — instead of firing concurrently and
+// 429-ing each other into failure. ConcurrentDiscord=8 would otherwise allow 8
+// at once. A delete job must also never trigger a Send.
+func TestFairQueue_CleanDeleteSerializedPerTarget(t *testing.T) {
+	sender := &deleteTrackingSender{}
+	senders := map[string]Sender{"discord": sender}
+	ch := make(chan *Job, 64)
+	tracker := NewMessageTracker(t.TempDir(), senders)
+	t.Cleanup(func() { tracker.cache.Stop() })
+
+	fq := NewFairQueue(ch, senders, tracker, QueueConfig{
+		ConcurrentDiscord:  8,
+		ConcurrentWebhook:  1,
+		ConcurrentTelegram: 1,
+	}, nil)
+	fq.Start()
+
+	const n = 20
+	for i := 0; i < n; i++ {
+		ch <- &Job{Type: "discord:channel", Target: "chan1", DeleteSentID: "chan1:msg" + strconv.Itoa(i)}
+	}
+	fq.Stop() // closes ch and drains all workers
+
+	if got := sender.deletes.Load(); got != n {
+		t.Errorf("expected %d deletes, got %d", n, got)
+	}
+	if got := sender.maxConcurrent.Load(); got != 1 {
+		t.Errorf("clean-deletes to the same target must serialise (max 1 concurrent), got %d — the concurrency bug", got)
+	}
+	if got := sender.sends.Load(); got != 0 {
+		t.Errorf("a delete job must not trigger a Send, got %d", got)
+	}
+}
+
 func TestFairQueueCleanTracking(t *testing.T) {
 	discordMock := &queueMockSender{platform: "discord", sentID: "chan1:msg-42"}
 	senders := map[string]Sender{"discord": discordMock}
