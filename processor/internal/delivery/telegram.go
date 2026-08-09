@@ -334,20 +334,20 @@ func (ts *TelegramSender) deleteMessage(ctx context.Context, chatID string, mess
 		"chat_id":    chatID,
 		"message_id": messageID,
 	}
-	resp, err := ts.doPost(ctx, "deleteMessage", body)
+	// Clean-deletion bypasses the send path's callWithRetry, so add the same
+	// 429 Retry-After backoff here — a burst of expiring alerts (many areas at
+	// once) otherwise 429s and leaves the expired messages in the chat.
+	_, status, err := ts.doPostWithRetry(ctx, "deleteMessage", body, "clean-delete")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusOK:
 		return nil
 	case http.StatusBadRequest, http.StatusForbidden:
-		return nil // can't delete, don't retry
+		return nil // can't delete (already gone / no permission), don't retry
 	default:
-		return fmt.Errorf("telegram deleteMessage returned status %d", resp.StatusCode)
+		return fmt.Errorf("telegram deleteMessage returned status %d", status)
 	}
 }
 
@@ -390,17 +390,15 @@ func (ts *TelegramSender) Edit(ctx context.Context, sentID string, message json.
 		"parse_mode":               parseMode,
 		"disable_web_page_preview": true,
 	}
-	resp, err := ts.doPost(ctx, "editMessageText", body)
+	// Edits also bypass callWithRetry; give them the same 429 backoff.
+	_, status, err := ts.doPostWithRetry(ctx, "editMessageText", body, "edit")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	if status >= 200 && status < 300 {
 		return nil
 	}
-	return fmt.Errorf("telegram editMessageText returned status %d", resp.StatusCode)
+	return fmt.Errorf("telegram editMessageText returned status %d", status)
 }
 
 // applyTopic adds message_thread_id to a request body when the target
@@ -600,14 +598,79 @@ func (ts *TelegramSender) callWithRetry(ctx context.Context, method string, body
 	return 0, fmt.Errorf("telegram %s: max retries exceeded", method)
 }
 
-// doPost marshals body to JSON and posts to the Telegram API.
-func (ts *TelegramSender) doPost(ctx context.Context, method string, body any) (*http.Response, error) {
+// doPostWithRetry posts to the Telegram API with 429 Retry-After backoff and
+// transport/5xx retry — the rate-limit handling clean-deletes and edits need
+// but the single-shot doPost lacks. It does NOT interpret 4xx (unlike the send
+// path's callWithRetry, which retries any non-2xx): a delete/edit 400 usually
+// means "message already gone", which the callers map to success rather than
+// retrying. Returns the final response body and status after retries.
+func (ts *TelegramSender) doPostWithRetry(ctx context.Context, method string, body map[string]any, logRef string) ([]byte, int, error) {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling request body: %w", err)
+		return nil, 0, fmt.Errorf("marshaling request body: %w", err)
 	}
-	return ts.doPostRaw(ctx, method, jsonBody)
+
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, 0, ctx.Err()
+			default:
+			}
+		}
+
+		resp, err := ts.doPostRaw(ctx, method, jsonBody)
+		if err != nil {
+			if attempt < maxRetries {
+				time.Sleep(time.Second)
+				continue
+			}
+			return nil, 0, err
+		}
+
+		respBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", readErr)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			var tgResp telegramResponse
+			json.Unmarshal(respBody, &tgResp) //nolint:errcheck
+			retryAfter := 1
+			if tgResp.Parameters != nil && tgResp.Parameters.RetryAfter > 0 {
+				retryAfter = tgResp.Parameters.RetryAfter
+			}
+			metrics.DeliveryRateLimited.WithLabelValues("telegram").Inc()
+			ts.Record429()
+			// Cap retry to 60s — values like 23501s indicate a permanent block.
+			if retryAfter > 60 {
+				logref.Warnf(logRef, "telegram: 429 for %s %s, retry_after=%ds is excessive — capping to 60s and giving up (attempt %d/%d)", method, body["chat_id"], retryAfter, attempt+1, maxRetries+1)
+				return respBody, resp.StatusCode, fmt.Errorf("telegram rate limit too long: %ds", retryAfter)
+			}
+			logref.Warnf(logRef, "telegram: 429 for %s %s, retry_after=%ds (attempt %d/%d)", method, body["chat_id"], retryAfter, attempt+1, maxRetries+1)
+			backoffUntil := ts.now().Add(time.Duration(retryAfter) * time.Second)
+			ts.setBackoffUntil(backoffUntil)
+			select {
+			case <-ctx.Done():
+				return respBody, resp.StatusCode, ctx.Err()
+			case <-time.After(time.Until(backoffUntil)):
+			}
+			continue
+		}
+
+		if resp.StatusCode >= 500 && attempt < maxRetries {
+			logref.Warnf(logRef, "telegram: %s to %s failed (attempt %d/%d): status=%d", method, body["chat_id"], attempt+1, maxRetries+1, resp.StatusCode)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		return respBody, resp.StatusCode, nil
+	}
+	return nil, 0, fmt.Errorf("telegram %s: max retries exceeded", method)
 }
+
 
 // doPostRaw posts raw JSON to the Telegram API.
 func (ts *TelegramSender) doPostRaw(ctx context.Context, method string, body []byte) (*http.Response, error) {

@@ -255,6 +255,7 @@ Delivery is handled via platform REST APIs (Discord API v10, Telegram Bot API).
 - Global 50 req/sec token bucket
 - `Retry-After` parsing with Dexter's heuristic (>1000 → milliseconds)
 - Cleanup when map >1000 entries
+- **Applies to POST, PATCH (edit) AND DELETE (clean-deletion).** All three share the same 429 Retry-After backoff + header-driven limiter updates via `DiscordSender.doWithRetry` (Telegram: `doPostWithRetry`). Sends/edits get the proactive per-route/global `Wait` from the FairQueue; **clean-deletion bypasses the FairQueue**, so `DiscordSender.Delete` calls `rateLimiter.Wait(target)` itself before deleting — keyed on the same channel/webhook target as posts, so they share the bucket. Without this, a burst of expiring clean-tracked alerts (many areas at once) 429s the delete route and leaves expired messages in the channel.
 
 **Message Tracker** (`delivery/tracker.go`):
 - TTL cache (`ttlcache/v3`) keyed by `target:messageID`

@@ -404,6 +404,60 @@ func TestDiscordRateLimit429(t *testing.T) {
 	}
 }
 
+// TestDiscordDelete_RetriesOn429 covers the reported clean-delete bug: a burst
+// of expiring alerts 429s the DELETE route, and previously the delete failed
+// with "discord delete returned status 429" (no retry), leaving the expired
+// message in the channel. Delete must now back off on 429 (Retry-After) and
+// retry — sharing the same rate-limit handling as posts.
+func TestDiscordDelete_RetriesOn429(t *testing.T) {
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&attempts, 1)
+		if n == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"retry_after":0.01}`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	ds := newTestDiscordSender(server.URL)
+	if err := ds.Delete(context.Background(), "channel123:msg456"); err != nil {
+		t.Fatalf("Delete should succeed after a 429 retry, got: %v", err)
+	}
+	if got := atomic.LoadInt32(&attempts); got < 2 {
+		t.Errorf("expected the delete to retry after 429 (>=2 attempts), got %d", got)
+	}
+}
+
+// TestDiscordEdit_RetriesOn429 — edits bypassed the send path's retry too, so a
+// 429 on an in-place update (e.g. RSVP change) used to fail without retry.
+func TestDiscordEdit_RetriesOn429(t *testing.T) {
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&attempts, 1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"retry_after":0.01}`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg456"}`)) //nolint:errcheck
+	}))
+	defer server.Close()
+
+	ds := newTestDiscordSender(server.URL)
+	if err := ds.Edit(context.Background(), "channel123:msg456", json.RawMessage(`{"content":"edited"}`), nil); err != nil {
+		t.Fatalf("Edit should succeed after a 429 retry, got: %v", err)
+	}
+	if got := atomic.LoadInt32(&attempts); got < 2 {
+		t.Errorf("expected the edit to retry after 429 (>=2 attempts), got %d", got)
+	}
+}
+
 func TestDiscordPermanentError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

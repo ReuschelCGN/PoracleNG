@@ -461,6 +461,32 @@ func TestTelegramRateLimit429(t *testing.T) {
 	}
 }
 
+// TestTelegramDelete_RetriesOn429 — the clean-delete path bypassed
+// callWithRetry, so a 429 used to fail the delete without retry. deleteMessage
+// now backs off on Retry-After via doPostWithRetry.
+func TestTelegramDelete_RetriesOn429(t *testing.T) {
+	attempt := 0
+	server, sender, calls := setupTelegramServer(t, func(method string, body map[string]any) (int, any) {
+		attempt++
+		if attempt == 1 {
+			return http.StatusTooManyRequests, map[string]any{
+				"ok":          false,
+				"description": "Too Many Requests: retry after 1",
+				"parameters":  map[string]any{"retry_after": 1},
+			}
+		}
+		return http.StatusOK, map[string]any{"ok": true, "result": true}
+	})
+	defer server.Close()
+
+	if err := sender.Delete(context.Background(), "444|text=77"); err != nil {
+		t.Fatalf("Delete should succeed after a 429 retry, got: %v", err)
+	}
+	if c := *calls; len(c) != 2 {
+		t.Fatalf("expected 2 calls (1 retry after 429), got %d", len(c))
+	}
+}
+
 func TestTelegramPermanentError(t *testing.T) {
 	server, sender, _ := setupTelegramServer(t, func(method string, body map[string]any) (int, any) {
 		return http.StatusForbidden, map[string]any{
