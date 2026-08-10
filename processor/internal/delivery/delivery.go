@@ -50,6 +50,15 @@ type Job struct {
 	// persisted with the job.
 	Template string `json:"-"`
 
+	// DeleteSentID, when non-empty, marks this as a clean-delete job: the
+	// FairQueue deletes that message (via Sender.Delete) instead of sending.
+	// Routing clean-deletion through the queue gives it the same per-destination
+	// lane (and WaitForRateLimit) that sends get, so a burst of expiring tracked
+	// alerts is serialised per channel — by that channel's single lane drainer —
+	// instead of firing concurrent DELETEs that 429 each other. No alert-limit
+	// accounting / tracking / snapshot.
+	DeleteSentID string `json:"-"`
+
 	// ReplyToID is an *ephemeral* field stamped on the Job by the delivery
 	// queue immediately before send when ReplyKey is set and the
 	// MessageTracker has a known prior message for (ReplyKey, Target). The

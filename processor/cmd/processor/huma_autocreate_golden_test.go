@@ -123,11 +123,8 @@ func TestAutocreateOpenAPIGoldenDeterministic(t *testing.T) {
 func firstAutocreateDiffHint(want, got []byte) string {
 	wl := bytes.Split(want, []byte("\n"))
 	gl := bytes.Split(got, []byte("\n"))
-	n := len(wl)
-	if len(gl) < n {
-		n = len(gl)
-	}
-	for i := 0; i < n; i++ {
+	n := min(len(gl), len(wl))
+	for i := range n {
 		if !bytes.Equal(wl[i], gl[i]) {
 			return "first diff at line " + strconv.Itoa(i+1) + ":\n  - want: " + string(wl[i]) + "\n  + got:  " + string(gl[i])
 		}

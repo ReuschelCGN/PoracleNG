@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -153,9 +154,7 @@ func (ps *ProcessorService) ProcessShowcase(raw json.RawMessage) error {
 			for _, lang := range distinctLanguages(matched, ps.cfg.General.Locale) {
 				m := ps.enricher.InvasionTranslate(
 					baseEnrichment, sc.Latitude, sc.Longitude, 0, nil, sc.ShowcaseRankings, lang)
-				for k, v := range ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, lang) {
-					m[k] = v
-				}
+				maps.Copy(m, ps.enricher.ShowcaseFocusTranslate(sc.ShowcaseFocus, lang))
 				perLang[lang] = m
 			}
 		}

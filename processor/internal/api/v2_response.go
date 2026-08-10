@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -111,9 +112,7 @@ func (v2RuleEnvelope[Req]) Schema(r huma.Registry) *huma.Schema {
 	reqSchema := r.Schema(reflect.TypeOf(zero), false, "")
 
 	props := make(map[string]*huma.Schema, len(reqSchema.Properties)+2)
-	for k, v := range reqSchema.Properties {
-		props[k] = v
-	}
+	maps.Copy(props, reqSchema.Properties)
 	props["uid"] = &huma.Schema{Type: huma.TypeInteger, Format: "int64", Description: "Tracking rule uid"}
 	props["description"] = &huma.Schema{Type: huma.TypeString, Description: "Human-readable rule description (present only with ?include_descriptions=true)"}
 

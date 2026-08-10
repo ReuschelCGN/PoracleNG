@@ -217,15 +217,15 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		// bumped to a distinct near-future point (+5min, +15min, ...) so the
 		// rendered rsvpChanges preview shows a live-looking RSVP window
 		// instead of the canned sample's fixed far-future timestamp.
-		if rsvps, ok := hook["rsvps"].([]interface{}); ok {
-			newRsvps := make([]interface{}, len(rsvps))
+		if rsvps, ok := hook["rsvps"].([]any); ok {
+			newRsvps := make([]any, len(rsvps))
 			for i, r := range rsvps {
-				rm, ok := r.(map[string]interface{})
+				rm, ok := r.(map[string]any)
 				if !ok {
 					newRsvps[i] = r
 					continue
 				}
-				newR := make(map[string]interface{}, len(rm))
+				newR := make(map[string]any, len(rm))
 				maps.Copy(newR, rm)
 				newR["timeslot"] = (nowSecs + int64(5+i*10)*60) * 1000
 				newRsvps[i] = newR
@@ -301,9 +301,9 @@ func (c *PoracleTestCommand) Run(ctx *bot.CommandContext, args []string) []bot.R
 		// canned sample value — freshen it the same way "pokemon" freshens
 		// disappear_time, so clean-alert TTH computation doesn't see an
 		// already-past despawn.
-		if affected, ok := hook["affected"].([]interface{}); ok {
+		if affected, ok := hook["affected"].([]any); ok {
 			for i, a := range affected {
-				am, ok := a.(map[string]interface{})
+				am, ok := a.(map[string]any)
 				if !ok {
 					continue
 				}

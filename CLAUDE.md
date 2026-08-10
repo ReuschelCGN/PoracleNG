@@ -64,7 +64,7 @@ processor/                      # Go binary
       trackingRaid.go, ...      # Per-type tracking endpoints (10 types)
     delivery/                   # Go-native message delivery (Discord REST, Telegram Bot API)
       dispatcher.go             # Top-level orchestrator: Dispatch, Start, Stop
-      queue.go                  # FairQueue with per-destination mutex, per-platform semaphores
+      queue.go                  # FairQueue with per-destination lanes (one drainer per destination), per-platform semaphores
       discord.go                # Discord REST sender: DM, channel, thread, webhook, image upload
       telegram.go               # Telegram REST sender: sticker, photo, text, venue, location
       ratelimit.go              # Per-route Discord rate limiting + global 50 req/sec token bucket
@@ -231,7 +231,7 @@ Delivery is handled via platform REST APIs (Discord API v10, Telegram Bot API).
 - Manages per-platform concurrency semaphores
 
 **FairQueue** (`delivery/queue.go`):
-- Per-destination `sync.Mutex` via `sync.Map` ensures message ordering per channel/user
+- Per-destination lanes (one drainer goroutine per destination, spawned on demand and reaped after idling) ensure message ordering per channel/user
 - Per-platform semaphores limit concurrent API calls
 - Edit-before-send: if a job has an edit key matching a tracked message, edits instead of sending new
 
@@ -255,6 +255,7 @@ Delivery is handled via platform REST APIs (Discord API v10, Telegram Bot API).
 - Global 50 req/sec token bucket
 - `Retry-After` parsing with Dexter's heuristic (>1000 → milliseconds)
 - Cleanup when map >1000 entries
+- **Applies to POST, PATCH (edit) AND DELETE (clean-deletion).** All three share the same 429 Retry-After backoff + header-driven limiter updates via `DiscordSender.doWithRetry` (Telegram: `doPostWithRetry`), and **all three go through the FairQueue** so they pass through the same per-destination lane (and `WaitForRateLimit`) before firing. Clean-deletion originates in the `MessageTracker`'s TTL-eviction callback, which — rather than spawning an unbounded goroutine per eviction (the original bug: a burst of expiring alerts across many channels fired concurrent DELETEs that 429'd each other into failure and left the messages behind) — calls `MessageTracker.cleanDelete`. That routes through the `cleanDeleteHook` the Dispatcher wires (`enqueueCleanDelete`), which enqueues a `Job{DeleteSentID}` onto the queue. `FairQueue.processJob` then handles delete jobs on the **same per-destination lane as sends** — that lane's single drainer goroutine serialises deletes with each other and with sends to that channel — calls `Sender.Delete`, and skips alert-limit accounting / tracking / snapshot. The enqueue is non-blocking + panic-guarded (a delete dropped on a full or shutting-down lane is NOT recovered on the next load — the message was already evicted from the tracker's ttlcache, so `Save()`, which only persists still-live entries, never writes it; only messages still tracked at shutdown are persisted and re-cleaned on next load). No queue wired (some tests) ⇒ `cleanDelete` falls back to the direct-Delete goroutine.
 
 **Message Tracker** (`delivery/tracker.go`):
 - TTL cache (`ttlcache/v3`) keyed by `target:messageID`

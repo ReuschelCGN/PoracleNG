@@ -26,9 +26,9 @@ func infoFormCostumeCtx(t *testing.T) *bot.CommandContext {
 			{ID: 25, Form: 0}:   {PokemonID: 25, FormID: 0},
 			{ID: 25, Form: 680}: {PokemonID: 25, FormID: 680},
 		},
-		Moves:    map[int]*gamedata.Move{},
-		Types:    map[int]*gamedata.TypeInfo{},
-		Util:     &gamedata.UtilData{},
+		Moves: map[int]*gamedata.Move{},
+		Types: map[int]*gamedata.TypeInfo{},
+		Util:  &gamedata.UtilData{},
 		Costumes: map[int]gamedata.CostumeInfo{
 			1: {ID: 1, Name: "Holiday 2016"},
 			8: {ID: 8, Name: "Party Hat"},

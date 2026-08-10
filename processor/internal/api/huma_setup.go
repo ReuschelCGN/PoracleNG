@@ -39,7 +39,7 @@ func NewHumaAPI(r *gin.Engine, apiGroup *gin.RouterGroup, version string) huma.A
 	r.GET("/openapi.json", func(c *gin.Context) {
 		b, err := humaAPI.OpenAPI().MarshalJSON()
 		if err != nil {
-			c.Data(http.StatusInternalServerError, "text/plain", []byte(fmt.Sprintf("openapi marshal: %v", err)))
+			c.Data(http.StatusInternalServerError, "text/plain", fmt.Appendf(nil, "openapi marshal: %v", err))
 			return
 		}
 		c.Data(http.StatusOK, "application/json", b)

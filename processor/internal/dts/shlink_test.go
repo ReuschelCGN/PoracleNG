@@ -122,7 +122,7 @@ func TestShortenBadBodyDoesNotTripBreaker(t *testing.T) {
 	defer server.Close()
 
 	s := NewShlinkShortener(server.URL, "key", "")
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if got := s.Shorten("https://example.com/original"); got != "https://example.com/original" {
 			t.Fatalf("call %d: got %q, want fallback", i, got)
 		}
@@ -146,7 +146,7 @@ func TestShortenServerErrorTripsBreaker(t *testing.T) {
 
 	s := NewShlinkShortener(server.URL, "key", "")
 	// Default threshold is 5 consecutive failures.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		s.Shorten("https://example.com/original")
 	}
 	if !s.breaker.IsOpen() {
@@ -154,7 +154,7 @@ func TestShortenServerErrorTripsBreaker(t *testing.T) {
 	}
 	hits := calls.Load()
 	// Further calls short-circuit — server not contacted.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if got := s.Shorten("https://example.com/original"); got != "https://example.com/original" {
 			t.Fatalf("expected fallback during circuit break, got %q", got)
 		}

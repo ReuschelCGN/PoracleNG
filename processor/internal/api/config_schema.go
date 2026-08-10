@@ -322,7 +322,7 @@ var configSchema = []ConfigSection{
 			{Name: "static_provider", Type: "select", Default: "none", Description: "Static map tile provider for generating map images in alerts", Options: []ConfigSelectOption{
 				{Value: "none", Label: "None", Description: "Disable static map tiles"},
 				{Value: "tileservercache", Label: "TileserverCache", Description: "SwiftTileserverCache (recommended, self-hosted)"},
-					{Value: "rampardos", Label: "Rampardos", Description: "Rampardos — improved tileserver written by Unown (recommended)"},
+				{Value: "rampardos", Label: "Rampardos", Description: "Rampardos — improved tileserver written by Unown (recommended)"},
 				{Value: "google", Label: "Google", Description: "Google Static Maps API"},
 				{Value: "osm", Label: "OSM", Description: "OpenStreetMap tile rendering"},
 				{Value: "mapbox", Label: "Mapbox", Description: "Mapbox Static Images API"},
@@ -398,7 +398,7 @@ var configSchema = []ConfigSection{
 			{Name: "concurrent_discord_destinations", Type: "int", Default: 10, Description: "Concurrent Discord DM/channel sends per bot", Advanced: true},
 			{Name: "concurrent_telegram_destinations", Type: "int", Default: 10, Description: "Concurrent Telegram sends per bot", Advanced: true},
 			{Name: "concurrent_discord_webhooks", Type: "int", Default: 10, Description: "Concurrent Discord webhook sends", Advanced: true},
-			{Name: "delivery_queue_size", Type: "int", Default: 200, Description: "Maximum buffered delivery jobs", Advanced: true},
+			{Name: "delivery_queue_size", Type: "int", Default: 200, Description: "Max buffered delivery jobs PER destination lane", Advanced: true},
 			{Name: "validation_timeout_ms", Type: "int", Default: 1500, Description: "External validation hook: per-call HTTP timeout in milliseconds", Advanced: true},
 			{Name: "validation_max_concurrent", Type: "int", Default: 16, Description: "External validation hook: cap on parallel validator calls per webhook event", Advanced: true},
 		},
@@ -621,4 +621,3 @@ var configSchema = []ConfigSection{
 		},
 	},
 }
-

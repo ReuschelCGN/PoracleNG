@@ -135,7 +135,7 @@ func RegisterWeatherMap(api huma.API, deps HumaTileDeps) {
 		OperationID: "get-geofence-weather-map", Method: "GET", Path: "/geofence/weatherMap/{lat}/{lon}",
 		Summary: "Weather S2 cell tile", Tags: []string{"tiles"},
 		Description: "Generates a static-map tile showing the S2 weather cell covering the location (current weather unless overridden by the `weather` query). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *weatherMapInput) (*tileURLOutput, error) {
 		if staticMapNil(deps.StaticMap) {
 			return nil, huma.Error503ServiceUnavailable("static map provider not configured")
@@ -174,7 +174,7 @@ func RegisterLocationMap(api huma.API, deps HumaTileDeps) {
 		OperationID: "get-geofence-location-map", Method: "GET", Path: "/geofence/locationMap/{lat}/{lon}",
 		Summary: "Location pin tile", Tags: []string{"tiles"},
 		Description: "Generates a static-map tile with a pin at the given coordinates (used to confirm location settings). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *latLonInput) (*tileURLOutput, error) {
 		if staticMapNil(deps.StaticMap) {
 			return nil, huma.Error503ServiceUnavailable("static map provider not configured")
@@ -200,7 +200,7 @@ func RegisterDistanceMap(api huma.API, deps HumaTileDeps) {
 		OperationID: "get-geofence-distance-map", Method: "GET", Path: "/geofence/distanceMap/{lat}/{lon}/{distance}",
 		Summary: "Distance circle tile", Tags: []string{"tiles"},
 		Description: "Generates a static-map tile showing a circle of the given radius (metres) around the coordinates (used to visualise distance-based tracking). Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *distanceMapInput) (*tileURLOutput, error) {
 		if staticMapNil(deps.StaticMap) {
 			return nil, huma.Error503ServiceUnavailable("static map provider not configured")
@@ -239,7 +239,7 @@ func RegisterOverviewMap(api huma.API, deps HumaTileDeps) {
 		OperationID: "post-geofence-overview-map", Method: "POST", Path: "/geofence/overviewMap",
 		Summary: "Multi-area overview tile", Tags: []string{"tiles"},
 		Description: "Generates a single static-map tile overlaying the polygons of the geofence areas named in the request body. Returns {status, url} — the tileserver URL of the generated image. 503 when no static map provider is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *overviewMapInput) (*tileURLOutput, error) {
 		if staticMapNil(deps.StaticMap) {
 			return nil, huma.Error503ServiceUnavailable("static map provider not configured")
@@ -308,7 +308,7 @@ func RegisterGeofenceAreaMap(api huma.API, deps HumaTileDeps) {
 		OperationID: "get-geofence-area-map", Method: "GET", Path: "/geofence/{area}/map",
 		Summary: "Geofence area tile", Tags: []string{"tiles"},
 		Description: "Generates a static-map tile of the named geofence area's polygon. Returns {status, url} — the tileserver URL of the generated image. 404 for an unknown area; 503 when no static map provider is configured.",
-		Security: []map[string][]string{{"poracleSecret": {}}},
+		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *areaMapInput) (*tileURLOutput, error) {
 		if staticMapNil(deps.StaticMap) {
 			return nil, huma.Error503ServiceUnavailable("static map provider not configured")
