@@ -105,7 +105,6 @@ type applyAutocreateResult struct {
 	ChannelsCreated       int // channel had to be created (not reused)
 	ChannelsReused        int // channel was found and reused as-is
 	ChannelsReset         int // channel was reused with tracking reset (interactive / reset keyword)
-	ChannelsMoved         int // channel adopted from another category and moved into the canonical one
 	ThreadsCreated        int // thread had to be created (or would-be in dry-run)
 	ThreadsReused         int // thread was found and reused as-is
 	ThreadsReset          int // thread was reused with tracking reset
@@ -460,36 +459,14 @@ func (b *Bot) applyAutocreate(
 		// tweaked tracking is preserved.
 		var channel *discordgo.Channel
 		var channelReused bool
-		// Look in the chosen category first; if the channel exists somewhere
-		// else in the guild (stranded under a stale category from a previous
-		// run, or moved by an admin), adopt it and move it into the canonical
-		// category rather than creating a duplicate.
+		// Reuse a channel only when it already lives UNDER THIS CATEGORY, so a
+		// re-run of !autocreate is idempotent. We deliberately do NOT adopt a
+		// same-named channel from elsewhere in the guild: channels routinely
+		// share names across categories (e.g. City 1/100 and City 2/100), so a
+		// guild-wide name match would relocate an unrelated channel into this
+		// category. When the name isn't found under this category, create anew.
 		existingID := snap.findChannel(categoryID, channelName)
-		var movedFromParent string
-		if existingID == "" {
-			if anyID, otherParent := snap.findChannelAnyParent(channelName); anyID != "" && otherParent != categoryID {
-				existingID = anyID
-				movedFromParent = otherParent
-			}
-		}
 		if existingID != "" {
-			if movedFromParent != "" {
-				result.ChannelsMoved++
-				if opts.DryRun {
-					rep.Info(fmt.Sprintf(">> [dry-run] Would move existing channel %s into category %s", channelName, categoryID))
-					snap.removeChannel(existingID, movedFromParent, channelName)
-					snap.addChannel(existingID, categoryID, channelName)
-				} else {
-					if _, err := s.ChannelEditComplex(existingID, &discordgo.ChannelEdit{ParentID: categoryID}); err != nil {
-						rep.Warn(fmt.Sprintf("Failed to move channel %s into %s: %v", channelName, categoryID, err))
-						result.Errors = append(result.Errors, err)
-					} else {
-						rep.Info(fmt.Sprintf(">> Moved existing channel %s into %s", channelName, categoryID))
-						snap.removeChannel(existingID, movedFromParent, channelName)
-						snap.addChannel(existingID, categoryID, channelName)
-					}
-				}
-			}
 			if opts.ResetOnReuse {
 				result.ChannelsReset++
 				rep.Info(fmt.Sprintf(">> Reusing existing channel %s — resetting tracking", channelName))
@@ -1349,9 +1326,9 @@ func formatSyncSummary(r SyncOneRuleResult) string {
 	if r.CategoriesCreated > 0 {
 		fmt.Fprintf(&b, "Categories: %d created\n", r.CategoriesCreated)
 	}
-	if r.ChannelsCreated+r.ChannelsMoved+r.ChannelsReset+r.ChannelsRemoved+r.ChannelsTemplateOrphan > 0 {
-		fmt.Fprintf(&b, "Channels: %d created, %d moved, %d reset, %d removed, %d reused\n",
-			r.ChannelsCreated, r.ChannelsMoved, r.ChannelsReset, r.ChannelsRemoved, r.ChannelsReused)
+	if r.ChannelsCreated+r.ChannelsReset+r.ChannelsRemoved+r.ChannelsTemplateOrphan > 0 {
+		fmt.Fprintf(&b, "Channels: %d created, %d reset, %d removed, %d reused\n",
+			r.ChannelsCreated, r.ChannelsReset, r.ChannelsRemoved, r.ChannelsReused)
 		if r.ChannelsTemplateOrphan > 0 {
 			fmt.Fprintf(&b, "  (%d cached channel(s) no longer in template — re-run with `removals` to delete; rule.remove_missing must also be true)\n",
 				r.ChannelsTemplateOrphan)
