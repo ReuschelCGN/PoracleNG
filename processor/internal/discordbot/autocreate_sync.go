@@ -218,7 +218,6 @@ type SyncOneRuleResult struct {
 	ChannelsCreated        int
 	ChannelsReused         int
 	ChannelsReset          int
-	ChannelsMoved          int
 	ChannelsRemoved        int // template-orphan channels actually removed
 	ChannelsTemplateOrphan int // template-orphan channels logged as would-remove (no removals flag)
 	ThreadsCreated         int
@@ -330,7 +329,6 @@ func accumulateApplyCounters(res *SyncOneRuleResult, ar applyAutocreateResult) {
 	res.ChannelsCreated += ar.ChannelsCreated
 	res.ChannelsReused += ar.ChannelsReused
 	res.ChannelsReset += ar.ChannelsReset
-	res.ChannelsMoved += ar.ChannelsMoved
 	res.ThreadsCreated += ar.ThreadsCreated
 	res.ThreadsReused += ar.ThreadsReused
 	res.ThreadsReset += ar.ThreadsReset
@@ -825,18 +823,6 @@ func (s *guildSnapshot) findChannelAnyParent(name string) (string, string) {
 		}
 	}
 	return "", ""
-}
-
-// removeChannel drops a channel from the by-parent index. Used after a
-// move so subsequent same-sync lookups under the old parent miss it.
-func (s *guildSnapshot) removeChannel(id, parentID, name string) {
-	if s == nil {
-		return
-	}
-	if byName, ok := s.channelsByParentLowerName[parentID]; ok {
-		delete(byName, normalizeDiscordChannelName(name))
-	}
-	delete(s.channels, id)
 }
 
 // channelExists reports whether the given channel/category ID is in the
