@@ -215,10 +215,17 @@ func (ps *ProcessorService) dispatchWeatherChange(in weatherChangeDispatchInput)
 	}
 	l := log.WithField("ref", in.s2CellID)
 
-	// Single shared gate for the shared base tile (nil when a per-user tile is
-	// used instead, in which case each user gets their own gate below).
-	baseGate := ps.newTileGate(in.baseTilePending)
-
+	// Build every user's RenderJob FIRST, THEN spawn the shared base-tile gate.
+	// WeatherTranslate READS in.baseEnrichment (lat/lon); the shared gate's
+	// goroutine WRITES in.baseEnrichment via TilePending.Apply. Spawning that
+	// gate before the loop finished would race the writes against these reads
+	// (concurrent map read+write → runtime crash, reachable under render-queue
+	// pressure where Apply fires synchronously). Deferring the single shared
+	// gate until every read is done makes the reads happen-before the write via
+	// goroutine-spawn ordering — mirroring dispatchPokemonAlert, whose loop
+	// never touches the gated map. Per-user tiles get their own gate in the loop
+	// (they write a per-user map, so there is no shared-map hazard).
+	var jobs []RenderJob
 	for _, user := range in.matched {
 		lang := user.Language
 		if lang == "" {
@@ -265,13 +272,7 @@ func (ps *ProcessorService) dispatchWeatherChange(in weatherChangeDispatchInput)
 			}
 		}
 
-		// Shared base tile → shared gate; per-user tile → its own gate.
-		gate := baseGate
-		if userTilePending != nil {
-			gate = ps.newTileGate(userTilePending)
-		}
-
-		ps.renderCh <- RenderJob{
+		job := RenderJob{
 			AlertType:         "weatherchange",
 			TemplateType:      "weatherchange",
 			Enrichment:        in.baseEnrichment,
@@ -279,10 +280,26 @@ func (ps *ProcessorService) dispatchWeatherChange(in weatherChangeDispatchInput)
 			WebhookFields:     in.webhookFields,
 			MatchedUsers:      []webhook.MatchedUser{user},
 			MatchedAreas:      in.matchedAreas,
-			TileGate:          gate,
 			OverrideCleanTTH:  overrideCleanTTH,
 			LogReference:      in.s2CellID,
 		}
+		// Per-user tile → its own gate now (writes a per-user map, no shared
+		// hazard). Shared-tile users are left with a nil gate and get the single
+		// shared baseGate attached below, after all baseEnrichment reads finish.
+		if userTilePending != nil {
+			job.TileGate = ps.newTileGate(userTilePending)
+		}
+		jobs = append(jobs, job)
+	}
+
+	// All in.baseEnrichment reads are complete — now spawn the single shared
+	// gate (nil when there is no shared base tile) and enqueue.
+	baseGate := ps.newTileGate(in.baseTilePending)
+	for i := range jobs {
+		if jobs[i].TileGate == nil {
+			jobs[i].TileGate = baseGate
+		}
+		ps.renderCh <- jobs[i]
 	}
 }
 
