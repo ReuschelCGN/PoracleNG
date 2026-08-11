@@ -180,7 +180,7 @@ func parseV2ActiveHours(raw string) []v2ActiveHourEntry {
 func registerV2ProfilesList(api huma.API, deps *TrackingDeps, tag []string, sec []map[string][]string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-list-human-profiles", Method: "GET", Path: "/v2/humans/{id}/profiles",
-		Summary:     "List a human's profiles",
+		Summary: "List a human's profiles",
 		Description: "Returns every profile for the human (profile_no, name, area, location, active_hours). active_hours is a typed JSON " +
 			"array of schedule entries ([] when no schedule is set). 404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,

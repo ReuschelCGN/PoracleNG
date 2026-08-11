@@ -101,7 +101,7 @@ type testBodyShape struct {
 
 // Schema documents the test request wrapper, loosened to be permissive.
 func (testBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(testBodyShape{}),
+	return openObjectSchema(r, reflect.TypeFor[testBodyShape](),
 		"poracle-test request: {type, target, webhook}. `webhook` is an OPEN polymorphic webhook payload; required fields (type, target.id, webhook) are enforced by the handler.")
 }
 
@@ -176,12 +176,17 @@ type apiDeliverJob struct {
 	Target  string   `json:"target" doc:"Destination ID/URL (user, channel, thread, webhook)"`
 	Type    string   `json:"type" doc:"Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:group, telegram:channel"`
 	Message openJSON `json:"message" doc:"Pre-rendered platform message payload (arbitrary JSON object/value)"`
-	TTH     struct {
+	// TTH uses `omitzero`, NOT `omitempty`, on purpose: omitempty is a no-op on a
+	// struct, so `go fix` strips it — which would flip tth to a *required* field in
+	// the huma request schema (422s + OpenAPI golden drift). omitzero is effective
+	// on structs (Go 1.24+), huma treats it as optional, and `go fix` leaves it be.
+	// Do not change this back to omitempty.
+	TTH struct {
 		Days    int `json:"days,omitempty"`
 		Hours   int `json:"hours,omitempty"`
 		Minutes int `json:"minutes,omitempty"`
 		Seconds int `json:"seconds,omitempty"`
-	} `json:"tth,omitempty" doc:"Time-to-hide; when the message should be auto-deleted (with the clean bit)"`
+	} `json:"tth,omitzero" doc:"Time-to-hide; when the message should be auto-deleted (with the clean bit)"`
 	Clean        int     `json:"clean,omitempty" doc:"Lifecycle bitmask: 1=clean (delete on TTH), 2=edit, 3=both"`
 	EditKey      string  `json:"editKey,omitempty" doc:"Non-empty = track for future in-place edits"`
 	ReplyKey     string  `json:"replyKey,omitempty" doc:"Non-empty = (replyKey,target) indexes the latest sent message for reply chaining"`
@@ -318,7 +323,7 @@ func (b resolveBody) MarshalJSON() ([]byte, error) {
 // resolveRequest schema is never contaminated — see reference_huma_gotchas),
 // then `required` is cleared and additionalProperties opened.
 func (resolveBody) Schema(r huma.Registry) *huma.Schema {
-	return openObjectSchema(r, reflect.TypeOf(resolveRequest{}),
+	return openObjectSchema(r, reflect.TypeFor[resolveRequest](),
 		"Resolve request. All sections are optional: {discord:{users,roles,channels,guilds}, telegram:{chats}, destinations[]}.")
 }
 

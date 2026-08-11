@@ -328,8 +328,8 @@ func TestQuest_RemoveSummary_OnlyTargetsSummaryRules(t *testing.T) {
 	// add a non-summary rule for a DIFFERENT reward to confirm the
 	// summary filter doesn't sweep it up.
 	mock := ctx.Tracking.Quests.(*store.MockTrackingStore[db.QuestTrackingAPI])
-	_, _ = mock.Insert(&db.QuestTrackingAPI{ID: "user1", ProfileNo: 1, RewardType: 7, Reward: 25, Form: 0, Clean: 4})  // summary Pikachu
-	_, _ = mock.Insert(&db.QuestTrackingAPI{ID: "user1", ProfileNo: 1, RewardType: 7, Reward: 25, Form: 65, Clean: 4}) // summary Alolan Pikachu
+	_, _ = mock.Insert(&db.QuestTrackingAPI{ID: "user1", ProfileNo: 1, RewardType: 7, Reward: 25, Form: 0, Clean: 4})    // summary Pikachu
+	_, _ = mock.Insert(&db.QuestTrackingAPI{ID: "user1", ProfileNo: 1, RewardType: 7, Reward: 25, Form: 65, Clean: 4})   // summary Alolan Pikachu
 	_, _ = mock.Insert(&db.QuestTrackingAPI{ID: "user1", ProfileNo: 1, RewardType: 7, Reward: 25, Form: 1290, Clean: 0}) // immediate cosplay Pikachu
 	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
 	require.Len(t, rows, 3, "seed should produce 3 rules across distinct forms")

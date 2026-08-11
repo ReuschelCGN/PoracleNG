@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -497,10 +498,5 @@ func assertStatusOK(t *testing.T, w *httptest.ResponseRecorder) {
 }
 
 func hasCall(m *store.MockHumanStore, name string) bool {
-	for _, c := range m.Calls {
-		if c == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.Calls, name)
 }

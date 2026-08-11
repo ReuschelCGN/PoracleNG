@@ -86,14 +86,14 @@ func DeleteByUIDs(db *sqlx.DB, table, id string, uids []int64) error {
 //   - diff:"update" updatable fields (if ALL diffs are here → update in place)
 //   - (no tag)      regular field (any diff → new insert)
 type LureTrackingAPI struct {
-	UID                   int64    `db:"uid"                    json:"uid"                    diff:"-"`
-	ID                    string   `db:"id"                     json:"id"                     diff:"-"`
-	ProfileNo             int      `db:"profile_no"             json:"profile_no"             diff:"-"`
-	Ping                  string   `db:"ping"                   json:"ping"`
-	Clean                 int      `db:"clean"                  json:"clean"                  diff:"update"`
-	Distance              int      `db:"distance"               json:"distance"               diff:"update"`
-	Template              string   `db:"template"               json:"template"               diff:"update"`
-	LureID                int      `db:"lure_id"                json:"lure_id"                diff:"match"`
+	UID       int64  `db:"uid"                    json:"uid"                    diff:"-"`
+	ID        string `db:"id"                     json:"id"                     diff:"-"`
+	ProfileNo int    `db:"profile_no"             json:"profile_no"             diff:"-"`
+	Ping      string `db:"ping"                   json:"ping"`
+	Clean     int    `db:"clean"                  json:"clean"                  diff:"update"`
+	Distance  int    `db:"distance"               json:"distance"               diff:"update"`
+	Template  string `db:"template"               json:"template"               diff:"update"`
+	LureID    int    `db:"lure_id"                json:"lure_id"                diff:"match"`
 	// Override fields participate in the default (non-match, non-update)
 	// diff path: any change creates a new insert; the old row stays until
 	// removed explicitly. Same semantics as template/distance.
@@ -141,17 +141,17 @@ func InsertLure(db *sqlx.DB, lure *LureTrackingAPI) (int64, error) {
 
 // FortTrackingAPI represents a fort tracking row for API operations.
 type FortTrackingAPI struct {
-	UID                   int64   `db:"uid"                     json:"uid"                    diff:"-"`
-	ID                    string  `db:"id"                      json:"id"                     diff:"-"`
-	ProfileNo             int     `db:"profile_no"              json:"profile_no"             diff:"-"`
-	Ping                  string  `db:"ping"                    json:"ping"`
-	Distance              int     `db:"distance"                json:"distance"               diff:"update"`
-	Template              string  `db:"template"                json:"template"               diff:"update"`
-	FortType              string  `db:"fort_type"               json:"fort_type"              diff:"match"`
-	IncludeEmpty          IntBool `db:"include_empty"           json:"include_empty"`
-	ChangeTypes           string  `db:"change_types"            json:"change_types"`
-	OverrideLocationLabel string  `db:"override_location_label" json:"override_location_label" diff:""`
-	OverrideAreasRaw      string  `db:"override_areas"         json:"-"                      diff:"-"`
+	UID                   int64    `db:"uid"                     json:"uid"                    diff:"-"`
+	ID                    string   `db:"id"                      json:"id"                     diff:"-"`
+	ProfileNo             int      `db:"profile_no"              json:"profile_no"             diff:"-"`
+	Ping                  string   `db:"ping"                    json:"ping"`
+	Distance              int      `db:"distance"                json:"distance"               diff:"update"`
+	Template              string   `db:"template"                json:"template"               diff:"update"`
+	FortType              string   `db:"fort_type"               json:"fort_type"              diff:"match"`
+	IncludeEmpty          IntBool  `db:"include_empty"           json:"include_empty"`
+	ChangeTypes           string   `db:"change_types"            json:"change_types"`
+	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
+	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
 	OverrideAreas         []string `db:"-"                     json:"override_areas"          diff:""`
 }
 
@@ -415,6 +415,7 @@ type MonsterTrackingAPI struct {
 // absent-costume defaults live at the actual decode sites —
 //   - v1: cleanRow's req.Costume.intValue(9000) (internal/api/trackingMonster.go)
 //   - v2: translateV2Pokemon's valueOr(req.Costume, 9000) (internal/api/v2_pokemon.go)
+//
 // If you change the absent-costume behaviour, change those. Because this struct's
 // fields are plain int/string (no flexInt/flexBool), this method must NOT be
 // repurposed as the primary v1 parse path — it would drop the lenient

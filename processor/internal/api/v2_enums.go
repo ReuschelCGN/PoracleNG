@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // v2 string-enum toolkit.
@@ -117,15 +118,16 @@ func (e stringEnum) resolveStored(s *string) int {
 
 // enumDoc renders a "one of: a|b|c (default: d)" fragment for field docs.
 func (e stringEnum) enumDoc() string {
-	out := "one of:"
+	var out strings.Builder
+	out.WriteString("one of:")
 	for i, s := range e.ordered {
 		if i == 0 {
-			out += " " + s
+			out.WriteString(" " + s)
 		} else {
-			out += " | " + s
+			out.WriteString(" | " + s)
 		}
 	}
-	return fmt.Sprintf("%s (default: %s)", out, e.defValue)
+	return fmt.Sprintf("%s (default: %s)", out.String(), e.defValue)
 }
 
 // --- Concrete enums -------------------------------------------------------

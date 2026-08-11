@@ -1042,7 +1042,6 @@ func (c *InfoCommand) weatherInfo(ctx *bot.CommandContext, args []string) []bot.
 	return []bot.Reply{{Text: sb.String()}}
 }
 
-
 // translateDebug shows forward and reverse translation debug info.
 func (c *InfoCommand) translateDebug(ctx *bot.CommandContext, args []string) []bot.Reply {
 	if len(args) == 0 {
@@ -1218,4 +1217,3 @@ func (c *InfoCommand) templateList(ctx *bot.CommandContext) []bot.Reply {
 
 	return bot.SplitTextReply(strings.TrimSpace(sb.String()))
 }
-

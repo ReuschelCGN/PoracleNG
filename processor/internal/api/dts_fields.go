@@ -776,4 +776,3 @@ var fieldsByType = map[string]fieldEntry{
 	"weatherchange":  {Fields: append(commonFields, weatherChangeFields...), Snippets: commonSnippets},
 	"greeting":       {Fields: append(commonFields, greetingFields...), Snippets: commonSnippets},
 }
-

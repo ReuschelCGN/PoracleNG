@@ -243,23 +243,25 @@ func (am *ArgMatcher) collapseMultiWord(tokens []string) []string {
 				continue
 			}
 			if prefix != "" {
-				joined := remainder
+				var joined strings.Builder
+				joined.WriteString(remainder)
 				for j := 1; j < window; j++ {
-					joined += " " + tokens[i+j]
+					joined.WriteString(" " + tokens[i+j])
 				}
-				if am.prefixedMultiWord[prefix][joined] {
-					out = append(out, prefix+":"+joined)
+				if am.prefixedMultiWord[prefix][joined.String()] {
+					out = append(out, prefix+":"+joined.String())
 					i += window
 					matched = true
 					break
 				}
 			} else {
-				joined := tokens[i]
+				var joined strings.Builder
+				joined.WriteString(tokens[i])
 				for j := 1; j < window; j++ {
-					joined += " " + tokens[i+j]
+					joined.WriteString(" " + tokens[i+j])
 				}
-				if am.bareMultiWord[joined] {
-					out = append(out, joined)
+				if am.bareMultiWord[joined.String()] {
+					out = append(out, joined.String())
 					i += window
 					matched = true
 					break
@@ -675,7 +677,7 @@ func (am *ArgMatcher) tryPrefixStringList(tok, key, lang string, result *ParsedA
 		if result.StringLists == nil {
 			result.StringLists = make(map[string][]string)
 		}
-		for _, v := range strings.Split(val, ",") {
+		for v := range strings.SplitSeq(val, ",") {
 			v = strings.TrimSpace(strings.ToLower(v))
 			if v == "" {
 				continue

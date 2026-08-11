@@ -4,18 +4,18 @@ package bot
 type ParamType int
 
 const (
-	ParamPrefixRange   ParamType = iota // iv100, iv50-100, cp2500-3000, level20-30, atk15
-	ParamPrefixSingle  ParamType = iota // d500, t60, gen3, cap50, miniv90, maxcp3000
-	ParamPrefixString  ParamType = iota // form:alola, template:2, move:hydropump, name:foo
-	ParamKeyword       ParamType = iota // remove, everything, clean, ex, shiny, individually
-	ParamTeam          ParamType = iota // valor/red, mystic/blue, instinct/yellow, harmony/gray
-	ParamGender        ParamType = iota // male, female, genderless
-	ParamPokemonName   ParamType = iota // pikachu, relaxo, 25, "mr. mime"
-	ParamTypeName      ParamType = iota // grass, fire, dragon
-	ParamLureType      ParamType = iota // glacial, mossy, magnetic, rainy, sparkly, normal
-	ParamRaidLevelName ParamType = iota // legendary, mega, shadow, ultra beast
-	ParamPVPLeague     ParamType = iota // great5, ultra10-50, greathigh3, greatcp1400
-	ParamLatLon        ParamType = iota // 51.28,1.08
+	ParamPrefixRange      ParamType = iota // iv100, iv50-100, cp2500-3000, level20-30, atk15
+	ParamPrefixSingle     ParamType = iota // d500, t60, gen3, cap50, miniv90, maxcp3000
+	ParamPrefixString     ParamType = iota // form:alola, template:2, move:hydropump, name:foo
+	ParamKeyword          ParamType = iota // remove, everything, clean, ex, shiny, individually
+	ParamTeam             ParamType = iota // valor/red, mystic/blue, instinct/yellow, harmony/gray
+	ParamGender           ParamType = iota // male, female, genderless
+	ParamPokemonName      ParamType = iota // pikachu, relaxo, 25, "mr. mime"
+	ParamTypeName         ParamType = iota // grass, fire, dragon
+	ParamLureType         ParamType = iota // glacial, mossy, magnetic, rainy, sparkly, normal
+	ParamRaidLevelName    ParamType = iota // legendary, mega, shadow, ultra beast
+	ParamPVPLeague        ParamType = iota // great5, ultra10-50, greathigh3, greatcp1400
+	ParamLatLon           ParamType = iota // 51.28,1.08
 	ParamRemoveUID        ParamType = iota // id:45, id:46 — tracking UID for removal
 	ParamPrefixStringList ParamType = iota // area:berlin, area:X,Y,Z — comma-split, lowercased, accumulates across repeated tokens
 )

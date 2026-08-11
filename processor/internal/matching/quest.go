@@ -49,7 +49,6 @@ func (m *QuestMatcher) Match(data *QuestData, st *state.State) (immediate []webh
 		metrics.MatchingDuration.WithLabelValues(metrics.TypeQuest).Observe(time.Since(start).Seconds())
 	}()
 
-
 	if st == nil {
 		return nil, nil, nil
 	}
