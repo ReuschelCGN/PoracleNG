@@ -670,11 +670,30 @@ func (b *Bot) applyAutocreate(
 	return result
 }
 
+// reportCommandFailures surfaces failed command replies (🙅 react) through
+// the reporter. Both autocreate paths need this: the bulk runner discards
+// replies entirely, and the interactive path's synthetic reply message has
+// no message ID, so the failure react can never be attached. Without this
+// a broken command in a template (typo, unrecognized filter) runs silently.
+func reportCommandFailures(rep reporter, expanded string, replies []bot.Reply) {
+	for _, r := range replies {
+		if r.React != "🙅" {
+			continue
+		}
+		text := r.Text
+		if text == "" {
+			text = "command failed"
+		}
+		rep.Warn(fmt.Sprintf("❌ %s: %s", expanded, text))
+	}
+}
+
 // runOneAutocreateCommand parses one !-prefixed command string and
 // executes it through the shared registry as the named target. Used by
 // both the per-channel and per-thread command-execution loops.
-// rep is used to surface unknown-command warnings in both interactive and
-// bulk paths (the bulk path has no Discord channel to send to directly).
+// rep is used to surface unknown-command and failed-command warnings in
+// both interactive and bulk paths (the bulk path has no Discord channel
+// to send to directly).
 func (b *Bot) runOneAutocreateCommand(s *discordgo.Session, actor *autocreateActor, rep reporter, guildID, targetID, targetName, targetType, expanded string) {
 	parsed := b.Parser.Parse(b.Cfg.Discord.Prefix + expanded)
 	for _, pc := range parsed {
@@ -745,16 +764,29 @@ func (b *Bot) runOneAutocreateCommand(s *discordgo.Session, actor *autocreateAct
 		}
 
 		replies := handler.Run(ctx, pc.Args)
-		// For the interactive path (actor has a ChannelID) send replies back
-		// to the originating channel. For the bulk path (no ChannelID) there
-		// is no Discord message to reference, so replies are discarded here —
-		// the reporter collects all user-visible output instead.
+		reportCommandFailures(rep, expanded, replies)
+		// For the interactive path (actor has a ChannelID) send the
+		// remaining (non-failure) replies back to the originating channel —
+		// failures were already surfaced with command context via the
+		// reporter above. For the bulk path (no ChannelID) there is no
+		// Discord message to reference, so replies are discarded here — the
+		// reporter collects all user-visible output instead.
 		if actor.ChannelID != "" {
+			var rest []bot.Reply
+			for _, r := range replies {
+				if r.React == "🙅" {
+					continue
+				}
+				rest = append(rest, r)
+			}
+			if len(rest) == 0 {
+				continue
+			}
 			synth := &discordgo.MessageCreate{Message: &discordgo.Message{
 				ChannelID: actor.ChannelID,
 				Author:    &discordgo.User{ID: actor.UserID, Username: actor.UserName},
 			}}
-			b.sendReplies(s, synth, replies)
+			b.sendReplies(s, synth, rest)
 		}
 	}
 }
