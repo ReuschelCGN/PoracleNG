@@ -301,13 +301,34 @@ func TestArgMatchLureType(t *testing.T) {
 	params := []ParamDef{{Type: ParamLureType}}
 
 	result := am.Match([]string{"glacial"}, params, "en")
-	if result.LureType != 502 {
-		t.Errorf("lure = %d, want 502", result.LureType)
+	if len(result.LureTypes) != 1 || result.LureTypes[0] != 502 {
+		t.Errorf("lure = %v, want [502]", result.LureTypes)
 	}
 
 	result = am.Match([]string{"mossy"}, params, "en")
-	if result.LureType != 503 {
-		t.Errorf("lure = %d, want 503", result.LureType)
+	if len(result.LureTypes) != 1 || result.LureTypes[0] != 503 {
+		t.Errorf("lure = %v, want [503]", result.LureTypes)
+	}
+
+	// "normal" is the plain Lure Module (501), not the 0 "any" sentinel.
+	result = am.Match([]string{"normal"}, params, "en")
+	if len(result.LureTypes) != 1 || result.LureTypes[0] != 501 {
+		t.Errorf("lure = %v, want [501]", result.LureTypes)
+	}
+
+	// Multiple lure names in one command all collect.
+	result = am.Match([]string{"normal", "glacial", "mossy", "magnetic", "sparkly"}, params, "en")
+	want := []int{501, 502, 503, 504, 506}
+	if len(result.LureTypes) != len(want) {
+		t.Fatalf("lure = %v, want %v", result.LureTypes, want)
+	}
+	for i, id := range want {
+		if result.LureTypes[i] != id {
+			t.Errorf("lure[%d] = %d, want %d", i, result.LureTypes[i], id)
+		}
+	}
+	if len(result.Unrecognized) != 0 {
+		t.Errorf("unrecognized = %v, want none", result.Unrecognized)
 	}
 }
 

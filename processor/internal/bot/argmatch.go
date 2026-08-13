@@ -76,10 +76,10 @@ func NewArgMatcher(bundle *i18n.Bundle, gd *gamedata.GameData, resolver *Pokemon
 
 		// Lure types — accept pogo-translations keys lure_501..lure_506
 		// (resources/gamelocale/) in addition to the legacy arg.* keys.
-		// The lure_N values are added last so they take precedence over
-		// arg.normal if they ever collide in the user's language.
+		// "normal" is the plain Lure Module (501); 0 is reserved for the
+		// "any lure" DB sentinel and must never come from a name match.
 		lures := make(map[string]int)
-		lures[strings.ToLower(tr.T("arg.normal"))] = 0
+		lures[strings.ToLower(tr.T("arg.normal"))] = 501
 		lures[strings.ToLower(tr.T("arg.glacial"))] = 502
 		lures[strings.ToLower(tr.T("arg.mossy"))] = 503
 		lures[strings.ToLower(tr.T("arg.magnetic"))] = 504
@@ -385,6 +385,16 @@ func (am *ArgMatcher) Match(tokens []string, params []ParamDef, lang string) *Pa
 				}
 			}
 		}
+		if param.Type == ParamLureType {
+			for i, tok := range tokens {
+				if consumed[i] {
+					continue
+				}
+				if am.tryLureType(tok, lang, result) {
+					consumed[i] = true
+				}
+			}
+		}
 		if param.Type == ParamPokemonName {
 			for i, tok := range tokens {
 				if consumed[i] {
@@ -430,8 +440,8 @@ var matchPriorities = []ParamType{
 	ParamKeyword,
 	ParamTeam,
 	ParamGender,
-	ParamLureType,
-	// ParamTypeName and ParamPokemonName handled separately (collect all matches)
+	// ParamLureType, ParamTypeName and ParamPokemonName handled separately
+	// (collect all matches)
 }
 
 func (am *ArgMatcher) tryMatch(tok string, param ParamDef, lang string, result *ParsedArgs) bool {
@@ -728,10 +738,10 @@ func (am *ArgMatcher) tryGender(tok, lang string, result *ParsedArgs) bool {
 	return false
 }
 
-// tryLureType matches lure type names.
+// tryLureType matches a lure type name and adds its ID to result.LureTypes.
 func (am *ArgMatcher) tryLureType(tok, lang string, result *ParsedArgs) bool {
 	if id, ok := am.lookupInLangMaps(tok, lang, am.lureMap); ok {
-		result.LureType = id
+		result.LureTypes = append(result.LureTypes, id)
 		return true
 	}
 	return false
