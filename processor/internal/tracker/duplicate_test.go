@@ -1,6 +1,8 @@
 package tracker
 
 import (
+	"runtime"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -213,4 +215,57 @@ func TestRsvpChanged(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDuplicateCacheMemoryPerEntry pins the per-entry cost of the dedup set.
+//
+// The ttlcache this replaced spent ~233 B to remember a single bool: an Item
+// struct, a retained key string, a container/list node and an expiry-heap
+// entry. At scanner throughput the live set runs to millions of keys, which
+// measured 1.42 GB in a production heap profile.
+func TestDuplicateCacheMemoryPerEntry(t *testing.T) {
+	dc := NewDuplicateCache()
+	defer dc.Close()
+
+	const entries = 500_000
+	// Far enough out that nothing expires mid-test.
+	disappear := time.Now().Unix() + 3600
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	for i := range entries {
+		dc.CheckPokemon(encounterIDForTest(i), true, 1500, disappear)
+	}
+
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	if growth < 0 {
+		growth = 0
+	}
+	perEntry := float64(growth) / entries
+
+	// ttlcache measured ~233 B/entry; a hash set measures ~25 B. 60 B is well
+	// clear of both, so this catches a regression back to boxed entries
+	// without being brittle about map growth slack.
+	const limitPerEntry = 60
+	t.Logf("dedup cache: %.1f B/entry over %d entries (%.1f MB)", perEntry, entries, float64(growth)/(1<<20))
+	if perEntry > limitPerEntry {
+		t.Errorf("dedup cache used %.1f B/entry over %d entries (%.1f MB total), want <= %d B/entry",
+			perEntry, entries, float64(growth)/(1<<20), limitPerEntry)
+	}
+}
+
+// encounterIDForTest builds a golbat-shaped 19-digit encounter id.
+func encounterIDForTest(i int) string {
+	const base = 1_000_000_000_000_000_000
+	return fmtInt(base + i)
+}
+
+func fmtInt(v int) string {
+	return strconv.Itoa(v)
 }

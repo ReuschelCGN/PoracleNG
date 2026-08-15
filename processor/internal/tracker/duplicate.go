@@ -9,28 +9,28 @@ import (
 
 // DuplicateCache provides deduplication for webhooks.
 type DuplicateCache struct {
-	cache     *ttlcache.Cache[string, bool]
+	// seen holds the plain "have we handled this?" keys, which dominate the
+	// entry count at scanner throughput. It stores key fingerprints rather
+	// than boxed cache items — see expiringSet.
+	seen *expiringSet
+	// raidCache keeps real values (prior RSVP state) rather than a bit, and
+	// its cardinality is bounded by active raids, so it stays a ttlcache.
 	raidCache *ttlcache.Cache[string, *RaidCacheResult]
 }
 
 // NewDuplicateCache creates a new duplicate detection cache.
 func NewDuplicateCache() *DuplicateCache {
-	cache := ttlcache.New[string, bool](
-		ttlcache.WithTTL[string, bool](90*time.Minute),
-		ttlcache.WithDisableTouchOnHit[string, bool](),
-	)
 	raidCache := ttlcache.New[string, *RaidCacheResult](
 		ttlcache.WithTTL[string, *RaidCacheResult](90*time.Minute),
 		ttlcache.WithDisableTouchOnHit[string, *RaidCacheResult](),
 	)
-	go cache.Start()
 	go raidCache.Start()
-	return &DuplicateCache{cache: cache, raidCache: raidCache}
+	return &DuplicateCache{seen: newExpiringSet(), raidCache: raidCache}
 }
 
 // Close stops all cache eviction goroutines.
 func (dc *DuplicateCache) Close() {
-	dc.cache.Stop()
+	dc.seen.Close()
 	dc.raidCache.Stop()
 }
 
@@ -43,7 +43,7 @@ func (dc *DuplicateCache) CheckPokemon(encounterID string, verified bool, cp int
 	}
 	key := fmt.Sprintf("%s%s%d", encounterID, verifiedStr, cp)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true // duplicate
 	}
 
@@ -60,7 +60,7 @@ func (dc *DuplicateCache) CheckPokemon(encounterID string, verified bool, cp int
 		ttl = time.Duration(remaining) * time.Second
 	}
 
-	dc.cache.Set(key, true, ttl)
+	dc.seen.Add(key, ttl)
 	return false
 }
 
@@ -139,7 +139,7 @@ func rsvpChanged(oldRSVPs, newRSVPs []RaidRSVP) bool {
 func (dc *DuplicateCache) CheckShowcase(pokestopID string, showcaseExpiry int64, rank1Fingerprint string) bool {
 	key := fmt.Sprintf("%sSC%d:%s", pokestopID, showcaseExpiry, rank1Fingerprint)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
@@ -148,14 +148,14 @@ func (dc *DuplicateCache) CheckShowcase(pokestopID string, showcaseExpiry int64,
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	dc.seen.Add(key, time.Duration(remaining)*time.Second)
 	return false
 }
 
 func (dc *DuplicateCache) CheckInvasion(pokestopID string, expiration int64) bool {
 	key := fmt.Sprintf("%sI%d", pokestopID, expiration)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
@@ -164,7 +164,7 @@ func (dc *DuplicateCache) CheckInvasion(pokestopID string, expiration int64) boo
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	dc.seen.Add(key, time.Duration(remaining)*time.Second)
 	return false
 }
 
@@ -173,11 +173,11 @@ func (dc *DuplicateCache) CheckInvasion(pokestopID string, expiration int64) boo
 func (dc *DuplicateCache) CheckQuest(pokestopID string, rewardsKey string) bool {
 	key := fmt.Sprintf("%s_%s", pokestopID, rewardsKey)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
-	dc.cache.Set(key, true, 90*time.Minute)
+	dc.seen.Add(key, 90*time.Minute)
 	return false
 }
 
@@ -186,7 +186,7 @@ func (dc *DuplicateCache) CheckQuest(pokestopID string, rewardsKey string) bool 
 func (dc *DuplicateCache) CheckLure(pokestopID string, expiration int64) bool {
 	key := fmt.Sprintf("%sL%d", pokestopID, expiration)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
@@ -195,7 +195,7 @@ func (dc *DuplicateCache) CheckLure(pokestopID string, expiration int64) bool {
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	dc.seen.Add(key, time.Duration(remaining)*time.Second)
 	return false
 }
 
@@ -204,7 +204,7 @@ func (dc *DuplicateCache) CheckLure(pokestopID string, expiration int64) bool {
 func (dc *DuplicateCache) CheckMaxbattle(stationID string, battleEnd int64, pokemonID int) bool {
 	key := fmt.Sprintf("%sM%d%d", stationID, battleEnd, pokemonID)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
@@ -213,7 +213,7 @@ func (dc *DuplicateCache) CheckMaxbattle(stationID string, battleEnd int64, poke
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	dc.seen.Add(key, time.Duration(remaining)*time.Second)
 	return false
 }
 
@@ -222,7 +222,7 @@ func (dc *DuplicateCache) CheckMaxbattle(stationID string, battleEnd int64, poke
 func (dc *DuplicateCache) CheckNest(nestID int64, pokemonID int, resetTime int64) bool {
 	key := fmt.Sprintf("%d_%d_%d", nestID, pokemonID, resetTime)
 
-	if dc.cache.Get(key) != nil {
+	if dc.seen.Has(key) {
 		return true
 	}
 
@@ -232,6 +232,6 @@ func (dc *DuplicateCache) CheckNest(nestID int64, pokemonID int, resetTime int64
 	if remaining <= 0 {
 		remaining = 3600
 	}
-	dc.cache.Set(key, true, time.Duration(remaining)*time.Second)
+	dc.seen.Add(key, time.Duration(remaining)*time.Second)
 	return false
 }
