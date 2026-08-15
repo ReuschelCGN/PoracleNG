@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -110,5 +111,101 @@ func TestStatsTrackerReset(t *testing.T) {
 	group = st.GetRarityGroup(25)
 	if group != RarityUnknown {
 		t.Error("Expected unknown rarity after reset")
+	}
+}
+
+// TestStatsTrackerMemoryIsIndependentOfSightingVolume pins the property that
+// makes this tracker safe at scanner throughput: resident memory is a function
+// of (species x time buckets), not of how many sightings were recorded.
+//
+// The per-sighting slice this replaced cost ~27.8 B per recorded sighting, so
+// a busy install (2000 webhooks/sec over an 8h window) held ~1.6 GB here. The
+// bucketed counters hold a bounded number of map entries no matter the volume.
+func TestStatsTrackerMemoryIsIndependentOfSightingVolume(t *testing.T) {
+	cfg := testStatsConfig()
+	cfg.WindowHours = 8
+	st := NewStatsTracker(cfg)
+
+	const sightings = 2_000_000
+	const species = 600
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	for i := range sightings {
+		st.RecordSighting(i%species, i%10 == 0, i%1000 == 0)
+	}
+
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	if growth < 0 {
+		growth = 0
+	}
+
+	// Per-sighting storage would be ~55 MB for this volume. Bounded counters
+	// stay far under; 30 MB leaves generous headroom for either the ring or
+	// GC noise without letting a linear implementation through.
+	const limit = 30 << 20
+	if growth > limit {
+		t.Errorf("recording %d sightings grew the heap by %.1f MB, want <= %d MB — memory is scaling with sighting count",
+			sightings, float64(growth)/(1<<20), limit>>20)
+	}
+}
+
+// TestStatsTrackerDropsSightingsOutsideWindow covers behaviour the slice-based
+// tracker had but never tested: sightings older than window_hours stop counting.
+func TestStatsTrackerDropsSightingsOutsideWindow(t *testing.T) {
+	cfg := testStatsConfig()
+	cfg.WindowHours = 1
+	st := NewStatsTracker(cfg)
+
+	now := int64(1_700_000_000)
+	st.now = func() int64 { return now }
+
+	for range 500 {
+		st.RecordSighting(25, false, false)
+	}
+	st.recalculate()
+	if got := st.GetRarityGroup(25); got == RarityUnknown {
+		t.Fatal("expected a rarity group while the sightings are inside the window")
+	}
+
+	// Step past the window. Nothing new is recorded, so every bucket is stale.
+	now += 2 * 3600
+	st.recalculate()
+
+	if got := st.GetRarityGroup(25); got != RarityUnknown {
+		t.Errorf("expected RarityUnknown after the window elapsed, got %d", got)
+	}
+}
+
+// TestStatsTrackerRingRecyclesStaleBuckets guards the wrap-around: a bucket
+// reused a full window later must not carry its previous occupant's counts.
+func TestStatsTrackerRingRecyclesStaleBuckets(t *testing.T) {
+	cfg := testStatsConfig()
+	cfg.WindowHours = 1
+	st := NewStatsTracker(cfg)
+
+	now := int64(1_700_000_000)
+	st.now = func() int64 { return now }
+
+	for range 300 {
+		st.RecordSighting(25, false, false)
+	}
+
+	// Same ring slot, one full window later.
+	now += int64(len(st.buckets)) * 60
+	st.RecordSighting(150, false, false)
+	st.recalculate()
+
+	if got := st.GetRarityGroup(25); got != RarityUnknown {
+		t.Errorf("pokemon 25 should have aged out of the ring, got group %d", got)
+	}
+	if got := st.GetRarityGroup(150); got == RarityUnknown {
+		t.Error("pokemon 150 was just recorded and should have a group")
 	}
 }
