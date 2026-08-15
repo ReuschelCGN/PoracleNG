@@ -10,7 +10,15 @@ var finder tzf.F
 
 func init() {
 	var err error
-	finder, err = tzf.NewFullFinder()
+	// NewDefaultFinder, not NewFullFinder: both wrap the same preindex tile
+	// fast path, but Full decodes tzf-dist's 18 MB full-precision polygon set
+	// where Default decodes the 6.5 MB topology-simplified one. That cost
+	// 140.96 MB of live heap at init in production (4.44% of the total) for
+	// accuracy we cannot use — upstream bounds the simplified boundaries to
+	// ~111 m of the true border, and a pokemon spawn that close to a timezone
+	// line resolves to a neighbouring zone with the same wall clock in every
+	// case a Poracle alert cares about.
+	finder, err = tzf.NewDefaultFinder()
 	if err != nil {
 		panic("failed to initialize timezone finder: " + err.Error())
 	}

@@ -6,10 +6,11 @@ import (
 
 // TestGetTimezone_KnownCoordinates is a sanity check that the tzf
 // finder backing GetTimezone resolves a representative spread of
-// coordinates correctly. Worth keeping after tzf version bumps —
-// e.g. the v1.0 → v1.2 jump switches NewDefaultFinder for
-// NewFullFinder (FuzzyFinder + accurate Finder fallback) and we
-// want a fast signal if a boundary shifts.
+// coordinates correctly. Worth keeping across tzf version bumps and
+// finder changes — GetTimezone runs NewDefaultFinder, whose
+// topology-simplified polygons trade ~111 m of boundary precision for
+// roughly a fifth of the resident memory, so this is the fast signal
+// if a boundary ever shifts far enough to matter.
 func TestGetTimezone_KnownCoordinates(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -24,12 +25,27 @@ func TestGetTimezone_KnownCoordinates(t *testing.T) {
 		{"Paris", 48.8566, 2.3522, "Europe/Paris"},
 		{"São Paulo", -23.5505, -46.6333, "America/Sao_Paulo"},
 		{"Auckland", -36.8485, 174.7633, "Pacific/Auckland"},
-		// Open ocean now resolves to a nautical etc. zone with
-		// NewFullFinder; NewDefaultFinder (v1.0.x) returned ""
-		// and our UTC fallback kicked in. Pokemon spawns are on
-		// land so this doesn't matter in practice — kept here to
-		// document the version-bump behaviour change.
+		// Open ocean resolves to a nautical Etc zone rather than ""
+		// (tzf v1.0.x returned empty here and our UTC fallback kicked
+		// in). Pokemon spawns are on land so this doesn't matter in
+		// practice — kept to document the behaviour.
 		{"middle of Atlantic", 0, -30, "Etc/GMT+2"},
+
+		// Zones that sit close to a neighbour or carry an unusual offset.
+		// These are the cases most exposed to boundary simplification, so
+		// they are the ones worth pinning across a finder change.
+		{"Phoenix", 33.4484, -112.0740, "America/Phoenix"},
+		{"Indianapolis", 39.7684, -86.1581, "America/Indiana/Indianapolis"},
+		{"Kathmandu", 27.7172, 85.3240, "Asia/Kathmandu"},
+		{"Adelaide", -34.9285, 138.6007, "Australia/Adelaide"},
+		{"Lisbon", 38.7223, -9.1393, "Europe/Lisbon"},
+		{"Madrid", 40.4168, -3.7038, "Europe/Madrid"},
+		{"Berlin", 52.5200, 13.4050, "Europe/Berlin"},
+		{"Moscow", 55.7558, 37.6173, "Europe/Moscow"},
+		{"Anchorage", 61.2181, -149.9003, "America/Anchorage"},
+		{"Honolulu", 21.3069, -157.8583, "Pacific/Honolulu"},
+		{"Singapore", 1.3521, 103.8198, "Asia/Singapore"},
+		{"Mumbai", 19.0760, 72.8777, "Asia/Kolkata"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
