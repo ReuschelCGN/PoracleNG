@@ -28,13 +28,31 @@ type localCellData struct {
 	weatherFromBoost     [8]int
 	currentHourTimestamp int64
 	monsterWeather       int
+	lastSeen             int64 // unix seconds of the last write; drives eviction
 }
 
 // controllerCellData holds weather data from weather webhooks.
 type controllerCellData struct {
 	lastCurrentWeatherCheck int64
 	hourWeather             map[int64]int // hourTimestamp -> condition
+	lastSeen                int64         // unix seconds of the last write; drives eviction
 }
+
+const (
+	// weatherHistoryHours is how far back hourly entries stay reachable.
+	// UpdateFromWebhook compares against the previous hour and
+	// ExportCellWeather filters to currentHour-3600, so nothing older is
+	// readable and nothing older is kept.
+	weatherHistoryHours = 1
+
+	// weatherCellIdleSecs is how long a cell survives without a write before
+	// its state is dropped. Longer than the AccuWeather forecast refresh
+	// (8h by default) so an actively-forecast cell is never reclaimed.
+	weatherCellIdleSecs = 24 * 3600
+
+	// weatherEvictInterval is the sweep cadence.
+	weatherEvictInterval = 10 * time.Minute
+)
 
 // WeatherTracker manages per-S2-cell weather state.
 // Port of weatherData.js.
@@ -47,10 +65,54 @@ type WeatherTracker struct {
 
 // NewWeatherTracker creates a new weather tracker.
 func NewWeatherTracker() *WeatherTracker {
-	return &WeatherTracker{
+	wt := &WeatherTracker{
 		controllerData: make(map[string]*controllerCellData),
 		localData:      make(map[string]*localCellData),
 		changes:        make(chan WeatherChange, 100),
+	}
+	go wt.evictionLoop()
+	return wt
+}
+
+func (wt *WeatherTracker) evictionLoop() {
+	ticker := time.NewTicker(weatherEvictInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		wt.evict(time.Now().Unix())
+	}
+}
+
+// evict drops per-cell state that can no longer be read.
+//
+// Two things grow here. Per cell, hourWeather gained an entry every hour and
+// nothing removed them, so a long-lived process accumulated entries
+// proportional to (cells x uptime hours) — the actual leak. Separately, a cell
+// that stops being scanned kept its struct forever, so a shifted scan area
+// stranded state indefinitely.
+func (wt *WeatherTracker) evict(now int64) {
+	currentHour := now - (now % 3600)
+	oldestHour := currentHour - weatherHistoryHours*3600
+	idleBefore := now - weatherCellIdleSecs
+
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+
+	for cellID, cd := range wt.controllerData {
+		if cd.lastSeen < idleBefore {
+			delete(wt.controllerData, cellID)
+			continue
+		}
+		for ts := range cd.hourWeather {
+			if ts < oldestHour {
+				delete(cd.hourWeather, ts)
+			}
+		}
+	}
+
+	for cellID, ld := range wt.localData {
+		if ld.lastSeen < idleBefore {
+			delete(wt.localData, cellID)
+		}
 	}
 }
 
@@ -94,6 +156,7 @@ func (wt *WeatherTracker) UpdateFromWebhook(cellID string, condition int, timest
 
 	cd.hourWeather[hourTimestamp] = condition
 	cd.lastCurrentWeatherCheck = timestamp
+	cd.lastSeen = timestamp
 
 	if changed {
 		// Send non-blocking
@@ -210,6 +273,7 @@ func (wt *WeatherTracker) SetHourWeather(cellID string, hourTimestamp int64, con
 		wt.controllerData[cellID] = cd
 	}
 	cd.hourWeather[hourTimestamp] = condition
+	cd.lastSeen = time.Now().Unix()
 }
 
 // hasHourWeather checks if weather data exists for a specific hour in a cell.
@@ -246,6 +310,8 @@ func (wt *WeatherTracker) CheckWeatherOnMonster(cellID string, lat, lon float64,
 
 	local := wt.localData[cellID]
 	controller := wt.controllerData[cellID]
+	local.lastSeen = now
+	controller.lastSeen = now
 
 	// Only process if more than 30 seconds into the hour and monster has weather
 	if now <= currentHour+30 || monsterWeather == 0 {
@@ -330,4 +396,24 @@ func (wt *WeatherTracker) CheckWeatherOnMonster(cellID string, lat, lon float64,
 			}
 		}
 	}
+}
+
+// hourCount returns how many hourly entries a cell holds.
+func (wt *WeatherTracker) hourCount(cellID string) int {
+	wt.mu.RLock()
+	defer wt.mu.RUnlock()
+	cd := wt.controllerData[cellID]
+	if cd == nil {
+		return 0
+	}
+	return len(cd.hourWeather)
+}
+
+// hasCell reports whether any state is held for a cell.
+func (wt *WeatherTracker) hasCell(cellID string) bool {
+	wt.mu.RLock()
+	defer wt.mu.RUnlock()
+	_, c := wt.controllerData[cellID]
+	_, l := wt.localData[cellID]
+	return c || l
 }

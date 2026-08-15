@@ -56,3 +56,64 @@ func TestWeatherTrackerInference(t *testing.T) {
 		// May not trigger if within first 30 seconds of the hour - that's OK
 	}
 }
+
+// TestWeatherTrackerEvictsHoursOutsideRetention covers the actual leak:
+// controllerCellData.hourWeather gained one entry per cell per hour and
+// nothing ever removed them, so a long-lived process accumulated entries
+// proportional to (cells x uptime hours).
+func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
+	wt := NewWeatherTracker()
+
+	now := int64(1_700_000_000)
+	currentHour := now - (now % 3600)
+	cellID := "cell-retention"
+
+	// Six hours of history, the current hour, and a forecast hour ahead.
+	for h := int64(6); h >= 1; h-- {
+		wt.SetHourWeather(cellID, currentHour-h*3600, 1)
+	}
+	wt.SetHourWeather(cellID, currentHour, 2)
+	wt.SetHourWeather(cellID, currentHour+3600, 3)
+
+	wt.evict(now)
+
+	got := wt.hourCount(cellID)
+	// Readers never look further back than the previous hour, so the
+	// keepers are: previous, current, forecast.
+	if got != 3 {
+		t.Errorf("expected 3 retained hours (previous, current, forecast), got %d", got)
+	}
+	if !wt.hasHourWeather(cellID, currentHour) {
+		t.Error("current hour must survive eviction")
+	}
+	if !wt.hasHourWeather(cellID, currentHour+3600) {
+		t.Error("forecast hour must survive eviction — AccuWeather writes it ahead of time")
+	}
+	if !wt.hasHourWeather(cellID, currentHour-3600) {
+		t.Error("previous hour must survive eviction — UpdateFromWebhook compares against it")
+	}
+	if wt.hasHourWeather(cellID, currentHour-2*3600) {
+		t.Error("hours older than the previous hour are unreachable and must be dropped")
+	}
+}
+
+// TestWeatherTrackerEvictsIdleCells asserts whole cells are reclaimed once
+// they stop being scanned, so a shifted scan area does not strand them.
+func TestWeatherTrackerEvictsIdleCells(t *testing.T) {
+	wt := NewWeatherTracker()
+
+	now := int64(1_700_000_000)
+	stale := now - 48*3600
+
+	wt.UpdateFromWebhook("cell-stale", 1, stale, 51.5, -0.1, [4][2]float64{})
+	wt.UpdateFromWebhook("cell-fresh", 1, now, 51.5, -0.1, [4][2]float64{})
+
+	wt.evict(now)
+
+	if wt.hasCell("cell-stale") {
+		t.Error("a cell untouched for 48h should be evicted entirely")
+	}
+	if !wt.hasCell("cell-fresh") {
+		t.Error("a cell touched this hour must be kept")
+	}
+}
