@@ -3,6 +3,7 @@ package tracker
 import (
 	"runtime"
 	"testing"
+	"time"
 )
 
 func testStatsConfig() StatsConfig {
@@ -207,5 +208,21 @@ func TestStatsTrackerRingRecyclesStaleBuckets(t *testing.T) {
 	}
 	if got := st.GetRarityGroup(150); got == RarityUnknown {
 		t.Error("pokemon 150 was just recorded and should have a group")
+	}
+}
+
+// TestRecalcIntervalFloorsNonPositive guards the boot path: time.NewTicker
+// panics on a non-positive interval, and an explicit `refresh_interval_mins = 0`
+// in [stats] survives config defaulting (toml decodes over the pre-populated
+// defaults struct), so an unrecoverable panic would fire in recalcLoop's
+// goroutine before the processor finished starting.
+func TestRecalcIntervalFloorsNonPositive(t *testing.T) {
+	for _, mins := range []int{0, -1, -60} {
+		if got := recalcInterval(mins); got <= 0 {
+			t.Errorf("recalcInterval(%d) = %v, want a positive duration", mins, got)
+		}
+	}
+	if got := recalcInterval(5); got != 5*time.Minute {
+		t.Errorf("recalcInterval(5) = %v, want 5m", got)
 	}
 }

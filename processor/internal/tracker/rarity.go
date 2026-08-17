@@ -164,8 +164,27 @@ func (st *StatsTracker) GetShinyRate(pokemonID int) float64 {
 	return 0
 }
 
+// defaultRecalcIntervalMins is the fallback cadence when the configured value
+// is missing or nonsensical. Matches the [stats] refresh_interval_mins default.
+const defaultRecalcIntervalMins = 5
+
+// recalcInterval converts the configured refresh interval into a ticker
+// duration, flooring non-positive values.
+//
+// time.NewTicker panics on a non-positive interval, and an explicit
+// `refresh_interval_mins = 0` survives config defaulting because toml decodes
+// over the pre-populated defaults struct. Without the floor that panic fires
+// in recalcLoop's goroutine during startup and takes the processor with it.
+// windowMinutes floors its sibling field for the same reason.
+func recalcInterval(mins int) time.Duration {
+	if mins < 1 {
+		mins = defaultRecalcIntervalMins
+	}
+	return time.Duration(mins) * time.Minute
+}
+
 func (st *StatsTracker) recalcLoop() {
-	interval := time.Duration(st.cfg.RefreshIntervalMins) * time.Minute
+	interval := recalcInterval(st.cfg.RefreshIntervalMins)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
