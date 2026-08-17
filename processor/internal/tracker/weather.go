@@ -170,17 +170,45 @@ func GetWeatherCellID(lat, lon float64) string {
 	return strconv.FormatUint(uint64(cellID), 10)
 }
 
+// touchController returns the cell's controller state, creating it when
+// absent, and stamps liveness.
+//
+// Every write path must go through this rather than inlining the
+// create-if-missing block: eviction decides on lastSeen, so a path that
+// stores data without stamping reads back correctly for a full idle window
+// and then has its cells silently swept.
+//
+// Caller must hold wt.mu.
+func (wt *WeatherTracker) touchController(cellID string) *controllerCellData {
+	cd, ok := wt.controllerData[cellID]
+	if !ok {
+		cd = &controllerCellData{hourWeather: make(map[int64]int)}
+		wt.controllerData[cellID] = cd
+	}
+	cd.lastSeen = wt.nowFunc().Unix()
+	return cd
+}
+
+// touchLocal is touchController's counterpart for locally inferred state.
+//
+// Caller must hold wt.mu.
+func (wt *WeatherTracker) touchLocal(cellID string) *localCellData {
+	ld, ok := wt.localData[cellID]
+	if !ok {
+		ld = &localCellData{}
+		wt.localData[cellID] = ld
+	}
+	ld.lastSeen = wt.nowFunc().Unix()
+	return ld
+}
+
 // UpdateFromWebhook updates weather state from a direct weather webhook.
 // Emits a change event if the weather has changed from the previous hour.
 func (wt *WeatherTracker) UpdateFromWebhook(cellID string, condition int, timestamp int64, lat, lon float64, polygon [4][2]float64) {
 	wt.mu.Lock()
 	defer wt.mu.Unlock()
 
-	cd, ok := wt.controllerData[cellID]
-	if !ok {
-		cd = &controllerCellData{hourWeather: make(map[int64]int)}
-		wt.controllerData[cellID] = cd
-	}
+	cd := wt.touchController(cellID)
 
 	hourTimestamp := timestamp - (timestamp % 3600)
 	previousHourTimestamp := hourTimestamp - 3600
@@ -197,12 +225,6 @@ func (wt *WeatherTracker) UpdateFromWebhook(cellID string, condition int, timest
 
 	cd.hourWeather[hourTimestamp] = condition
 	cd.lastCurrentWeatherCheck = timestamp
-	// lastSeen drives eviction, which runs on the local clock — so it must
-	// be stamped with receipt time, not the webhook's `updated` field.
-	// Replayed logs and Golbat clock skew both carry event times that are
-	// arbitrarily old (or future), and honouring them here would either make
-	// a live cell instantly evictable or pin a dead one forever.
-	cd.lastSeen = wt.nowFunc().Unix()
 
 	if changed {
 		// Send non-blocking
@@ -313,13 +335,7 @@ func (wt *WeatherTracker) SetHourWeather(cellID string, hourTimestamp int64, con
 	wt.mu.Lock()
 	defer wt.mu.Unlock()
 
-	cd, ok := wt.controllerData[cellID]
-	if !ok {
-		cd = &controllerCellData{hourWeather: make(map[int64]int)}
-		wt.controllerData[cellID] = cd
-	}
-	cd.hourWeather[hourTimestamp] = condition
-	cd.lastSeen = wt.nowFunc().Unix()
+	wt.touchController(cellID).hourWeather[hourTimestamp] = condition
 }
 
 // hasHourWeather checks if weather data exists for a specific hour in a cell.
@@ -346,18 +362,8 @@ func (wt *WeatherTracker) CheckWeatherOnMonster(cellID string, lat, lon float64,
 	wt.mu.Lock()
 	defer wt.mu.Unlock()
 
-	// Ensure data structures exist
-	if wt.localData[cellID] == nil {
-		wt.localData[cellID] = &localCellData{}
-	}
-	if wt.controllerData[cellID] == nil {
-		wt.controllerData[cellID] = &controllerCellData{hourWeather: make(map[int64]int)}
-	}
-
-	local := wt.localData[cellID]
-	controller := wt.controllerData[cellID]
-	local.lastSeen = now
-	controller.lastSeen = now
+	local := wt.touchLocal(cellID)
+	controller := wt.touchController(cellID)
 
 	// Only process if more than 30 seconds into the hour and monster has weather
 	if now <= currentHour+30 || monsterWeather == 0 {

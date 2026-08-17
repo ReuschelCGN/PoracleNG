@@ -204,3 +204,52 @@ func TestWeatherTrackerCloseStopsEvictionLoop(t *testing.T) {
 
 	wt.Close() // idempotent
 }
+
+// TestWeatherTrackerEveryWritePathStampsLiveness pins the invariant that keeps
+// eviction honest: any path that writes cell state must also mark the cell
+// live. A write path that stores data without stamping reads back correctly
+// for a day and then has its cells silently swept, which is close to
+// undiagnosable in production.
+func TestWeatherTrackerEveryWritePathStampsLiveness(t *testing.T) {
+	// Mid-hour so CheckWeatherOnMonster clears its "30s into the hour" gate.
+	base := time.Unix(1_700_000_000, 0).Truncate(time.Hour).Add(30 * time.Minute)
+
+	writes := map[string]func(wt *WeatherTracker, cellID string){
+		"UpdateFromWebhook": func(wt *WeatherTracker, cellID string) {
+			wt.UpdateFromWebhook(cellID, 1, wt.nowFunc().Unix(), 51.5, -0.1, [4][2]float64{})
+		},
+		"SetHourWeather": func(wt *WeatherTracker, cellID string) {
+			now := wt.nowFunc().Unix()
+			wt.SetHourWeather(cellID, now-(now%3600), 1)
+		},
+		"CheckWeatherOnMonster": func(wt *WeatherTracker, cellID string) {
+			wt.CheckWeatherOnMonster(cellID, 51.5, -0.1, 3)
+		},
+	}
+
+	for name, write := range writes {
+		t.Run(name, func(t *testing.T) {
+			wt := NewWeatherTracker()
+			defer wt.Close()
+
+			clock := base
+			wt.nowFunc = func() time.Time { return clock }
+
+			write(wt, "cell-a")
+
+			// Just inside the idle window: the write must have kept it alive.
+			clock = base.Add(weatherCellIdleSecs*time.Second - time.Hour)
+			wt.evict(clock.Unix())
+			if !wt.hasCell("cell-a") {
+				t.Fatalf("%s did not stamp liveness: cell evicted while still inside the idle window", name)
+			}
+
+			// Past the idle window with no further writes.
+			clock = base.Add(weatherCellIdleSecs*time.Second + time.Hour)
+			wt.evict(clock.Unix())
+			if wt.hasCell("cell-a") {
+				t.Errorf("cell survived past the idle window with no further writes")
+			}
+		})
+	}
+}
