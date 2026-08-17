@@ -108,18 +108,17 @@ func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
 // Idleness is measured from when we last *received* something for the cell,
 // so the clock is driven forward here rather than backdating the webhook.
 func TestWeatherTrackerEvictsIdleCells(t *testing.T) {
-	wt := NewWeatherTracker()
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
+	defer wt.Close()
 
-	clock := time.Unix(1_700_000_000, 0)
-	wt.nowFunc = func() time.Time { return clock }
-
-	wt.UpdateFromWebhook("cell-stale", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
+	wt.UpdateFromWebhook("cell-stale", 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
 
 	// Two days pass; only one cell keeps receiving webhooks.
-	clock = clock.Add(48 * time.Hour)
-	wt.UpdateFromWebhook("cell-fresh", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
+	clock.advance(48 * time.Hour)
+	wt.UpdateFromWebhook("cell-fresh", 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
 
-	wt.evict(clock.Unix())
+	wt.evict(clock.now().Unix())
 
 	if wt.hasCell("cell-stale") {
 		t.Error("a cell that received nothing for 48h should be evicted entirely")
@@ -137,15 +136,14 @@ func TestWeatherTrackerEvictsIdleCells(t *testing.T) {
 // next sweep, discarding the previous-hour state that later genuine changes
 // compare against.
 func TestWeatherTrackerReplayedWebhookIsNotInstantlyIdle(t *testing.T) {
-	wt := NewWeatherTracker()
-
-	clock := time.Unix(1_700_000_000, 0)
-	wt.nowFunc = func() time.Time { return clock }
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
+	defer wt.Close()
 
 	// A replayed webhook: event time three days in the past, received now.
-	wt.UpdateFromWebhook("cell-replay", 1, clock.Add(-72*time.Hour).Unix(), 51.5, -0.1, [4][2]float64{})
+	wt.UpdateFromWebhook("cell-replay", 1, clock.now().Add(-72*time.Hour).Unix(), 51.5, -0.1, [4][2]float64{})
 
-	wt.evict(clock.Unix())
+	wt.evict(clock.now().Unix())
 
 	if !wt.hasCell("cell-replay") {
 		t.Error("a cell whose webhook carried an old event time was evicted; liveness must follow receipt time")
@@ -229,24 +227,22 @@ func TestWeatherTrackerEveryWritePathStampsLiveness(t *testing.T) {
 
 	for name, write := range writes {
 		t.Run(name, func(t *testing.T) {
-			wt := NewWeatherTracker()
+			clock := newTestClock(base.Unix())
+			wt := NewWeatherTracker(WithClock(clock.now))
 			defer wt.Close()
-
-			clock := base
-			wt.nowFunc = func() time.Time { return clock }
 
 			write(wt, "cell-a")
 
 			// Just inside the idle window: the write must have kept it alive.
-			clock = base.Add(weatherCellIdleSecs*time.Second - time.Hour)
-			wt.evict(clock.Unix())
+			clock.advance(weatherCellIdleSecs*time.Second - time.Hour)
+			wt.evict(clock.now().Unix())
 			if !wt.hasCell("cell-a") {
 				t.Fatalf("%s did not stamp liveness: cell evicted while still inside the idle window", name)
 			}
 
 			// Past the idle window with no further writes.
-			clock = base.Add(weatherCellIdleSecs*time.Second + time.Hour)
-			wt.evict(clock.Unix())
+			clock.advance(2 * time.Hour)
+			wt.evict(clock.now().Unix())
 			if wt.hasCell("cell-a") {
 				t.Errorf("cell survived past the idle window with no further writes")
 			}
@@ -266,18 +262,16 @@ func TestWeatherTrackerEveryWritePathStampsLiveness(t *testing.T) {
 func TestWeatherTrackerIdleWindowCoversForecastRefresh(t *testing.T) {
 	const refreshHours = 30 // deliberately longer than the 24h default idle
 
-	wt := NewWeatherTracker(WithForecastRefreshInterval(refreshHours))
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithForecastRefreshInterval(refreshHours), WithClock(clock.now))
 	defer wt.Close()
 
-	clock := time.Unix(1_700_000_000, 0)
-	wt.nowFunc = func() time.Time { return clock }
-
-	now := clock.Unix()
+	now := clock.now().Unix()
 	wt.SetHourWeather("cell-forecast", now-(now%3600), 1)
 
 	// One refresh period later, just before the next push would land.
-	clock = clock.Add(refreshHours*time.Hour - time.Hour)
-	wt.evict(clock.Unix())
+	clock.advance(refreshHours*time.Hour - time.Hour)
+	wt.evict(clock.now().Unix())
 
 	if !wt.hasCell("cell-forecast") {
 		t.Error("forecast-only cell was evicted before its next refresh could arrive")

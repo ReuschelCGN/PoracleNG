@@ -9,20 +9,18 @@ import (
 // dropped, so components keyed by the same cell ids can release their own
 // state instead of each re-deriving liveness.
 func TestWeatherTrackerNotifiesOnEvict(t *testing.T) {
-	wt := NewWeatherTracker()
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
 	defer wt.Close()
-
-	clock := time.Unix(1_700_000_000, 0)
-	wt.nowFunc = func() time.Time { return clock }
 
 	var evicted []string
 	wt.SetOnEvict(func(cellIDs []string) { evicted = append(evicted, cellIDs...) })
 
-	wt.UpdateFromWebhook("cell-gone", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
+	wt.UpdateFromWebhook("cell-gone", 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
 
-	clock = clock.Add(48 * time.Hour)
-	wt.UpdateFromWebhook("cell-live", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
-	wt.evict(clock.Unix())
+	clock.advance(48 * time.Hour)
+	wt.UpdateFromWebhook("cell-live", 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
+	wt.evict(clock.now().Unix())
 
 	if len(evicted) != 1 || evicted[0] != "cell-gone" {
 		t.Fatalf("onEvict got %v, want exactly [cell-gone]", evicted)

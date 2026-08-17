@@ -77,8 +77,9 @@ type WeatherTracker struct {
 	localData      map[string]*localCellData
 	changes        chan WeatherChange
 
-	// nowFunc is the clock used for cell liveness and eviction. Injectable
-	// so idle expiry is testable without sleeping. Defaults to time.Now.
+	// nowFunc is the clock used for cell liveness and eviction. Set once at
+	// construction via WithClock and never reassigned: evictionLoop reads it
+	// from its own goroutine, so a later write would be a data race.
 	nowFunc func() time.Time
 
 	// cellIdleSecs is how long a cell survives without a write. Sized at
@@ -97,6 +98,20 @@ type WeatherTracker struct {
 
 // WeatherOption configures a WeatherTracker at construction.
 type WeatherOption func(*WeatherTracker)
+
+// WithClock replaces the tracker's clock.
+//
+// An option rather than an assignable field: NewWeatherTracker starts
+// evictionLoop before returning, and that goroutine reads nowFunc, so a clock
+// handed over afterwards is an unsynchronized write. StatsTracker takes its
+// clock at construction for the same reason.
+func WithClock(nowFunc func() time.Time) WeatherOption {
+	return func(wt *WeatherTracker) {
+		if nowFunc != nil {
+			wt.nowFunc = nowFunc
+		}
+	}
+}
 
 // WithForecastRefreshInterval sizes cell idle expiry against the AccuWeather
 // refresh cadence, in hours.
