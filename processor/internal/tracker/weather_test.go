@@ -27,6 +27,7 @@ func TestGetWeatherCellID(t *testing.T) {
 
 func TestWeatherTrackerDirectUpdate(t *testing.T) {
 	wt := NewWeatherTracker()
+	defer wt.Close()
 
 	cellID := "test_cell"
 	wt.UpdateFromWebhook(cellID, 3, 1700000000, 51.5, -0.1, [4][2]float64{})
@@ -39,6 +40,7 @@ func TestWeatherTrackerDirectUpdate(t *testing.T) {
 
 func TestWeatherTrackerInference(t *testing.T) {
 	wt := NewWeatherTracker()
+	defer wt.Close()
 
 	cellID := "test_cell"
 
@@ -64,6 +66,7 @@ func TestWeatherTrackerInference(t *testing.T) {
 // proportional to (cells x uptime hours).
 func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
 	wt := NewWeatherTracker()
+	defer wt.Close()
 
 	now := int64(1_700_000_000)
 	currentHour := now - (now % 3600)
@@ -159,6 +162,7 @@ func TestWeatherTrackerReplayedWebhookIsNotInstantlyIdle(t *testing.T) {
 // genuine weather change into no alert at all.
 func TestWeatherTrackerKeepsHistoryForBackloggedWebhooks(t *testing.T) {
 	wt := NewWeatherTracker()
+	defer wt.Close()
 
 	now := time.Now().Unix()
 	currentHour := now - (now % 3600)
@@ -192,6 +196,7 @@ func TestWeatherTrackerKeepsHistoryForBackloggedWebhooks(t *testing.T) {
 // ticker, and pins its maps against GC.
 func TestWeatherTrackerCloseStopsEvictionLoop(t *testing.T) {
 	wt := NewWeatherTracker()
+	defer wt.Close()
 	wt.Close()
 
 	select {
