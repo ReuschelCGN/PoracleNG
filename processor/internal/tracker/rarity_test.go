@@ -162,10 +162,8 @@ func TestStatsTrackerMemoryIsIndependentOfSightingVolume(t *testing.T) {
 func TestStatsTrackerDropsSightingsOutsideWindow(t *testing.T) {
 	cfg := testStatsConfig()
 	cfg.WindowHours = 1
-	st := NewStatsTracker(cfg)
-
-	now := int64(1_700_000_000)
-	st.now = func() int64 { return now }
+	clock := newTestClock(1_700_000_000)
+	st := newStatsTrackerWithClock(cfg, clock.now)
 
 	for range 500 {
 		st.RecordSighting(25, false, false)
@@ -176,7 +174,7 @@ func TestStatsTrackerDropsSightingsOutsideWindow(t *testing.T) {
 	}
 
 	// Step past the window. Nothing new is recorded, so every bucket is stale.
-	now += 2 * 3600
+	clock.advance(2 * time.Hour)
 	st.recalculate()
 
 	if got := st.GetRarityGroup(25); got != RarityUnknown {
@@ -189,17 +187,15 @@ func TestStatsTrackerDropsSightingsOutsideWindow(t *testing.T) {
 func TestStatsTrackerRingRecyclesStaleBuckets(t *testing.T) {
 	cfg := testStatsConfig()
 	cfg.WindowHours = 1
-	st := NewStatsTracker(cfg)
-
-	now := int64(1_700_000_000)
-	st.now = func() int64 { return now }
+	clock := newTestClock(1_700_000_000)
+	st := newStatsTrackerWithClock(cfg, clock.now)
 
 	for range 300 {
 		st.RecordSighting(25, false, false)
 	}
 
 	// Same ring slot, one full window later.
-	now += int64(len(st.buckets)) * 60
+	clock.advance(time.Duration(len(st.buckets)) * time.Minute)
 	st.RecordSighting(150, false, false)
 	st.recalculate()
 
@@ -251,4 +247,29 @@ func TestStatsTrackerRejectsOutOfRangePokemonID(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestStatsTrackerClockIsRaceFree pins that the injected clock can be read by
+// the recalc path while the test advances it. recalcLoop starts inside the
+// constructor, so a clock handed over afterwards (or a plain captured variable
+// mutated by the test) is an unsynchronized read from another goroutine. It
+// stays quiet only while the refresh ticker is too slow to fire in a test's
+// lifetime; anyone shortening it turns this into a -race failure.
+func TestStatsTrackerClockIsRaceFree(t *testing.T) {
+	clock := newTestClock(1_700_000_000)
+	st := newStatsTrackerWithClock(testStatsConfig(), clock.now)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			st.RecordSighting(25, false, false)
+			st.recalculate()
+		}
+	}()
+
+	for range 200 {
+		clock.advance(time.Minute)
+	}
+	<-done
 }

@@ -82,19 +82,32 @@ type StatsTracker struct {
 	groups  map[int]int        // pokemon_id -> rarity group
 	shiny   map[int]ShinyStats // pokemon_id -> shiny stats (cached)
 
-	// now is the clock, injectable so window expiry can be tested without
-	// sleeping. Defaults to time.Now().Unix.
-	now func() int64
+	// nowFunc is the clock, injectable so window expiry can be tested
+	// without sleeping. Defaults to time.Now. Set once at construction and
+	// never reassigned: recalcLoop reads it from its own goroutine, so a
+	// later write would be a data race.
+	nowFunc func() time.Time
 }
 
 // NewStatsTracker creates a new stats tracker with the given config.
 func NewStatsTracker(cfg StatsConfig) *StatsTracker {
+	return newStatsTrackerWithClock(cfg, time.Now)
+}
+
+// newStatsTrackerWithClock creates a tracker with an injectable clock, used in
+// tests to control the rolling window without wall-clock dependencies.
+// Mirrors newRateCounterWithClock in internal/webhook.
+//
+// The clock is a constructor parameter rather than an exported field because
+// recalcLoop starts here: anything assigned afterwards would be written by the
+// caller while that goroutine reads it.
+func newStatsTrackerWithClock(cfg StatsConfig, nowFunc func() time.Time) *StatsTracker {
 	st := &StatsTracker{
 		cfg:     cfg,
 		buckets: newBucketRing(cfg.WindowHours),
 		groups:  make(map[int]int),
 		shiny:   make(map[int]ShinyStats),
-		now:     func() int64 { return time.Now().Unix() },
+		nowFunc: nowFunc,
 	}
 	go st.recalcLoop()
 	return st
@@ -134,7 +147,7 @@ func (st *StatsTracker) RecordSighting(pokemonID int, ivScanned bool, isShiny bo
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	minute := st.now() / 60
+	minute := st.nowFunc().Unix() / 60
 	b := &st.buckets[int(minute%int64(len(st.buckets)))]
 	if b.minute != minute {
 		b.reset(minute)
@@ -214,7 +227,7 @@ type counters struct {
 //
 // Caller must hold at least a read lock.
 func (st *StatsTracker) aggregate() (map[int]*counters, int64) {
-	oldest := st.now()/60 - int64(windowMinutes(st.cfg.WindowHours))
+	oldest := st.nowFunc().Unix()/60 - int64(windowMinutes(st.cfg.WindowHours))
 
 	counts := make(map[int]*counters)
 	var totalAll int64
@@ -241,7 +254,7 @@ func (st *StatsTracker) aggregate() (map[int]*counters, int64) {
 // totalInWindow counts sightings still inside the window without building the
 // per-species aggregate. Caller must hold at least a read lock.
 func (st *StatsTracker) totalInWindow() int64 {
-	oldest := st.now()/60 - int64(windowMinutes(st.cfg.WindowHours))
+	oldest := st.nowFunc().Unix()/60 - int64(windowMinutes(st.cfg.WindowHours))
 	var total int64
 	for i := range st.buckets {
 		if st.buckets[i].minute >= oldest {
