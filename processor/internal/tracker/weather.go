@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -83,6 +84,11 @@ type WeatherTracker struct {
 	// cellIdleSecs is how long a cell survives without a write. Sized at
 	// construction so it always outlasts the configured forecast refresh.
 	cellIdleSecs int64
+
+	// onEvict is notified with the cell ids a sweep dropped, so components
+	// keyed by the same cell ids can release their own per-cell state
+	// instead of each re-deriving liveness. Called without wt.mu held.
+	onEvict func(cellIDs []string)
 
 	stop chan struct{}
 	done chan struct{}
@@ -174,11 +180,12 @@ func (wt *WeatherTracker) evict(now int64) {
 	idleBefore := now - wt.cellIdleSecs
 
 	wt.mu.Lock()
-	defer wt.mu.Unlock()
 
+	var dropped []string
 	for cellID, cd := range wt.controllerData {
 		if cd.lastSeen < idleBefore {
 			delete(wt.controllerData, cellID)
+			dropped = append(dropped, cellID)
 			continue
 		}
 		for ts := range cd.hourWeather {
@@ -191,8 +198,31 @@ func (wt *WeatherTracker) evict(now int64) {
 	for cellID, ld := range wt.localData {
 		if ld.lastSeen < idleBefore {
 			delete(wt.localData, cellID)
+			if _, stillControlled := wt.controllerData[cellID]; !stillControlled {
+				// Already reported above if it had controller state too.
+				if !slices.Contains(dropped, cellID) {
+					dropped = append(dropped, cellID)
+				}
+			}
 		}
 	}
+
+	onEvict := wt.onEvict
+	wt.mu.Unlock()
+
+	// Called outside the lock: the callback belongs to another component and
+	// must not be able to deadlock the sweep by reaching back in.
+	if onEvict != nil && len(dropped) > 0 {
+		onEvict(dropped)
+	}
+}
+
+// SetOnEvict registers a callback invoked after each sweep with the cell ids
+// that were dropped. Call before the tracker starts seeing traffic.
+func (wt *WeatherTracker) SetOnEvict(fn func(cellIDs []string)) {
+	wt.mu.Lock()
+	wt.onEvict = fn
+	wt.mu.Unlock()
 }
 
 // Changes returns the channel that emits weather change events.

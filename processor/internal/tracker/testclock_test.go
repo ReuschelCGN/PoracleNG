@@ -19,5 +19,3 @@ func newTestClock(unix int64) *testClock {
 func (c *testClock) now() time.Time { return time.Unix(c.unix.Load(), 0) }
 
 func (c *testClock) advance(d time.Duration) { c.unix.Add(int64(d / time.Second)) }
-
-func (c *testClock) set(unix int64) { c.unix.Store(unix) }

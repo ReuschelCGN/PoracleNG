@@ -1574,6 +1574,9 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 			LocalFirstFetchHOD:      cfg.Weather.LocalFirstFetchHOD,
 			SmartForecast:           cfg.Weather.SmartForecast,
 		}, weatherTracker)
+		// The forecast client keys its own maps by the same cell ids, so it
+		// has to release them when the tracker reclaims a cell.
+		weatherTracker.SetOnEvict(awClient.ForgetCells)
 		enricher.ForecastProvider = awClient
 		log.Infof("AccuWeather forecast enabled with %d API keys", len(cfg.Weather.AccuWeatherAPIKeys))
 	}

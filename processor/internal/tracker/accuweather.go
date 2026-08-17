@@ -80,6 +80,21 @@ func NewAccuWeatherClient(cfg AccuWeatherConfig, tracker *WeatherTracker) *AccuW
 	}
 }
 
+// ForgetCells releases all per-cell state for the given cells. Wired to
+// WeatherTracker's eviction callback: these maps share the tracker's cell
+// keyspace, so without this a shifted scan area strands one mutex, one
+// location key and one forecastState per abandoned S2 cell for the life of
+// the process.
+func (aw *AccuWeatherClient) ForgetCells(cellIDs []string) {
+	aw.mu.Lock()
+	defer aw.mu.Unlock()
+	for _, cellID := range cellIDs {
+		delete(aw.cellMutexes, cellID)
+		delete(aw.cellLocations, cellID)
+		delete(aw.cellForecasts, cellID)
+	}
+}
+
 // EnsureForecast ensures the given cell has up-to-date forecast data.
 // Called by WeatherTracker.GetWeatherForecast when forecast is enabled.
 func (aw *AccuWeatherClient) EnsureForecast(cellID string) {
