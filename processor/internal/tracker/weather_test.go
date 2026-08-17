@@ -104,22 +104,51 @@ func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
 
 // TestWeatherTrackerEvictsIdleCells asserts whole cells are reclaimed once
 // they stop being scanned, so a shifted scan area does not strand them.
+//
+// Idleness is measured from when we last *received* something for the cell,
+// so the clock is driven forward here rather than backdating the webhook.
 func TestWeatherTrackerEvictsIdleCells(t *testing.T) {
 	wt := NewWeatherTracker()
 
-	now := int64(1_700_000_000)
-	stale := now - 48*3600
+	clock := time.Unix(1_700_000_000, 0)
+	wt.nowFunc = func() time.Time { return clock }
 
-	wt.UpdateFromWebhook("cell-stale", 1, stale, 51.5, -0.1, [4][2]float64{})
-	wt.UpdateFromWebhook("cell-fresh", 1, now, 51.5, -0.1, [4][2]float64{})
+	wt.UpdateFromWebhook("cell-stale", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
 
-	wt.evict(now)
+	// Two days pass; only one cell keeps receiving webhooks.
+	clock = clock.Add(48 * time.Hour)
+	wt.UpdateFromWebhook("cell-fresh", 1, clock.Unix(), 51.5, -0.1, [4][2]float64{})
+
+	wt.evict(clock.Unix())
 
 	if wt.hasCell("cell-stale") {
-		t.Error("a cell untouched for 48h should be evicted entirely")
+		t.Error("a cell that received nothing for 48h should be evicted entirely")
 	}
 	if !wt.hasCell("cell-fresh") {
-		t.Error("a cell touched this hour must be kept")
+		t.Error("a cell that just received a webhook must be kept")
+	}
+}
+
+// TestWeatherTrackerReplayedWebhookIsNotInstantlyIdle pins that cell liveness
+// tracks receipt time, not the webhook's own `updated` field. Replaying
+// logs/webhooks.log is a documented workflow, and Golbat clock skew has the
+// same shape: a webhook whose event time is days old still means the cell is
+// live right now. Stamping event time made such a cell evictable on the very
+// next sweep, discarding the previous-hour state that later genuine changes
+// compare against.
+func TestWeatherTrackerReplayedWebhookIsNotInstantlyIdle(t *testing.T) {
+	wt := NewWeatherTracker()
+
+	clock := time.Unix(1_700_000_000, 0)
+	wt.nowFunc = func() time.Time { return clock }
+
+	// A replayed webhook: event time three days in the past, received now.
+	wt.UpdateFromWebhook("cell-replay", 1, clock.Add(-72*time.Hour).Unix(), 51.5, -0.1, [4][2]float64{})
+
+	wt.evict(clock.Unix())
+
+	if !wt.hasCell("cell-replay") {
+		t.Error("a cell whose webhook carried an old event time was evicted; liveness must follow receipt time")
 	}
 }
 

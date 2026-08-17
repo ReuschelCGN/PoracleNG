@@ -71,6 +71,10 @@ type WeatherTracker struct {
 	controllerData map[string]*controllerCellData
 	localData      map[string]*localCellData
 	changes        chan WeatherChange
+
+	// nowFunc is the clock used for cell liveness and eviction. Injectable
+	// so idle expiry is testable without sleeping. Defaults to time.Now.
+	nowFunc func() time.Time
 }
 
 // NewWeatherTracker creates a new weather tracker.
@@ -79,6 +83,7 @@ func NewWeatherTracker() *WeatherTracker {
 		controllerData: make(map[string]*controllerCellData),
 		localData:      make(map[string]*localCellData),
 		changes:        make(chan WeatherChange, 100),
+		nowFunc:        time.Now,
 	}
 	go wt.evictionLoop()
 	return wt
@@ -88,7 +93,7 @@ func (wt *WeatherTracker) evictionLoop() {
 	ticker := time.NewTicker(weatherEvictInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		wt.evict(time.Now().Unix())
+		wt.evict(wt.nowFunc().Unix())
 	}
 }
 
@@ -166,7 +171,12 @@ func (wt *WeatherTracker) UpdateFromWebhook(cellID string, condition int, timest
 
 	cd.hourWeather[hourTimestamp] = condition
 	cd.lastCurrentWeatherCheck = timestamp
-	cd.lastSeen = timestamp
+	// lastSeen drives eviction, which runs on the local clock — so it must
+	// be stamped with receipt time, not the webhook's `updated` field.
+	// Replayed logs and Golbat clock skew both carry event times that are
+	// arbitrarily old (or future), and honouring them here would either make
+	// a live cell instantly evictable or pin a dead one forever.
+	cd.lastSeen = wt.nowFunc().Unix()
 
 	if changed {
 		// Send non-blocking
@@ -191,7 +201,7 @@ func (wt *WeatherTracker) GetCurrentWeatherInCell(cellID string) int {
 	wt.mu.RLock()
 	defer wt.mu.RUnlock()
 
-	now := time.Now().Unix()
+	now := wt.nowFunc().Unix()
 	currentHour := now - (now % 3600)
 
 	cd := wt.controllerData[cellID]
@@ -219,7 +229,7 @@ func (wt *WeatherTracker) GetWeatherForecast(cellID string) WeatherForecast {
 	wt.mu.RLock()
 	defer wt.mu.RUnlock()
 
-	now := time.Now().Unix()
+	now := wt.nowFunc().Unix()
 	currentHour := now - (now % 3600)
 	nextHour := currentHour + 3600
 
@@ -251,7 +261,7 @@ func (wt *WeatherTracker) ExportCellWeather(cellID string) map[int64]int {
 	wt.mu.RLock()
 	defer wt.mu.RUnlock()
 
-	now := time.Now().Unix()
+	now := wt.nowFunc().Unix()
 	currentHour := now - (now % 3600)
 
 	result := make(map[int64]int)
@@ -283,7 +293,7 @@ func (wt *WeatherTracker) SetHourWeather(cellID string, hourTimestamp int64, con
 		wt.controllerData[cellID] = cd
 	}
 	cd.hourWeather[hourTimestamp] = condition
-	cd.lastSeen = time.Now().Unix()
+	cd.lastSeen = wt.nowFunc().Unix()
 }
 
 // hasHourWeather checks if weather data exists for a specific hour in a cell.
@@ -303,7 +313,7 @@ func (wt *WeatherTracker) hasHourWeather(cellID string, hourTimestamp int64) boo
 // weather changes via vote-based inference.
 // Port of weatherData.js:68-123.
 func (wt *WeatherTracker) CheckWeatherOnMonster(cellID string, lat, lon float64, monsterWeather int) {
-	now := time.Now().Unix()
+	now := wt.nowFunc().Unix()
 	currentHour := now - (now % 3600)
 	previousHour := currentHour - 3600
 
