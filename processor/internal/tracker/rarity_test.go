@@ -158,7 +158,13 @@ func TestStatsTrackerMemoryIsIndependentOfSightingVolume(t *testing.T) {
 }
 
 // TestStatsTrackerDropsSightingsOutsideWindow covers behaviour the slice-based
-// tracker had but never tested: sightings older than window_hours stop counting.
+// tracker had but never tested: sightings older than window_hours stop
+// counting.
+//
+// Note this holds only because testStatsConfig sets MinSampleSize 0. With a
+// production min_sample_size the drained window is below the threshold and
+// recalculate leaves the previous groups in place instead — see
+// TestStatsTrackerKeepsStaleGroupsBelowMinSampleSize, which pins that.
 func TestStatsTrackerDropsSightingsOutsideWindow(t *testing.T) {
 	cfg := testStatsConfig()
 	cfg.WindowHours = 1
@@ -272,4 +278,41 @@ func TestStatsTrackerClockIsRaceFree(t *testing.T) {
 		clock.advance(time.Minute)
 	}
 	<-done
+}
+
+// TestStatsTrackerKeepsStaleGroupsBelowMinSampleSize pins what actually
+// happens with a production min_sample_size when the window drains: the
+// groups update is skipped entirely (totalAll < MinSampleSize), so the last
+// computed groups persist rather than reverting to RarityUnknown.
+//
+// This is inherited behaviour, not a regression, and it is the reason an
+// operator can see stale rarity groups after an overnight scanner outage. It
+// is pinned here so the sibling test's name is not mistaken for the whole
+// contract.
+func TestStatsTrackerKeepsStaleGroupsBelowMinSampleSize(t *testing.T) {
+	cfg := testStatsConfig()
+	cfg.WindowHours = 1
+	cfg.MinSampleSize = 10
+
+	clock := newTestClock(1_700_000_000)
+	st := newStatsTrackerWithClock(cfg, clock.now)
+
+	for range 500 {
+		st.RecordSighting(25, false, false)
+	}
+	st.recalculate()
+
+	before := st.GetRarityGroup(25)
+	if before == RarityUnknown {
+		t.Fatal("expected a rarity group while the sightings are inside the window")
+	}
+
+	// Drain the window. totalAll is now 0, below MinSampleSize, so the
+	// groups map is left untouched.
+	clock.advance(2 * time.Hour)
+	st.recalculate()
+
+	if got := st.GetRarityGroup(25); got != before {
+		t.Errorf("group changed to %d after the window drained; below min_sample_size the previous groups are expected to persist (was %d)", got, before)
+	}
 }
