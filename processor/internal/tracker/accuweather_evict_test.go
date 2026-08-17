@@ -58,3 +58,64 @@ func TestAccuWeatherForgetCells(t *testing.T) {
 		t.Error("a live cell was dropped")
 	}
 }
+
+// TestWeatherTrackerEvictReportsEachCellOnce pins that a cell holding both
+// controller and local state is reported to onEvict exactly once, and that the
+// dedup behind that stays linear in the number of cells dropped: a shifted
+// scan area can drop tens of thousands in one sweep, all under wt.mu.
+func TestWeatherTrackerEvictReportsEachCellOnce(t *testing.T) {
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
+	defer wt.Close()
+
+	const cells = 5000
+	for i := range cells {
+		id := encounterIDForTest(i)
+		// Both maps, so the naive dedup would have to scan for each one.
+		wt.UpdateFromWebhook(id, 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
+		wt.CheckWeatherOnMonster(id, 51.5, -0.1, 3)
+	}
+
+	var dropped []string
+	wt.SetOnEvict(func(ids []string) { dropped = append(dropped, ids...) })
+
+	clock.advance(48 * time.Hour)
+	wt.evict(clock.now().Unix())
+
+	if len(dropped) != cells {
+		t.Fatalf("onEvict reported %d cells, want %d", len(dropped), cells)
+	}
+	seen := make(map[string]struct{}, len(dropped))
+	for _, id := range dropped {
+		if _, dup := seen[id]; dup {
+			t.Fatalf("cell %s reported more than once", id)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
+// BenchmarkWeatherEvictDropsManyCells covers the sweep that follows a
+// scan-area shift, where one pass drops every cell it holds. The whole loop
+// runs under wt.mu, so its cost is a stall on every webhook path.
+func BenchmarkWeatherEvictDropsManyCells(b *testing.B) {
+	const cells = 10000
+
+	for b.Loop() {
+		b.StopTimer()
+		clock := newTestClock(1_700_000_000)
+		wt := NewWeatherTracker(WithClock(clock.now))
+		for i := range cells {
+			id := encounterIDForTest(i)
+			wt.UpdateFromWebhook(id, 1, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
+			wt.CheckWeatherOnMonster(id, 51.5, -0.1, 3)
+		}
+		clock.advance(48 * time.Hour)
+		b.StartTimer()
+
+		wt.evict(clock.now().Unix())
+
+		b.StopTimer()
+		wt.Close()
+		b.StartTimer()
+	}
+}

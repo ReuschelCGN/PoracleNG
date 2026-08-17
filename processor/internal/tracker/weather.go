@@ -1,7 +1,6 @@
 package tracker
 
 import (
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -196,11 +195,15 @@ func (wt *WeatherTracker) evict(now int64) {
 
 	wt.mu.Lock()
 
-	var dropped []string
+	// A cell can hold both controller and local state, so membership is
+	// tracked in a set rather than scanned. One sweep after a scan-area
+	// shift can drop tens of thousands of cells, and this whole loop runs
+	// under the write lock that every webhook needs.
+	droppedSet := make(map[string]struct{})
 	for cellID, cd := range wt.controllerData {
 		if cd.lastSeen < idleBefore {
 			delete(wt.controllerData, cellID)
-			dropped = append(dropped, cellID)
+			droppedSet[cellID] = struct{}{}
 			continue
 		}
 		for ts := range cd.hourWeather {
@@ -213,12 +216,15 @@ func (wt *WeatherTracker) evict(now int64) {
 	for cellID, ld := range wt.localData {
 		if ld.lastSeen < idleBefore {
 			delete(wt.localData, cellID)
-			if _, stillControlled := wt.controllerData[cellID]; !stillControlled {
-				// Already reported above if it had controller state too.
-				if !slices.Contains(dropped, cellID) {
-					dropped = append(dropped, cellID)
-				}
-			}
+			droppedSet[cellID] = struct{}{}
+		}
+	}
+
+	var dropped []string
+	if len(droppedSet) > 0 {
+		dropped = make([]string, 0, len(droppedSet))
+		for cellID := range droppedSet {
+			dropped = append(dropped, cellID)
 		}
 	}
 
