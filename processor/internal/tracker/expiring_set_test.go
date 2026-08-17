@@ -8,21 +8,26 @@ import (
 // TestDuplicateCacheEntryExpires covers the behaviour the dedup path depends
 // on: once a key's TTL has passed the same webhook must be treated as fresh
 // again, whether or not the sweeper has run.
-func TestDuplicateCacheEntryExpires(t *testing.T) {
-	dc := NewDuplicateCache()
-	defer dc.Close()
+func TestExpiringSetEntryExpires(t *testing.T) {
+	s := newExpiringSet()
+	defer s.Close()
 
-	// disappear_time already in the past clamps the TTL to its 60s floor,
-	// so drive expiry through the set directly with a sub-second TTL.
-	dc.seen.Add("encounter-1", 10*time.Millisecond)
+	// The TTL has to outlast a scheduling hiccup between Add and the
+	// presence check: a GC pause or a loaded runner descheduling this
+	// goroutine would otherwise expire the entry before it is read and fail
+	// the test for reasons that have nothing to do with the code. The expiry
+	// half is safe in the other direction, since over-sleeping cannot
+	// resurrect an entry.
+	const ttl = 250 * time.Millisecond
+	s.Add("encounter-1", ttl)
 
-	if !dc.seen.Has("encounter-1") {
+	if !s.Has("encounter-1") {
 		t.Fatal("key should be present immediately after Add")
 	}
 
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(ttl + 50*time.Millisecond)
 
-	if dc.seen.Has("encounter-1") {
+	if s.Has("encounter-1") {
 		t.Error("key should read as absent once its TTL has passed, before any sweep")
 	}
 }
