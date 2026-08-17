@@ -187,3 +187,20 @@ func TestWeatherTrackerKeepsHistoryForBackloggedWebhooks(t *testing.T) {
 		t.Error("no WeatherChange emitted: eviction dropped the previous-hour entry the backlogged webhook needed")
 	}
 }
+
+// TestWeatherTrackerCloseStopsEvictionLoop asserts the eviction loop
+// participates in shutdown like every other background reclaim loop in the
+// codebase. Without it, each tracker permanently leaks a goroutine and a
+// ticker, and pins its maps against GC.
+func TestWeatherTrackerCloseStopsEvictionLoop(t *testing.T) {
+	wt := NewWeatherTracker()
+	wt.Close()
+
+	select {
+	case <-wt.done:
+	default:
+		t.Error("Close returned while the eviction loop was still running")
+	}
+
+	wt.Close() // idempotent
+}

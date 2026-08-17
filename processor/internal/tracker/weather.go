@@ -75,6 +75,10 @@ type WeatherTracker struct {
 	// nowFunc is the clock used for cell liveness and eviction. Injectable
 	// so idle expiry is testable without sleeping. Defaults to time.Now.
 	nowFunc func() time.Time
+
+	stop chan struct{}
+	done chan struct{}
+	once sync.Once
 }
 
 // NewWeatherTracker creates a new weather tracker.
@@ -84,16 +88,38 @@ func NewWeatherTracker() *WeatherTracker {
 		localData:      make(map[string]*localCellData),
 		changes:        make(chan WeatherChange, 100),
 		nowFunc:        time.Now,
+		stop:           make(chan struct{}),
+		done:           make(chan struct{}),
 	}
 	go wt.evictionLoop()
 	return wt
 }
 
+// Close stops the eviction loop and waits for it to exit. Safe to call more
+// than once.
+//
+// Mirrors the stop/done/once trio used by mute.Sweeper, snapshots.Sweeper and
+// expiringSet, so the loop can take its place in ProcessorService.Close's
+// shutdown ordering rather than outliving the process's other components.
+func (wt *WeatherTracker) Close() {
+	if wt == nil {
+		return
+	}
+	wt.once.Do(func() { close(wt.stop) })
+	<-wt.done
+}
+
 func (wt *WeatherTracker) evictionLoop() {
+	defer close(wt.done)
 	ticker := time.NewTicker(weatherEvictInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		wt.evict(wt.nowFunc().Unix())
+	for {
+		select {
+		case <-wt.stop:
+			return
+		case <-ticker.C:
+			wt.evict(wt.nowFunc().Unix())
+		}
 	}
 }
 

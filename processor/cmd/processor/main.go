@@ -1792,6 +1792,10 @@ func (ps *ProcessorService) Close() {
 		ps.enricher.StaticMap.Close()
 	}
 	ps.duplicates.Close()
+	// Weather eviction runs on its own ticker and touches the same maps the
+	// enrichment path reads, so it stops here with the other trackers, once
+	// the webhook and render workers are already quiescent.
+	ps.weather.Close()
 	ps.rateLimiter.Close()
 	// Persist gym state cache for restart
 	if err := ps.gymState.Save(); err != nil {
