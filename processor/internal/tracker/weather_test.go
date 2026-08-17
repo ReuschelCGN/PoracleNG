@@ -253,3 +253,33 @@ func TestWeatherTrackerEveryWritePathStampsLiveness(t *testing.T) {
 		})
 	}
 }
+
+// TestWeatherTrackerIdleWindowCoversForecastRefresh pins that a cell whose
+// only writes are AccuWeather forecast pushes survives between refreshes.
+//
+// forecast_refresh_interval is operator-settable in hours with no clamp. An
+// operator rationing AccuWeather quota can set it above the idle threshold, at
+// which point the sweep reclaims forecast-only cells between pushes and throws
+// away lastCurrentWeatherCheck and the previous-hour entry. The next real
+// weather webhook then finds hasPrevious=false and a genuine change emits no
+// alert.
+func TestWeatherTrackerIdleWindowCoversForecastRefresh(t *testing.T) {
+	const refreshHours = 30 // deliberately longer than the 24h default idle
+
+	wt := NewWeatherTracker(WithForecastRefreshInterval(refreshHours))
+	defer wt.Close()
+
+	clock := time.Unix(1_700_000_000, 0)
+	wt.nowFunc = func() time.Time { return clock }
+
+	now := clock.Unix()
+	wt.SetHourWeather("cell-forecast", now-(now%3600), 1)
+
+	// One refresh period later, just before the next push would land.
+	clock = clock.Add(refreshHours*time.Hour - time.Hour)
+	wt.evict(clock.Unix())
+
+	if !wt.hasCell("cell-forecast") {
+		t.Error("forecast-only cell was evicted before its next refresh could arrive")
+	}
+}

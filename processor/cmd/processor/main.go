@@ -1379,7 +1379,11 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 			cfg.Locale.TimeFormat, geo.SupportedLocales())
 	}
 
-	weatherTracker := tracker.NewWeatherTracker()
+	// Idle expiry has to outlast the configured forecast cadence, or
+	// forecast-only cells get reclaimed between pushes.
+	weatherTracker := tracker.NewWeatherTracker(
+		tracker.WithForecastRefreshInterval(cfg.Weather.ForecastRefreshInterval),
+	)
 	timeLayout := geo.ConvertTimeFormat(cfg.Locale.Time, cfg.Locale.TimeFormat)
 	eventChecker := enrichment.NewPogoEventChecker(timeLayout)
 

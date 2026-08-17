@@ -55,9 +55,13 @@ const (
 	// literally; the extra hour is what absorbs the skew.
 	weatherHistoryHours = 2
 
-	// weatherCellIdleSecs is how long a cell survives without a write before
-	// its state is dropped. Longer than the AccuWeather forecast refresh
-	// (8h by default) so an actively-forecast cell is never reclaimed.
+	// weatherCellIdleSecs is the default idle window: how long a cell
+	// survives without a write before its state is dropped. Comfortably
+	// longer than the default 8h AccuWeather forecast refresh.
+	//
+	// This is only the floor. forecast_refresh_interval is operator-settable
+	// with no clamp, so WithForecastRefreshInterval raises the window when
+	// the configured refresh would outlast it — see cellIdleSecs.
 	weatherCellIdleSecs = 24 * 3600
 
 	// weatherEvictInterval is the sweep cadence.
@@ -76,13 +80,43 @@ type WeatherTracker struct {
 	// so idle expiry is testable without sleeping. Defaults to time.Now.
 	nowFunc func() time.Time
 
+	// cellIdleSecs is how long a cell survives without a write. Sized at
+	// construction so it always outlasts the configured forecast refresh.
+	cellIdleSecs int64
+
 	stop chan struct{}
 	done chan struct{}
 	once sync.Once
 }
 
+// WeatherOption configures a WeatherTracker at construction.
+type WeatherOption func(*WeatherTracker)
+
+// WithForecastRefreshInterval sizes cell idle expiry against the AccuWeather
+// refresh cadence, in hours.
+//
+// A cell whose only writes are forecast pushes is otherwise reclaimed whenever
+// the configured refresh outlasts the idle window, taking
+// lastCurrentWeatherCheck and the previous-hour entry with it — so the next
+// real weather webhook sees hasPrevious=false and swallows a genuine change.
+// Deriving the window here keeps that invariant true by construction rather
+// than relying on the operator staying under an undocumented ceiling.
+//
+// Two refresh periods, so a single missed or delayed push does not strand the
+// cell either.
+func WithForecastRefreshInterval(hours int) WeatherOption {
+	return func(wt *WeatherTracker) {
+		if hours <= 0 {
+			return
+		}
+		if want := int64(hours) * 3600 * 2; want > wt.cellIdleSecs {
+			wt.cellIdleSecs = want
+		}
+	}
+}
+
 // NewWeatherTracker creates a new weather tracker.
-func NewWeatherTracker() *WeatherTracker {
+func NewWeatherTracker(opts ...WeatherOption) *WeatherTracker {
 	wt := &WeatherTracker{
 		controllerData: make(map[string]*controllerCellData),
 		localData:      make(map[string]*localCellData),
@@ -90,6 +124,10 @@ func NewWeatherTracker() *WeatherTracker {
 		nowFunc:        time.Now,
 		stop:           make(chan struct{}),
 		done:           make(chan struct{}),
+		cellIdleSecs:   weatherCellIdleSecs,
+	}
+	for _, opt := range opts {
+		opt(wt)
 	}
 	go wt.evictionLoop()
 	return wt
@@ -133,7 +171,7 @@ func (wt *WeatherTracker) evictionLoop() {
 func (wt *WeatherTracker) evict(now int64) {
 	currentHour := now - (now % 3600)
 	oldestHour := currentHour - weatherHistoryHours*3600
-	idleBefore := now - weatherCellIdleSecs
+	idleBefore := now - wt.cellIdleSecs
 
 	wt.mu.Lock()
 	defer wt.mu.Unlock()
