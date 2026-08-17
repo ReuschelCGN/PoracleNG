@@ -226,3 +226,29 @@ func TestRecalcIntervalFloorsNonPositive(t *testing.T) {
 		t.Errorf("recalcInterval(5) = %v, want 5m", got)
 	}
 }
+
+// TestStatsTrackerRejectsOutOfRangePokemonID guards the int32 narrowing.
+// POST / is unauthenticated and does not range-check pokemon_id, so a garbage
+// value would wrap to a negative species key and show up in the rarity and
+// shiny exports as a nonsense pokemon.
+func TestStatsTrackerRejectsOutOfRangePokemonID(t *testing.T) {
+	cfg := testStatsConfig()
+	st := NewStatsTracker(cfg)
+
+	const bogus = int(1)<<31 + 25 // wraps to -2147483623 under int32()
+
+	for range 100 {
+		st.RecordSighting(bogus, false, false)
+		st.RecordSighting(-5, false, false)
+	}
+	st.RecordSighting(25, false, false)
+	st.recalculate()
+
+	for group, ids := range st.ExportGroups() {
+		for _, id := range ids {
+			if id != 25 {
+				t.Errorf("out-of-range pokemon id leaked into rarity group %d as %d", group, id)
+			}
+		}
+	}
+}

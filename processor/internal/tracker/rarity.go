@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"maps"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -122,6 +123,14 @@ func windowMinutes(windowHours int) int {
 // RecordSighting records a pokemon sighting. ivScanned indicates whether the
 // pokemon had IV data (a full encounter). isShiny indicates a confirmed shiny.
 func (st *StatsTracker) RecordSighting(pokemonID int, ivScanned bool, isShiny bool) {
+	// Bucket keys are int32 to halve the map key width. POST / is
+	// unauthenticated and does not range-check pokemon_id, so an
+	// out-of-range value would wrap to a negative key and surface in the
+	// rarity and shiny exports as a nonsense species. Drop it instead.
+	if pokemonID <= 0 || pokemonID > math.MaxInt32 {
+		return
+	}
+
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
