@@ -34,6 +34,7 @@ type expiringSet struct {
 	seed   maphash.Seed
 	shards [expiringSetShards]expiringShard
 	stop   chan struct{}
+	done   chan struct{}
 	once   sync.Once
 }
 
@@ -49,6 +50,7 @@ func newExpiringSet() *expiringSet {
 	s := &expiringSet{
 		seed: maphash.MakeSeed(),
 		stop: make(chan struct{}),
+		done: make(chan struct{}),
 	}
 	for i := range s.shards {
 		s.shards[i].entries = make(map[uint64]int64)
@@ -101,12 +103,20 @@ func (s *expiringSet) Len() int {
 	return n
 }
 
-// Close stops the background sweeper. Safe to call more than once.
+// Close stops the background sweeper and waits for it to exit. Safe to call
+// more than once.
+//
+// The wait matters: sweep holds a shard lock while it scans, so a Close that
+// returned early would leave DuplicateCache.Close's step of the shutdown
+// ordering non-quiescent. mute.Sweeper and snapshots.Sweeper use the same
+// stop/done/once trio.
 func (s *expiringSet) Close() {
 	s.once.Do(func() { close(s.stop) })
+	<-s.done
 }
 
 func (s *expiringSet) sweepLoop() {
+	defer close(s.done)
 	ticker := time.NewTicker(expiringSweepInterval)
 	defer ticker.Stop()
 	for {

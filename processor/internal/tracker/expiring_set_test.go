@@ -81,3 +81,23 @@ func TestExpiringSetSpreadsAcrossShards(t *testing.T) {
 		t.Errorf("expected all %d shards populated, got %d", expiringSetShards, populated)
 	}
 }
+
+// TestExpiringSetCloseWaitsForSweeper asserts Close is synchronous: when it
+// returns, the sweep goroutine has actually exited and is no longer holding
+// shard locks. DuplicateCache.Close runs during the documented shutdown
+// ordering's "duplicates" step, which is only meaningfully quiescent if this
+// holds.
+func TestExpiringSetCloseWaitsForSweeper(t *testing.T) {
+	s := newExpiringSet()
+	s.Close()
+
+	select {
+	case <-s.done:
+	default:
+		t.Error("Close returned while sweepLoop was still running")
+	}
+
+	// Close is idempotent — DuplicateCache.Close may be reached twice during
+	// a shutdown that is itself racing a signal handler.
+	s.Close()
+}
