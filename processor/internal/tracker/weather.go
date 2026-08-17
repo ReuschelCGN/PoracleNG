@@ -40,10 +40,20 @@ type controllerCellData struct {
 
 const (
 	// weatherHistoryHours is how far back hourly entries stay reachable.
-	// UpdateFromWebhook compares against the previous hour and
-	// ExportCellWeather filters to currentHour-3600, so nothing older is
-	// readable and nothing older is kept.
-	weatherHistoryHours = 1
+	//
+	// Readers look back one hour, but they do it from two different clocks:
+	// ExportCellWeather measures from wall clock, while UpdateFromWebhook
+	// derives its previous-hour key from the webhook's own `updated` field.
+	// Under a Golbat backlog the event clock lags the wall clock, so a
+	// webhook stamped late in hour N can arrive once the sweep has already
+	// advanced to N+1 and pruned the hour N-1 entry it needs to compare
+	// against. That would read as hasPrevious=false and silently swallow a
+	// genuine weather change.
+	//
+	// Two hours is therefore one hour of reader lookback plus one hour of
+	// slack for event-time lag. Do not lower this to match the reader
+	// literally; the extra hour is what absorbs the skew.
+	weatherHistoryHours = 2
 
 	// weatherCellIdleSecs is how long a cell survives without a write before
 	// its state is dropped. Longer than the AccuWeather forecast refresh

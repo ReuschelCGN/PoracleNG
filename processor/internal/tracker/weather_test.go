@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"testing"
+	"time"
 )
 
 func TestGetWeatherCellID(t *testing.T) {
@@ -78,10 +79,11 @@ func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
 	wt.evict(now)
 
 	got := wt.hourCount(cellID)
-	// Readers never look further back than the previous hour, so the
-	// keepers are: previous, current, forecast.
-	if got != 3 {
-		t.Errorf("expected 3 retained hours (previous, current, forecast), got %d", got)
+	// Readers look back one hour; retention keeps two so a backlogged
+	// webhook's event-time lookback still lands (see weatherHistoryHours).
+	// Keepers: currentHour-2, previous, current, forecast.
+	if got != 4 {
+		t.Errorf("expected 4 retained hours (two of history, current, forecast), got %d", got)
 	}
 	if !wt.hasHourWeather(cellID, currentHour) {
 		t.Error("current hour must survive eviction")
@@ -92,8 +94,11 @@ func TestWeatherTrackerEvictsHoursOutsideRetention(t *testing.T) {
 	if !wt.hasHourWeather(cellID, currentHour-3600) {
 		t.Error("previous hour must survive eviction — UpdateFromWebhook compares against it")
 	}
-	if wt.hasHourWeather(cellID, currentHour-2*3600) {
-		t.Error("hours older than the previous hour are unreachable and must be dropped")
+	if !wt.hasHourWeather(cellID, currentHour-2*3600) {
+		t.Error("the backlog-slack hour must survive eviction")
+	}
+	if wt.hasHourWeather(cellID, currentHour-3*3600) {
+		t.Error("hours beyond the retention window are unreachable and must be dropped")
 	}
 }
 
@@ -115,5 +120,41 @@ func TestWeatherTrackerEvictsIdleCells(t *testing.T) {
 	}
 	if !wt.hasCell("cell-fresh") {
 		t.Error("a cell touched this hour must be kept")
+	}
+}
+
+// TestWeatherTrackerKeepsHistoryForBackloggedWebhooks pins the interaction
+// between eviction (which prunes by processor wall clock) and
+// UpdateFromWebhook (which reads the previous hour keyed by the webhook's own
+// event time). When Golbat backlogs, a webhook stamped late in the previous
+// hour arrives after the sweep has already advanced, and the entry it needs
+// for the previous-hour comparison must still be there. Losing it turns a
+// genuine weather change into no alert at all.
+func TestWeatherTrackerKeepsHistoryForBackloggedWebhooks(t *testing.T) {
+	wt := NewWeatherTracker()
+
+	now := time.Now().Unix()
+	currentHour := now - (now % 3600)
+	eventHour := currentHour - 3600    // the backlogged webhook's own hour
+	comparisonHour := eventHour - 3600 // the entry UpdateFromWebhook compares against
+	cellID := "cell-backlog"
+
+	wt.SetHourWeather(cellID, comparisonHour, 1)
+	wt.SetHourWeather(cellID, eventHour, 1)
+
+	// The sweep runs on wall clock, already past the event's hour.
+	wt.evict(now)
+
+	// Backlogged webhook: stamped 59 minutes into eventHour, delivered now,
+	// reporting a different condition than comparisonHour held.
+	wt.UpdateFromWebhook(cellID, 2, eventHour+3540, 51.5, -0.1, [4][2]float64{})
+
+	select {
+	case change := <-wt.Changes():
+		if change.GameplayCondition != 2 || change.OldGameplayCondition != 1 {
+			t.Errorf("got change %d->%d, want 1->2", change.OldGameplayCondition, change.GameplayCondition)
+		}
+	default:
+		t.Error("no WeatherChange emitted: eviction dropped the previous-hour entry the backlogged webhook needed")
 	}
 }
