@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"hash/maphash"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -65,6 +66,73 @@ func (s *expiringSet) fingerprint(key string) uint64 {
 
 func (s *expiringSet) shardFor(fp uint64) *expiringShard {
 	return &s.shards[fp%expiringSetShards]
+}
+
+// keyWriter accumulates a dedup key's components directly into a hash, so the
+// key never exists as a string. The old path built one with fmt.Sprintf per
+// webhook purely for maphash to consume and discard.
+//
+// Components are zero-separated. The concatenation this replaced was
+// ambiguous in principle — ("ab","c") and ("a","bc") produced the same key —
+// which the separator removes.
+type keyWriter struct{ h maphash.Hash }
+
+func (k *keyWriter) Str(v string) *keyWriter {
+	_, _ = k.h.WriteString(v)
+	_ = k.h.WriteByte(0)
+	return k
+}
+
+func (k *keyWriter) Int(v int64) *keyWriter {
+	var buf [20]byte
+	_, _ = k.h.Write(strconv.AppendInt(buf[:0], v, 10))
+	_ = k.h.WriteByte(0)
+	return k
+}
+
+func (k *keyWriter) Bool(v bool) *keyWriter {
+	b := byte('F')
+	if v {
+		b = 'T'
+	}
+	_ = k.h.WriteByte(b)
+	_ = k.h.WriteByte(0)
+	return k
+}
+
+// newKey returns a keyWriter seeded for this set. Returned by value and used
+// as a local so it never escapes: taking its address across a function
+// boundary (for example by passing a build callback) makes escape analysis
+// heap-allocate it, which is the allocation this whole path exists to avoid.
+//
+// maphash.Hash must not be copied after first use; this copy happens before
+// any write.
+func (s *expiringSet) newKey() keyWriter {
+	var k keyWriter
+	k.h.SetSeed(s.seed)
+	return k
+}
+
+// CheckAndAdd reports whether the key was already present and unexpired, and
+// records it with ttl when it was not.
+//
+// One hash and one lock acquisition, against the two each that a Has-miss
+// followed by Add cost. It also closes the check-then-act window in the old
+// pairing, where two workers handling the same encounter could both miss and
+// both deliver.
+func (s *expiringSet) CheckAndAdd(k *keyWriter, ttl time.Duration) bool {
+	fp := k.h.Sum64()
+	sh := s.shardFor(fp)
+	now := time.Now()
+
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	if expiry, ok := sh.entries[fp]; ok && expiry > now.UnixNano() {
+		return true
+	}
+	sh.entries[fp] = now.Add(ttl).UnixNano()
+	return false
 }
 
 // Has reports whether key is present and unexpired. Entries past their expiry

@@ -1,6 +1,9 @@
 package tracker
 
 import (
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -100,4 +103,110 @@ func TestExpiringSetCloseWaitsForSweeper(t *testing.T) {
 	// Close is idempotent — DuplicateCache.Close may be reached twice during
 	// a shutdown that is itself racing a signal handler.
 	s.Close()
+}
+
+func BenchmarkExpiringSetCheckAndAdd(b *testing.B) {
+	s := newExpiringSet()
+	defer s.Close()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		k := s.newKey()
+		k.Str("47281957203847502").Bool(true).Int(1500)
+		s.CheckAndAdd(&k, time.Hour)
+	}
+}
+
+func BenchmarkDuplicateCacheCheckPokemon(b *testing.B) {
+	dc := NewDuplicateCache()
+	defer dc.Close()
+	disappear := time.Now().Unix() + 3600
+
+	// Pre-generate ids so the benchmark measures the dedup path rather than
+	// strconv in the harness.
+	const n = 4096
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = encounterIDForTest(i)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		dc.CheckPokemon(ids[i%n], true, 1500, disappear)
+	}
+}
+
+// BenchmarkExpiringSetHasThenAdd measures the pattern CheckAndAdd replaced:
+// build the key with fmt.Sprintf, hash it once for Has, then hash it again
+// for Add and take the shard lock a second time. Kept alongside its
+// replacement so the comparison is same-harness rather than across commits.
+func BenchmarkExpiringSetHasThenAdd(b *testing.B) {
+	s := newExpiringSet()
+	defer s.Close()
+
+	const id = "47281957203847502"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		key := fmt.Sprintf("%s%s%d", id, "T", 1500)
+		if !s.Has(key) {
+			s.Add(key, time.Hour)
+		}
+	}
+}
+
+// TestCheckAndAddIsAtomic pins the check-then-act window that the old
+// Has-miss-then-Add pairing left open: two workers handling the same encounter
+// concurrently could both miss and both deliver. Exactly one caller must see
+// the key as new.
+func TestCheckAndAddIsAtomic(t *testing.T) {
+	s := newExpiringSet()
+	defer s.Close()
+
+	const workers = 64
+	var start sync.WaitGroup
+	var done sync.WaitGroup
+	var firsts atomic.Int64
+
+	start.Add(1)
+	for range workers {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			start.Wait()
+			k := s.newKey()
+			k.Str("same-encounter").Bool(true).Int(1500)
+			if !s.CheckAndAdd(&k, time.Hour) {
+				firsts.Add(1)
+			}
+		}()
+	}
+	start.Done()
+	done.Wait()
+
+	if got := firsts.Load(); got != 1 {
+		t.Errorf("%d workers saw the key as new, want exactly 1", got)
+	}
+}
+
+// TestKeyWriterSeparatesComponents guards against the ambiguity in the string
+// concatenation this replaced: ("ab","c") and ("a","bc") produced the same key.
+func TestKeyWriterSeparatesComponents(t *testing.T) {
+	s := newExpiringSet()
+	defer s.Close()
+
+	a := s.newKey()
+	a.Str("ab").Str("c")
+	b := s.newKey()
+	b.Str("a").Str("bc")
+
+	if s.CheckAndAdd(&a, time.Hour) {
+		t.Fatal("first key should be new")
+	}
+	if s.CheckAndAdd(&b, time.Hour) {
+		t.Error(`("a","bc") collided with ("ab","c"): components are not separated`)
+	}
 }

@@ -37,17 +37,10 @@ func (dc *DuplicateCache) Close() {
 // CheckPokemon returns true if this pokemon was already seen (duplicate).
 // Key: {encounter_id}:{verified}:{cp}
 func (dc *DuplicateCache) CheckPokemon(encounterID string, verified bool, cp int, disappearTime int64) bool {
-	verifiedStr := "F"
-	if verified {
-		verifiedStr = "T"
-	}
-	key := fmt.Sprintf("%s%s%d", encounterID, verifiedStr, cp)
+	k := dc.seen.newKey()
+	k.Str(encounterID).Bool(verified).Int(int64(cp))
 
-	if dc.seen.Has(key) {
-		return true // duplicate
-	}
-
-	// Set with TTL based on disappear time
+	// TTL based on disappear time
 	now := time.Now().Unix()
 	var ttl time.Duration
 	if !verified || disappearTime == 0 {
@@ -60,8 +53,7 @@ func (dc *DuplicateCache) CheckPokemon(encounterID string, verified bool, cp int
 		ttl = time.Duration(remaining) * time.Second
 	}
 
-	dc.seen.Add(key, ttl)
-	return false
+	return dc.seen.CheckAndAdd(&k, ttl)
 }
 
 // RaidCacheResult holds info about a previously-seen raid.
@@ -137,94 +129,71 @@ func rsvpChanged(oldRSVPs, newRSVPs []RaidRSVP) bool {
 // movement, so including the fingerprint lets each meaningful leaderboard change
 // through (to reach the edit path) while collapsing repeats of the same state.
 func (dc *DuplicateCache) CheckShowcase(pokestopID string, showcaseExpiry int64, rank1Fingerprint string) bool {
-	key := fmt.Sprintf("%sSC%d:%s", pokestopID, showcaseExpiry, rank1Fingerprint)
-
-	if dc.seen.Has(key) {
-		return true
-	}
+	k := dc.seen.newKey()
+	k.Str(pokestopID).Str("SC").Int(showcaseExpiry).Str(rank1Fingerprint)
 
 	now := time.Now().Unix()
 	remaining := showcaseExpiry - now + 300
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.seen.Add(key, time.Duration(remaining)*time.Second)
-	return false
+	return dc.seen.CheckAndAdd(&k, time.Duration(remaining)*time.Second)
 }
 
 func (dc *DuplicateCache) CheckInvasion(pokestopID string, expiration int64) bool {
-	key := fmt.Sprintf("%sI%d", pokestopID, expiration)
-
-	if dc.seen.Has(key) {
-		return true
-	}
+	k := dc.seen.newKey()
+	k.Str(pokestopID).Str("I").Int(expiration)
 
 	now := time.Now().Unix()
 	remaining := expiration - now + 300
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.seen.Add(key, time.Duration(remaining)*time.Second)
-	return false
+	return dc.seen.CheckAndAdd(&k, time.Duration(remaining)*time.Second)
 }
 
 // CheckQuest returns true if this quest was already seen (duplicate).
 // Key: {pokestop_id}_{rewards_hash}
 func (dc *DuplicateCache) CheckQuest(pokestopID string, rewardsKey string) bool {
-	key := fmt.Sprintf("%s_%s", pokestopID, rewardsKey)
+	k := dc.seen.newKey()
+	k.Str(pokestopID).Str(rewardsKey)
 
-	if dc.seen.Has(key) {
-		return true
-	}
-
-	dc.seen.Add(key, 90*time.Minute)
-	return false
+	return dc.seen.CheckAndAdd(&k, 90*time.Minute)
 }
 
 // CheckLure returns true if this lure was already seen (duplicate).
 // Key: {pokestop_id}L{lure_expiration}
 func (dc *DuplicateCache) CheckLure(pokestopID string, expiration int64) bool {
-	key := fmt.Sprintf("%sL%d", pokestopID, expiration)
-
-	if dc.seen.Has(key) {
-		return true
-	}
+	k := dc.seen.newKey()
+	k.Str(pokestopID).Str("L").Int(expiration)
 
 	now := time.Now().Unix()
 	remaining := expiration - now + 300
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.seen.Add(key, time.Duration(remaining)*time.Second)
-	return false
+	return dc.seen.CheckAndAdd(&k, time.Duration(remaining)*time.Second)
 }
 
 // CheckMaxbattle returns true if this maxbattle was already seen (duplicate).
 // Key: {station_id}M{battle_end}{pokemon_id}
 func (dc *DuplicateCache) CheckMaxbattle(stationID string, battleEnd int64, pokemonID int) bool {
-	key := fmt.Sprintf("%sM%d%d", stationID, battleEnd, pokemonID)
-
-	if dc.seen.Has(key) {
-		return true
-	}
+	k := dc.seen.newKey()
+	k.Str(stationID).Str("M").Int(battleEnd).Int(int64(pokemonID))
 
 	now := time.Now().Unix()
 	remaining := battleEnd - now + 300
 	if remaining <= 0 {
 		remaining = 60
 	}
-	dc.seen.Add(key, time.Duration(remaining)*time.Second)
-	return false
+	return dc.seen.CheckAndAdd(&k, time.Duration(remaining)*time.Second)
 }
 
 // CheckNest returns true if this nest was already seen (duplicate).
 // Key: {nest_id}_{pokemon_id}_{reset_time}
 func (dc *DuplicateCache) CheckNest(nestID int64, pokemonID int, resetTime int64) bool {
-	key := fmt.Sprintf("%d_%d_%d", nestID, pokemonID, resetTime)
-
-	if dc.seen.Has(key) {
-		return true
-	}
+	k := dc.seen.newKey()
+	k.Int(nestID).Int(int64(pokemonID)).Int(resetTime)
 
 	// 14 days from reset_time
 	now := time.Now().Unix()
@@ -232,6 +201,5 @@ func (dc *DuplicateCache) CheckNest(nestID int64, pokemonID int, resetTime int64
 	if remaining <= 0 {
 		remaining = 3600
 	}
-	dc.seen.Add(key, time.Duration(remaining)*time.Second)
-	return false
+	return dc.seen.CheckAndAdd(&k, time.Duration(remaining)*time.Second)
 }
