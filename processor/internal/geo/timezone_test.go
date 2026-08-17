@@ -115,3 +115,23 @@ func TestResolveTimezone_FallbackChain(t *testing.T) {
 		})
 	}
 }
+
+// TestGetTimezone_SimplifiedBoundaryOffsets documents the accepted cost of
+// NewDefaultFinder's topology-simplified polygons.
+//
+// Within roughly 111 m of a border the simplified boundary can place a point
+// in the neighbouring zone, and that neighbour does not always share the same
+// UTC offset. This point sits inside the India/Nepal band, where the two zones
+// differ by 15 minutes: NewFullFinder resolves it to Asia/Kathmandu, the
+// finder we ship resolves it to Asia/Kolkata.
+//
+// Pinned so the behaviour is a documented trade rather than a surprise, and so
+// a tzf data update that moves the boundary shows up as a test change.
+func TestGetTimezone_SimplifiedBoundaryOffsets(t *testing.T) {
+	const lat, lon = 26.5000, 88.1000
+
+	got := GetTimezone(lat, lon)
+	if got != "Asia/Kolkata" {
+		t.Errorf("GetTimezone(%v, %v) = %q, want %q (simplified-boundary behaviour changed)", lat, lon, got, "Asia/Kolkata")
+	}
+}
