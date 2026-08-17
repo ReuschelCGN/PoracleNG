@@ -47,6 +47,14 @@ type speciesCounts struct {
 // (minute, species) instead of one record per sighting is what keeps this
 // tracker's memory bounded: size is a function of the window length and the
 // number of distinct species, never of webhook throughput.
+//
+// This ring is mechanically the same as webhook.RateCounter's: slot index is
+// (unix/60 % len), a slot whose stored minute differs is stale and reset in
+// place rather than allocated, and reads filter by age instead of sweeping.
+// The two differ in what they hold (per-species counters here, per-type counts
+// there) and in whether the window is configurable, which is why they are not
+// one type today. Keep them in step: a boundary bug found in one is almost
+// certainly present in the other.
 type statsBucket struct {
 	minute  int64 // wall-clock minute this bucket covers; -1 when unused
 	total   int64
@@ -221,13 +229,21 @@ type counters struct {
 	shinyScanned int64
 }
 
+// oldestMinute is the earliest minute still inside the rolling window.
+//
+// One definition so aggregate and totalInWindow cannot answer "is this bucket
+// still in the window?" differently. Caller must hold at least a read lock.
+func (st *StatsTracker) oldestMinute() int64 {
+	return st.nowFunc().Unix()/60 - int64(windowMinutes(st.cfg.WindowHours))
+}
+
 // aggregate sums every bucket still inside the window. Buckets that have
 // fallen out are left alone — they are recycled in place the next time
 // RecordSighting lands on their ring slot.
 //
 // Caller must hold at least a read lock.
 func (st *StatsTracker) aggregate() (map[int]*counters, int64) {
-	oldest := st.nowFunc().Unix()/60 - int64(windowMinutes(st.cfg.WindowHours))
+	oldest := st.oldestMinute()
 
 	counts := make(map[int]*counters)
 	var totalAll int64
@@ -254,7 +270,7 @@ func (st *StatsTracker) aggregate() (map[int]*counters, int64) {
 // totalInWindow counts sightings still inside the window without building the
 // per-species aggregate. Caller must hold at least a read lock.
 func (st *StatsTracker) totalInWindow() int64 {
-	oldest := st.nowFunc().Unix()/60 - int64(windowMinutes(st.cfg.WindowHours))
+	oldest := st.oldestMinute()
 	var total int64
 	for i := range st.buckets {
 		if st.buckets[i].minute >= oldest {
