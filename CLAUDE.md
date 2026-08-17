@@ -219,7 +219,7 @@ The processor renders DTS templates using `jfberry/raymond` (a fork of `mailgun/
 
 **Queue pressure**: When the render channel is >80% full, tile generation is skipped to reduce backpressure.
 
-**Shutdown ordering** (`ProcessorService.Close` in `cmd/processor/main.go`): webhook workers → render channel (close) → render workers (drain) → dispatcher (stop, which stops its queue and tracker) → static map (close) → duplicates → rate limiter → gym state save → geocoder (close).
+**Shutdown ordering** (`ProcessorService.Close` in `cmd/processor/main.go`): webhook workers → render channel (close) → render workers (drain) → dispatcher (stop, which stops its queue and tracker) → static map (close) → duplicates → weather tracker (stops the cell-eviction sweep) → rate limiter → gym state save → geocoder (close).
 
 ### 6. Message Delivery (Processor)
 
