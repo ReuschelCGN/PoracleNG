@@ -55,7 +55,7 @@ type v2PokemonRule struct {
 	Size    *int `json:"size,omitempty" nullable:"true" doc:"Minimum size tier. Omit to match any size (stored as -1 = any). Returned as null when at its wildcard."`
 	MaxSize *int `json:"max_size,omitempty" nullable:"true" doc:"Maximum size tier (1-5). Omit to impose no upper bound (stored as 5 = the top tier, i.e. no upper bound). Returned as null when at its wildcard."`
 
-	PVPRankingLeague    *int `json:"pvp_ranking_league,omitempty" nullable:"true" doc:"PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard."`
+	PVPRankingLeague    *int `json:"pvp_ranking_league,omitempty" nullable:"true" enum:"0,500,1500,2500" doc:"PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard."`
 	PVPRankingBest      *int `json:"pvp_ranking_best,omitempty" nullable:"true" doc:"Best (lowest, 1-based) PVP rank to alert on. Omit to start from rank 1 (stored as 1 = best possible rank). Returned as null when at its wildcard."`
 	PVPRankingWorst     *int `json:"pvp_ranking_worst,omitempty" nullable:"true" doc:"Worst (highest) PVP rank to alert on. Omit to impose no upper rank limit (stored as 4096 = no upper rank limit sentinel; PVP ranks never exceed it). Returned as null when at its wildcard."`
 	PVPRankingMinCP     *int `json:"pvp_ranking_min_cp,omitempty" nullable:"true" doc:"PVP CP floor. Omit to impose no floor (stored as 0 = no floor). Returned as null when at its wildcard."`
