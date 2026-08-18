@@ -485,3 +485,51 @@ func TestV2Invasion_RoundTrip_EverythingMode(t *testing.T) {
 		t.Fatalf("round-trip drifted the everything-mode rule: %+v", rows)
 	}
 }
+
+// A PUT whose body is an exact duplicate of a DIFFERENT rule must 409
+// before anything is deleted. On databases carrying the legacy invasion
+// unique key this exact flow used to delete the addressed rule and then
+// fail the insert with a duplicate-key error — deterministic data loss.
+func TestV2Invasion_PutDuplicateOfOtherRule_Conflict(t *testing.T) {
+	r, is, _, restore := newV2InvasionTestAPI(t)
+	defer restore()
+
+	// Rule A: grass grunts. Rule B: water grunts.
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/invasion",
+		`[{"type_id":11},{"type_id":3}]`)
+	created := v2RulesArray(t, v2DecodeBody(t, w), "created")
+	if len(created) != 2 {
+		t.Fatalf("expected 2 created rules, got %d", len(created))
+	}
+	uidB := int64(created[1]["uid"].(float64))
+
+	// PUT B with a body identical to A.
+	w = v2DoReq(t, r, http.MethodPut, "/api/v2/humans/u1/tracking/invasion/"+itoa(uidB), `{"type_id":11}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for duplicate-of-other-rule PUT, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Nothing may have been deleted: both rules intact.
+	if rows := is.AllRows(); len(rows) != 2 {
+		t.Fatalf("expected both rules to survive the rejected PUT, got %d: %+v", len(rows), rows)
+	}
+}
+
+// A PUT that keeps the addressed rule's own identity (tweaking only
+// updatable fields) must NOT conflict with itself.
+func TestV2Invasion_PutSelfReplace_NoConflict(t *testing.T) {
+	r, is, _, restore := newV2InvasionTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/invasion", `[{"type_id":11}]`)
+	uid := int64(v2RulesArray(t, v2DecodeBody(t, w), "created")[0]["uid"].(float64))
+
+	w = v2DoReq(t, r, http.MethodPut, "/api/v2/humans/u1/tracking/invasion/"+itoa(uid), `{"type_id":11,"distance":750}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("self-identity PUT should succeed, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := is.AllRows()
+	if len(rows) != 1 || rows[0].Distance != 750 {
+		t.Fatalf("replace did not apply: %+v", rows)
+	}
+}
