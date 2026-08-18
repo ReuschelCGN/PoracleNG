@@ -39,6 +39,11 @@ type AccuWeatherClient struct {
 	cellMutexes   map[string]*sync.Mutex
 	cellLocations map[string]string // cellID -> AccuWeather location key
 	cellForecasts map[string]*forecastState
+	// pendingEvict holds cells the sweep asked to reclaim while a request
+	// was using them. WeatherTracker names a cell exactly once, when it
+	// deletes it, so a deferred eviction is never offered again and has to
+	// be completed here instead.
+	pendingEvict map[string]struct{}
 	// inFlight counts forecast requests currently working on a cell.
 	// EnsureForecast releases aw.mu and then blocks, first on the per-cell
 	// mutex and then on an HTTP call, before re-reading the cell's state.
@@ -83,6 +88,7 @@ func NewAccuWeatherClient(cfg AccuWeatherConfig, tracker *WeatherTracker) *AccuW
 		cellLocations: make(map[string]string),
 		cellForecasts: make(map[string]*forecastState),
 		inFlight:      make(map[string]int),
+		pendingEvict:  make(map[string]struct{}),
 	}
 }
 
@@ -99,13 +105,20 @@ func (aw *AccuWeatherClient) ForgetCells(cellIDs []string) {
 			// A request is mid-flight on this cell. It will re-read the
 			// forecast state after its HTTP call, and a second caller would
 			// find an empty mutex slot and start a concurrent request for the
-			// same cell. The next sweep reclaims it once the request is done.
+			// same cell. Defer the reclaim to whoever releases the last hold.
+			aw.pendingEvict[cellID] = struct{}{}
 			continue
 		}
-		delete(aw.cellMutexes, cellID)
-		delete(aw.cellLocations, cellID)
-		delete(aw.cellForecasts, cellID)
+		aw.forget(cellID)
 	}
+}
+
+// forget drops every per-cell map entry. Caller must hold aw.mu.
+func (aw *AccuWeatherClient) forget(cellID string) {
+	delete(aw.cellMutexes, cellID)
+	delete(aw.cellLocations, cellID)
+	delete(aw.cellForecasts, cellID)
+	delete(aw.pendingEvict, cellID)
 }
 
 // markInFlight records that a forecast request is working on a cell, holding
@@ -115,14 +128,26 @@ func (aw *AccuWeatherClient) markInFlight(cellID string) {
 }
 
 // doneInFlight releases the hold taken by markInFlight.
+// doneInFlight releases the hold taken by markInFlight, completing any
+// eviction that was deferred while the request ran.
+//
+// A cell reactivated during the request is reclaimed here too, costing one
+// extra location lookup the next time it is needed. Consulting the tracker to
+// avoid that would mean taking wt.mu under aw.mu, and the alternative — never
+// reclaiming — is the leak this exists to close.
 func (aw *AccuWeatherClient) doneInFlight(cellID string) {
 	aw.mu.Lock()
 	defer aw.mu.Unlock()
-	if aw.inFlight[cellID] <= 1 {
-		delete(aw.inFlight, cellID)
+
+	if aw.inFlight[cellID] > 1 {
+		aw.inFlight[cellID]--
 		return
 	}
-	aw.inFlight[cellID]--
+	delete(aw.inFlight, cellID)
+
+	if _, deferred := aw.pendingEvict[cellID]; deferred {
+		aw.forget(cellID)
+	}
 }
 
 // storeForecastTimeout records when this cell's forecast next needs

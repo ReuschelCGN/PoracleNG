@@ -158,9 +158,9 @@ func TestForgetCellsSpareInFlightRequests(t *testing.T) {
 		t.Error("an idle cell was not reclaimed")
 	}
 
-	// Once the request finishes, the cell becomes reclaimable again.
+	// Releasing the hold completes the deferred eviction; see
+	// TestForgetCellsReclaimsAfterInFlightRequestCompletes.
 	aw.doneInFlight(busy)
-	aw.ForgetCells([]string{busy})
 
 	if aw.cellForecasts[busy] != nil || aw.cellMutexes[busy] != nil {
 		t.Error("cell was not reclaimed after its request completed")
@@ -177,4 +177,69 @@ func TestFetchForecastTailToleratesEvictedCell(t *testing.T) {
 
 	// No entry for this cell at all, as if eviction ran during the request.
 	aw.storeForecastTimeout("cell-vanished", 12345)
+}
+
+// TestForgetCellsReclaimsAfterInFlightRequestCompletes closes the gap left by
+// deferring an eviction: WeatherTracker reports a cell exactly once, at the
+// moment it deletes it, so a cell skipped because a request was in flight is
+// never offered to ForgetCells again.
+//
+// If that request then exits without reactivating the cell (quota exhausted,
+// HTTP or decode failure, no usable forecast), nothing else reclaims it and
+// its mutex, location key and forecast state stay resident for the life of the
+// process. The hold itself has to trigger the reclaim when it is released.
+func TestForgetCellsReclaimsAfterInFlightRequestCompletes(t *testing.T) {
+	wt := NewWeatherTracker()
+	defer wt.Close()
+	aw := NewAccuWeatherClient(AccuWeatherConfig{}, wt)
+
+	const cellID = "cell-abandoned"
+	aw.cellMutexes[cellID] = &sync.Mutex{}
+	aw.cellLocations[cellID] = "loc"
+	aw.cellForecasts[cellID] = &forecastState{}
+
+	aw.mu.Lock()
+	aw.markInFlight(cellID)
+	aw.mu.Unlock()
+
+	// The sweep offers the cell once and is refused.
+	aw.ForgetCells([]string{cellID})
+	if aw.cellForecasts[cellID] == nil {
+		t.Fatal("in-flight cell was evicted")
+	}
+
+	// The request fails and exits. No further sweep will ever name this cell,
+	// so releasing the hold must be what reclaims it.
+	aw.doneInFlight(cellID)
+
+	if aw.cellForecasts[cellID] != nil {
+		t.Error("forecast state leaked after the in-flight request finished")
+	}
+	if aw.cellMutexes[cellID] != nil {
+		t.Error("per-cell mutex leaked after the in-flight request finished")
+	}
+	if aw.cellLocations[cellID] != "" {
+		t.Error("location key leaked after the in-flight request finished")
+	}
+}
+
+// TestForgetCellsDoesNotReclaimUnevictedCells guards the other direction: a
+// request finishing on a cell nobody asked to evict must leave it alone.
+func TestForgetCellsDoesNotReclaimUnevictedCells(t *testing.T) {
+	wt := NewWeatherTracker()
+	defer wt.Close()
+	aw := NewAccuWeatherClient(AccuWeatherConfig{}, wt)
+
+	const cellID = "cell-live"
+	aw.cellLocations[cellID] = "loc"
+	aw.cellForecasts[cellID] = &forecastState{}
+
+	aw.mu.Lock()
+	aw.markInFlight(cellID)
+	aw.mu.Unlock()
+	aw.doneInFlight(cellID)
+
+	if aw.cellForecasts[cellID] == nil || aw.cellLocations[cellID] == "" {
+		t.Error("state for a cell that was never evicted was reclaimed")
+	}
 }
