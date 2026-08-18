@@ -288,3 +288,39 @@ func TestDeferredEvictionSkippedWhenCellCameBack(t *testing.T) {
 		t.Error("forecast timeout lost; next alert re-fetches before the configured refresh")
 	}
 }
+
+// TestEvictDoesNotReportCellsStillHeldByControllerData pins that a cell is
+// reported to onEvict only once it is genuinely gone from the tracker.
+//
+// Local inference and controller data age out independently: a cell can stop
+// receiving boosted-pokemon votes while weather webhooks (or AccuWeather
+// forecast pushes) keep its controller entry fresh. Reporting it because only
+// the local half expired hands a live cell to ForgetCells, which throws away
+// its location key and forecast timeout and makes the next alert re-pay for
+// both.
+func TestEvictDoesNotReportCellsStillHeldByControllerData(t *testing.T) {
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
+	defer wt.Close()
+
+	const cellID = "cell-half-idle"
+
+	var reported []string
+	wt.SetOnEvict(func(ids []string) { reported = append(reported, ids...) })
+
+	// Local inference recorded now, then left to go stale.
+	wt.CheckWeatherOnMonster(cellID, 51.5, -0.1, 3)
+
+	// Two days on, controller data is still arriving for the same cell.
+	clock.advance(48 * time.Hour)
+	wt.UpdateFromWebhook(cellID, 2, clock.now().Unix(), 51.5, -0.1, [4][2]float64{})
+
+	wt.evict(clock.now().Unix())
+
+	if len(reported) != 0 {
+		t.Errorf("onEvict reported %v for a cell whose controller data is still live", reported)
+	}
+	if !wt.hasCell(cellID) {
+		t.Error("cell was removed entirely despite fresh controller data")
+	}
+}

@@ -216,7 +216,16 @@ func (wt *WeatherTracker) evict(now int64) {
 	for cellID, ld := range wt.localData {
 		if ld.lastSeen < idleBefore {
 			delete(wt.localData, cellID)
-			droppedSet[cellID] = struct{}{}
+			// Only report a cell once BOTH halves are gone. The two age out
+			// independently: local inference can go quiet while weather
+			// webhooks or forecast pushes keep the controller entry fresh.
+			// Reporting on the local half alone hands a live cell to the
+			// eviction callback, which discards its AccuWeather location key
+			// and forecast timeout. The controller loop above has already
+			// removed any idle controller entry, so a hit here means fresh.
+			if _, stillControlled := wt.controllerData[cellID]; !stillControlled {
+				droppedSet[cellID] = struct{}{}
+			}
 		}
 	}
 
