@@ -125,9 +125,14 @@ func validateMuteValue(deps *TrackingDeps, human *store.Human, scope, value stri
 	}
 	switch scope {
 	case mute.ScopePokemon, mute.ScopeTracking:
-		if n, err := strconv.Atoi(value); err != nil || n <= 0 {
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
 			return "", huma.Error422UnprocessableEntity("value for scope '" + scope + "' must be a positive integer")
 		}
+		// Canonicalise ("025" → "25"): the matcher and the DELETE lookup
+		// compare ScopeValue against strconv-formatted IDs, so a verbatim
+		// non-canonical value would create a mute that never fires.
+		return strconv.Itoa(n), nil
 	case mute.ScopeArea:
 		// Prefer AreaLogic (community-aware, like the bot); fall back to the
 		// live state's fences — production trackingDeps carries no AreaLogic,
