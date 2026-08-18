@@ -1295,23 +1295,37 @@ func (ts *TemplateStore) DeleteEntry(filterType, filterPlatform, filterLanguage,
 	target := DTSEntry{Type: filterType, Platform: filterPlatform, Language: filterLanguage, ID: jsonID(filterID)}
 	targetKey := entryKey(&target)
 
+	// Prefer the last non-readonly match: a user override shares its key
+	// with the readonly fallback it shadows (the documented workflow for
+	// platform-agnostic types), so a forward first-match scan would bail
+	// with "readonly" before ever reaching the override. Only report
+	// readonly when every matching entry is a fallback.
 	var sourceFile string
 	found := false
-	for i := range ts.entries {
+	readonlyMatch := (*DTSEntry)(nil)
+	for i := len(ts.entries) - 1; i >= 0; i-- {
 		e := &ts.entries[i]
-		if entryKey(e) == targetKey {
-			if e.Readonly {
-				ts.mu.Unlock()
-				return fmt.Errorf("template %s/%s/%s/%s is readonly", e.Type, e.Platform, e.ID, e.Language)
-			}
-			sourceFile = e.sourceFile
-			ts.entries = append(ts.entries[:i], ts.entries[i+1:]...)
-			ts.cache = make(map[string]*raymond.Template)
-			ts.sourceCache = make(map[string]string)
-			ts.tileUsage = make(map[string]bool)
-			found = true
-			break
+		if entryKey(e) != targetKey {
+			continue
 		}
+		if e.Readonly {
+			if readonlyMatch == nil {
+				readonlyMatch = e
+			}
+			continue
+		}
+		sourceFile = e.sourceFile
+		ts.entries = append(ts.entries[:i], ts.entries[i+1:]...)
+		ts.cache = make(map[string]*raymond.Template)
+		ts.sourceCache = make(map[string]string)
+		ts.tileUsage = make(map[string]bool)
+		found = true
+		break
+	}
+	if !found && readonlyMatch != nil {
+		e := readonlyMatch
+		ts.mu.Unlock()
+		return fmt.Errorf("template %s/%s/%s/%s is readonly", e.Type, e.Platform, e.ID, e.Language)
 	}
 
 	configDir := ts.configDir

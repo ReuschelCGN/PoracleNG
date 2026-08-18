@@ -142,7 +142,11 @@ func RegisterDTSDeleteTemplate(api huma.API, ts dtsTemplateReader) {
 		Description: "Removes the DTS entry identified by the type/platform/language/id query keys from memory and disk. Unknown keys yield 404; readonly fallback entries (and other store rejections) yield 403.",
 		Security:    []map[string][]string{{"poracleSecret": {}}},
 	}, func(_ context.Context, in *dtsDeleteTemplateInput) (*statusOKOutput, error) {
-		if in.Type == "" || in.Platform == "" || in.ID == "" {
+		// Platform is required except for platform-agnostic types (e.g.
+		// help), whose entries carry an empty platform — mirroring the save
+		// endpoint's exemption so a saved override can also be deleted.
+		if in.Type == "" || in.ID == "" ||
+			(in.Platform == "" && !dts.IsPlatformAgnosticType(in.Type)) {
 			return nil, huma.Error400BadRequest("type, platform, and id query parameters are required")
 		}
 		if err := ts.DeleteEntry(in.Type, in.Platform, in.Language, in.ID); err != nil {
