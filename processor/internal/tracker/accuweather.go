@@ -131,10 +131,16 @@ func (aw *AccuWeatherClient) markInFlight(cellID string) {
 // doneInFlight releases the hold taken by markInFlight, completing any
 // eviction that was deferred while the request ran.
 //
-// A cell reactivated during the request is reclaimed here too, costing one
-// extra location lookup the next time it is needed. Consulting the tracker to
-// avoid that would mean taking wt.mu under aw.mu, and the alternative — never
-// reclaiming — is the leak this exists to close.
+// A deferred eviction can go stale: a successful fetch calls SetHourWeather,
+// which recreates the tracker cell, and a plain webhook can do the same. The
+// tracker is therefore re-checked before reclaiming, so state the request just
+// paid AccuWeather for is not thrown away for a cell that is demonstrably
+// active. Reclaiming it would cost a location lookup and a 12-hour forecast on
+// the next alert, against a 500/day default quota.
+//
+// Reading the tracker here is the same lock order EnsureForecast already uses
+// (aw.mu then wt.mu via hasHourWeather); WeatherTracker never calls into this
+// client while holding wt.mu, since evict releases it before invoking onEvict.
 func (aw *AccuWeatherClient) doneInFlight(cellID string) {
 	aw.mu.Lock()
 	defer aw.mu.Unlock()
@@ -145,9 +151,15 @@ func (aw *AccuWeatherClient) doneInFlight(cellID string) {
 	}
 	delete(aw.inFlight, cellID)
 
-	if _, deferred := aw.pendingEvict[cellID]; deferred {
-		aw.forget(cellID)
+	if _, deferred := aw.pendingEvict[cellID]; !deferred {
+		return
 	}
+	delete(aw.pendingEvict, cellID)
+	if aw.tracker != nil && aw.tracker.hasCell(cellID) {
+		// Came back while the request ran; the eviction no longer applies.
+		return
+	}
+	aw.forget(cellID)
 }
 
 // storeForecastTimeout records when this cell's forecast next needs

@@ -243,3 +243,48 @@ func TestForgetCellsDoesNotReclaimUnevictedCells(t *testing.T) {
 		t.Error("state for a cell that was never evicted was reclaimed")
 	}
 }
+
+// TestDeferredEvictionSkippedWhenCellCameBack covers a deferred eviction that
+// goes stale while it waits.
+//
+// fetchForecast calls SetHourWeather on success, which recreates the tracker
+// cell and stamps it live. Reclaiming on that basis throws away the location
+// key and the forecast timeout the request just paid AccuWeather for, so the
+// next alert performs a fresh location lookup and a fresh 12-hour forecast:
+// two more requests against a 500/day quota, for a cell that is demonstrably
+// active.
+func TestDeferredEvictionSkippedWhenCellCameBack(t *testing.T) {
+	clock := newTestClock(1_700_000_000)
+	wt := NewWeatherTracker(WithClock(clock.now))
+	defer wt.Close()
+	aw := NewAccuWeatherClient(AccuWeatherConfig{}, wt)
+
+	const cellID = "cell-refreshed"
+	aw.cellMutexes[cellID] = &sync.Mutex{}
+	aw.cellLocations[cellID] = "loc"
+	aw.cellForecasts[cellID] = &forecastState{}
+
+	aw.mu.Lock()
+	aw.markInFlight(cellID)
+	aw.mu.Unlock()
+
+	// The sweep drops the cell and is refused because a request holds it.
+	aw.ForgetCells([]string{cellID})
+
+	// The request succeeds: fetchForecast writes forecast hours, which
+	// recreates the tracker cell, and records the refresh timeout.
+	now := clock.now().Unix()
+	wt.SetHourWeather(cellID, now-(now%3600)+3600, 3)
+	aw.storeForecastTimeout(cellID, now+7200)
+
+	aw.doneInFlight(cellID)
+
+	if aw.cellLocations[cellID] == "" {
+		t.Error("location key discarded for a cell the fetch brought back; next alert re-pays for the lookup")
+	}
+	if fs := aw.cellForecasts[cellID]; fs == nil {
+		t.Error("forecast state discarded for a cell the fetch brought back")
+	} else if fs.forecastTimeout == 0 {
+		t.Error("forecast timeout lost; next alert re-fetches before the configured refresh")
+	}
+}
