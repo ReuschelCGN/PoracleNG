@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -118,4 +119,62 @@ func BenchmarkWeatherEvictDropsManyCells(b *testing.B) {
 		wt.Close()
 		b.StartTimer()
 	}
+}
+
+// TestForgetCellsSpareInFlightRequests pins the interaction between the
+// eviction sweep and a forecast request already in progress.
+//
+// EnsureForecast releases aw.mu, blocks on the per-cell mutex and then on an
+// HTTP call, and re-reads cellForecasts afterwards. Before eviction existed
+// nothing could remove that entry, so the re-read was safe by construction.
+// Once ForgetCells could delete it mid-request, the re-read became a nil
+// dereference that panics the processor, and deleting the per-cell mutex let a
+// second request for the same cell start against a fresh mutex and run
+// concurrently.
+func TestForgetCellsSpareInFlightRequests(t *testing.T) {
+	wt := NewWeatherTracker()
+	defer wt.Close()
+	aw := NewAccuWeatherClient(AccuWeatherConfig{}, wt)
+
+	const busy, idle = "cell-busy", "cell-idle"
+	for _, id := range []string{busy, idle} {
+		aw.cellMutexes[id] = &sync.Mutex{}
+		aw.cellLocations[id] = "loc-" + id
+		aw.cellForecasts[id] = &forecastState{}
+	}
+
+	// A request is working on `busy` right now.
+	aw.markInFlight(busy)
+
+	aw.ForgetCells([]string{busy, idle})
+
+	if aw.cellForecasts[busy] == nil {
+		t.Error("forecast state for an in-flight cell was evicted; the request will nil-deref on its next re-read")
+	}
+	if aw.cellMutexes[busy] == nil {
+		t.Error("per-cell mutex for an in-flight cell was evicted; a second request would run concurrently")
+	}
+	if aw.cellForecasts[idle] != nil || aw.cellMutexes[idle] != nil || aw.cellLocations[idle] != "" {
+		t.Error("an idle cell was not reclaimed")
+	}
+
+	// Once the request finishes, the cell becomes reclaimable again.
+	aw.doneInFlight(busy)
+	aw.ForgetCells([]string{busy})
+
+	if aw.cellForecasts[busy] != nil || aw.cellMutexes[busy] != nil {
+		t.Error("cell was not reclaimed after its request completed")
+	}
+}
+
+// TestFetchForecastTailToleratesEvictedCell covers the second unguarded
+// re-read: fetchForecast writes the refresh timeout back after its HTTP call,
+// by which point the cell may legitimately be gone.
+func TestFetchForecastTailToleratesEvictedCell(t *testing.T) {
+	wt := NewWeatherTracker()
+	defer wt.Close()
+	aw := NewAccuWeatherClient(AccuWeatherConfig{}, wt)
+
+	// No entry for this cell at all, as if eviction ran during the request.
+	aw.storeForecastTimeout("cell-vanished", 12345)
 }
