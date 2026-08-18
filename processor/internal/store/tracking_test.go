@@ -8,7 +8,6 @@ import (
 
 func TestMonstersInsertWithOverride(t *testing.T) {
 	dbx := openTestDB(t)
-	defer dbx.Close()
 	s := NewTrackingStores(dbx)
 	uid, err := s.Monsters.Insert(&db.MonsterTrackingAPI{
 		ID: "u1", ProfileNo: 0, PokemonID: 25,
