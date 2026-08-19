@@ -468,3 +468,33 @@ func TestHumaButtonActions_NilRegistry503(t *testing.T) {
 		t.Fatalf("status = %d, want 503; body: %s", w.Code, w.Body.String())
 	}
 }
+
+// Platform-agnostic types (help) save overrides with an empty platform —
+// the DELETE endpoint must accept the same key shape instead of rejecting
+// it with 400 before DeleteEntry is reached.
+func TestHumaDTSDeleteTemplate_PlatformAgnosticEmptyPlatform(t *testing.T) {
+	r, api := newDTSTestAPI(t)
+	RegisterDTSDeleteTemplate(api, &stubTemplateReader{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/dts/templates?type=help&id=1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for platform-agnostic delete; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// Non-agnostic types still require platform.
+func TestHumaDTSDeleteTemplate_NonAgnosticStillRequiresPlatform(t *testing.T) {
+	r, api := newDTSTestAPI(t)
+	RegisterDTSDeleteTemplate(api, &stubTemplateReader{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/dts/templates?type=monster&id=1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 when platform missing for monster; body: %s", w.Code, w.Body.String())
+	}
+}

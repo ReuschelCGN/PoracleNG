@@ -5479,6 +5479,12 @@
                 },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+                  "enum": [
+                    0,
+                    500,
+                    1500,
+                    2500
+                  ],
                   "format": "int64",
                   "type": [
                     "integer",
@@ -5791,6 +5797,12 @@
                 },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+                  "enum": [
+                    0,
+                    500,
+                    1500,
+                    2500
+                  ],
                   "format": "int64",
                   "type": [
                     "integer",
@@ -6103,6 +6115,12 @@
                 },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+                  "enum": [
+                    0,
+                    500,
+                    1500,
+                    2500
+                  ],
                   "format": "int64",
                   "type": [
                     "integer",
@@ -8201,6 +8219,12 @@
                 },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+                  "enum": [
+                    0,
+                    500,
+                    1500,
+                    2500
+                  ],
                   "format": "int64",
                   "type": [
                     "integer",
@@ -10184,6 +10208,12 @@
                 },
                 "pvp_ranking_league": {
                   "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+                  "enum": [
+                    0,
+                    500,
+                    1500,
+                    2500
+                  ],
                   "format": "int64",
                   "type": [
                     "integer",
@@ -11187,6 +11217,12 @@
           },
           "pvp_ranking_league": {
             "description": "PVP league CP cap (the stored int IS the cap): 0 | 500 | 1500 | 2500. Omit (or 0) for IV-mode tracking with no PVP filter (stored as 0 = none/IV mode). Returned as null when at its wildcard.",
+            "enum": [
+              0,
+              500,
+              1500,
+              2500
+            ],
             "format": "int64",
             "type": [
               "integer",

@@ -371,3 +371,23 @@ func TestV2Mutes_Create_Area_StateMgrFallback(t *testing.T) {
 		t.Fatalf("area mute does not match after StateMgr validation")
 	}
 }
+
+// Numeric mute values must be canonicalised before storage: "025" passes
+// Atoi validation but the matcher compares ScopeValue against the
+// canonical decimal string ("25"), so a verbatim-stored "025" creates a
+// mute that never suppresses anything.
+func TestV2Mutes_Create_CanonicalisesNumericValue(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes",
+		`{"scope":"pokemon","value":"025"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	item := v2DecodeBody(t, w)["mute"].(map[string]any)
+	if item["value"] != "25" {
+		t.Fatalf("expected canonical value \"25\", got %v", item["value"])
+	}
+	if !mutes.Match("u1", mute.Event{PokemonID: 25}, time.Now().Unix()) {
+		t.Fatalf("store does not match pokemon 25 — value stored verbatim instead of canonicalised")
+	}
+}
