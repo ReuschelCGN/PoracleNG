@@ -1379,7 +1379,11 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 			cfg.Locale.TimeFormat, geo.SupportedLocales())
 	}
 
-	weatherTracker := tracker.NewWeatherTracker()
+	// Idle expiry has to outlast the configured forecast cadence, or
+	// forecast-only cells get reclaimed between pushes.
+	weatherTracker := tracker.NewWeatherTracker(
+		tracker.WithForecastRefreshInterval(cfg.Weather.ForecastRefreshInterval),
+	)
 	timeLayout := geo.ConvertTimeFormat(cfg.Locale.Time, cfg.Locale.TimeFormat)
 	eventChecker := enrichment.NewPogoEventChecker(timeLayout)
 
@@ -1570,6 +1574,9 @@ func NewProcessorService(cfg *config.Config, stateMgr *state.Manager, database *
 			LocalFirstFetchHOD:      cfg.Weather.LocalFirstFetchHOD,
 			SmartForecast:           cfg.Weather.SmartForecast,
 		}, weatherTracker)
+		// The forecast client keys its own maps by the same cell ids, so it
+		// has to release them when the tracker reclaims a cell.
+		weatherTracker.SetOnEvict(awClient.ForgetCells)
 		enricher.ForecastProvider = awClient
 		log.Infof("AccuWeather forecast enabled with %d API keys", len(cfg.Weather.AccuWeatherAPIKeys))
 	}
@@ -1792,6 +1799,10 @@ func (ps *ProcessorService) Close() {
 		ps.enricher.StaticMap.Close()
 	}
 	ps.duplicates.Close()
+	// Weather eviction runs on its own ticker and touches the same maps the
+	// enrichment path reads, so it stops here with the other trackers, once
+	// the webhook and render workers are already quiescent.
+	ps.weather.Close()
 	ps.rateLimiter.Close()
 	// Persist gym state cache for restart
 	if err := ps.gymState.Save(); err != nil {
