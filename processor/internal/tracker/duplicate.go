@@ -191,9 +191,9 @@ func (dc *DuplicateCache) CheckMaxbattle(stationID string, battleEnd int64, poke
 
 // CheckNest returns true if this nest was already seen (duplicate).
 // Key: {nest_id}_{pokemon_id}_{reset_time}
-func (dc *DuplicateCache) CheckNest(nestID int64, pokemonID int, resetTime int64) bool {
+func (dc *DuplicateCache) CheckNest(nestID string, pokemonID int, resetTime int64) bool {
 	k := dc.seen.newKey()
-	k.Int(nestID).Int(int64(pokemonID)).Int(resetTime)
+	k.Str(nestID).Int(int64(pokemonID)).Int(resetTime)
 
 	// 14 days from reset_time
 	now := time.Now().Unix()
