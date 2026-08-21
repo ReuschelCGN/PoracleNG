@@ -409,3 +409,52 @@ func TestLogSummaryHelpShadowingAdvisory(t *testing.T) {
 		})
 	}
 }
+
+// A user override that shadows a readonly fallback (same entry key — the
+// documented workflow for platform-agnostic types like help) must be
+// deletable. DeleteEntry used to scan forward and bail with "readonly" on
+// the fallback before ever reaching the override.
+func TestDeleteEntryPrefersUserOverrideOverReadonlyFallback(t *testing.T) {
+	tmp := t.TempDir()
+
+	// User override shadowing the fallback's key (help entries carry an
+	// empty platform).
+	if err := os.WriteFile(filepath.Join(tmp, "dts.json"), []byte(`[
+		{"type": "help", "id": "1", "platform": "", "language": "", "template": {"content": "user override"}}
+	]`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fallbackDir := filepath.Join(tmp, "fallback")
+	if err := os.MkdirAll(fallbackDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fallbackDir, "dts.json"), []byte(`[
+		{"type": "help", "id": "1", "platform": "", "language": "", "template": {"content": "bundled fallback"}}
+	]`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ts, err := LoadTemplates(tmp, fallbackDir)
+	if err != nil {
+		t.Fatalf("LoadTemplates: %v", err)
+	}
+
+	if err := ts.DeleteEntry("help", "", "", "1"); err != nil {
+		t.Fatalf("DeleteEntry should remove the user override, got: %v", err)
+	}
+
+	// The readonly fallback must survive and become visible again.
+	list := ts.FilteredEntries("help", "", "", "1")
+	if len(list) != 1 {
+		t.Fatalf("expected the fallback to remain, got %d entries", len(list))
+	}
+	if !list[0].Readonly {
+		t.Errorf("surviving entry should be the readonly fallback")
+	}
+
+	// Deleting again must now report readonly (only the fallback matches).
+	if err := ts.DeleteEntry("help", "", "", "1"); err == nil || !strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("second delete should hit the readonly fallback, got: %v", err)
+	}
+}

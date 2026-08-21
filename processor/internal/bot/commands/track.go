@@ -87,11 +87,13 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	}
 
 	// Reject bare "!track everything" with no meaningful filters for non-admins.
-	// Filters like IV, CP, level, PVP league, type, or gender meaningfully narrow results.
-	// "shiny" alone doesn't — almost everything can be shiny.
+	// Filters like IV, CP, level, PVP league, type, gender, or costume
+	// meaningfully narrow results. "shiny" alone doesn't — almost everything
+	// can be shiny.
 	if parsed.HasKeyword("arg.everything") && !ctx.IsAdmin {
 		hasFilters := len(parsed.Singles) > 0 || len(parsed.Ranges) > 0 ||
-			len(parsed.Types) > 0 || parsed.Gender != 0 || len(parsed.PVP) > 0
+			len(parsed.Types) > 0 || parsed.Gender != 0 || len(parsed.PVP) > 0 ||
+			costume != 9000
 		if !hasFilters {
 			return []bot.Reply{{React: "🙅", Text: tr.T("msg.track.everything_no_filters")}}
 		}

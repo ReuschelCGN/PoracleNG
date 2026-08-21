@@ -70,8 +70,9 @@ type ParsedArgs struct {
 	Pokemon []ResolvedPokemon
 	// Type IDs matched by name
 	Types []int
-	// Lure type ID (0=any/unset, 501-506)
-	LureType int
+	// Lure type IDs matched by name (501-506). "any" is expressed via the
+	// everything keyword, never by a name match, so 0 never appears here.
+	LureTypes []int
 	// Raid levels matched by name (e.g. "legendary" → [5])
 	RaidLevels []int
 	// PVP filters by league key: "great" → {Best:1, Worst:5, MinCP:0}

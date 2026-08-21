@@ -367,15 +367,11 @@ func (mt *MessageTracker) Load() error {
 
 		active++
 		remaining := entry.ExpiresAt.Sub(now)
-		msg := &TrackedMessage{
-			SentID:   entry.Message.SentID,
-			Target:   entry.Message.Target,
-			Type:     entry.Message.Type,
-			MsgType:  entry.Message.MsgType,
-			Clean:    entry.Message.Clean,
-			ReplyKey: entry.Message.ReplyKey,
-		}
-		mt.cache.Set(entry.Key, msg, remaining)
+		// Copy the persisted struct wholesale — a field-by-field rebuild
+		// here silently drops any field added to TrackedMessage later
+		// (Template was lost this way once).
+		msg := entry.Message
+		mt.cache.Set(entry.Key, &msg, remaining)
 		if msg.ReplyKey != "" {
 			// Cache OnEviction is already live, so the reverse-index
 			// write must be guarded.

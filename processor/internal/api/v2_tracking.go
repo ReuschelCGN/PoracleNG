@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
@@ -434,6 +435,28 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	row, terr := typ.Translate(deps, human.ID, profileNo, oc, &in.Body)
 	if terr != nil {
 		return nil, terr
+	}
+
+	// App-level identity validation, mirroring the insert path's
+	// DiffAndClassify semantics: a body that is an exact duplicate of a
+	// DIFFERENT rule is rejected before anything is deleted. Constraint
+	// management is deliberately application-side in this schema (no DB
+	// transactions); without this check, the delete-then-insert below could
+	// destroy the addressed rule when the insert collides — deterministic
+	// data loss on databases still carrying the legacy invasion/lures
+	// unique keys, a silent duplicate on the keyless tables.
+	existing, err := typ.scopedRows(deps, human.ID, profileNo)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("database error")
+	}
+	for i := range existing {
+		if typ.GetUID(&existing[i]) == in.UID {
+			continue
+		}
+		if noMatch, isDup, _, _ := db.DiffTracking(&existing[i], &row); !noMatch && isDup {
+			return nil, huma.Error409Conflict(fmt.Sprintf(
+				"an identical rule already exists (uid %d)", typ.GetUID(&existing[i])))
+		}
 	}
 
 	// Full replace = delete the old uid, insert the fully-specified body (new uid).

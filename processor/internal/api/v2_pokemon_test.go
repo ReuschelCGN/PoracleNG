@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -756,4 +757,29 @@ func TestV2RuleEnvelope_SchemaIncludesUID(t *testing.T) {
 // itoa is a tiny helper to keep paths readable.
 func itoa(v int64) string {
 	return strconv.FormatInt(v, 10)
+}
+
+// pvp_ranking_league documents a closed value set (0|500|1500|2500) but used
+// to accept any integer — a league like 42 was persisted yet indexed under a
+// key the PVP matcher never traverses, so the rule could never alert.
+func TestV2Pokemon_RejectsInvalidPVPLeague(t *testing.T) {
+	r, _, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon",
+		`[{"pokemon_id":25,"pvp_ranking_league":42,"pvp_ranking_worst":10}]`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for league 42, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestV2Pokemon_AcceptsValidPVPLeagues(t *testing.T) {
+	r, _, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+	for _, league := range []int{500, 1500, 2500} {
+		w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon",
+			fmt.Sprintf(`[{"pokemon_id":25,"pvp_ranking_league":%d,"pvp_ranking_worst":10}]`, league))
+		if w.Code != http.StatusOK {
+			t.Fatalf("league %d should be accepted, got %d: %s", league, w.Code, w.Body.String())
+		}
+	}
 }

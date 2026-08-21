@@ -447,3 +447,44 @@ func TestTrackerSize(t *testing.T) {
 		t.Errorf("expected Size() = 3, got %d", mt.Size())
 	}
 }
+
+// Load must restore every persisted TrackedMessage field. Template was
+// persisted by Save but dropped by Load's field-by-field reconstruction,
+// silently downgrading post-restart monsterChanged follow-ups to the
+// default template.
+func TestTrackerSaveLoadPreservesTemplate(t *testing.T) {
+	dir := t.TempDir()
+	senders := map[string]Sender{"discord": &mockSender{}}
+
+	mt1 := NewMessageTracker(dir, senders)
+	mt1.Track("edit:tpl", &TrackedMessage{
+		SentID:   "s1",
+		Target:   "t1",
+		Type:     "discord:user",
+		MsgType:  "pokemon",
+		Clean:    1,
+		ReplyKey: "enc1",
+		Template: "compact",
+	}, 5*time.Minute)
+	if err := mt1.Save(); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	mt1.cache.Stop()
+
+	mt2 := NewMessageTracker(dir, senders)
+	if err := mt2.Load(); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	defer mt2.cache.Stop()
+
+	got := mt2.LookupEdit("edit:tpl")
+	if got == nil {
+		t.Fatal("expected edit:tpl to be restored, got nil")
+	}
+	if got.Template != "compact" {
+		t.Errorf("Template lost across Save/Load: got %q, want %q", got.Template, "compact")
+	}
+	if got.MsgType != "pokemon" || got.ReplyKey != "enc1" || got.Clean != 1 {
+		t.Errorf("other fields lost across Save/Load: %+v", got)
+	}
+}
