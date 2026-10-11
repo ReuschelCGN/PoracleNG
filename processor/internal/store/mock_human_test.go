@@ -241,3 +241,20 @@ func TestMockHumanStore_PruneUserAreas(t *testing.T) {
 		t.Errorf("fully pruned humans.area = %#v, want empty non-nil", h.Area)
 	}
 }
+
+func TestMockHumanStore_PruneUserAreas_NoHuman(t *testing.T) {
+	m := NewMockHumanStore()
+	m.SeedProfile(Profile{ID: "ghost", ProfileNo: 1, Area: []string{"beta", "alpha"}})
+
+	removed, err := m.PruneUserAreas("ghost", map[string]bool{"alpha": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != nil {
+		t.Errorf("removed = %v, want nil", removed)
+	}
+	ps, _ := m.GetProfiles("ghost")
+	if len(ps) != 1 || !slices.Equal(ps[0].Area, []string{"beta", "alpha"}) {
+		t.Errorf("profiles = %+v, want unchanged", ps)
+	}
+}

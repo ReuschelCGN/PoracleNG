@@ -557,9 +557,11 @@ func (m *MockHumanStore) PruneUserAreas(humanID string, permitted map[string]boo
 		}
 		return kept
 	}
-	if h, ok := m.humans[humanID]; ok {
-		h.Area = prune(h.Area)
+	h, ok := m.humans[humanID]
+	if !ok {
+		return nil, nil // SQL: no humans row means profiles are not touched
 	}
+	h.Area = prune(h.Area)
 	ps := m.profiles[humanID]
 	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
 	for i := range ps {

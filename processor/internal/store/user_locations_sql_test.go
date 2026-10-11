@@ -316,3 +316,25 @@ func TestPruneUserAreas_SQL(t *testing.T) {
 		t.Errorf("fully pruned humans.area = %q, want []", humanArea)
 	}
 }
+
+func TestPruneUserAreas_SQL_NoHuman(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+	mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES ('ghost', 1, 'one', '["beta","alpha"]')`)
+	t.Cleanup(func() { _, _ = dbx.Exec(`DELETE FROM profiles WHERE id = 'ghost'`) })
+
+	removed, err := s.PruneUserAreas("ghost", map[string]bool{"alpha": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != nil {
+		t.Errorf("removed = %v, want nil", removed)
+	}
+	var area string
+	if err := dbx.Get(&area, `SELECT area FROM profiles WHERE id='ghost'`); err != nil {
+		t.Fatal(err)
+	}
+	if area != `["beta","alpha"]` {
+		t.Errorf("profile area = %s, want unchanged", area)
+	}
+}
