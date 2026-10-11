@@ -66,12 +66,15 @@ func (a *AreaLogic) GetAvailableAreas(communities []string, isAdmin bool) []Area
 		return areas
 	}
 
-	// Area security enabled — build allowed set from community config
-	allowedSet := a.buildAllowedSet(communities)
+	// Area security enabled. Same community predicates as PermittedAreas, so
+	// a fence is judged identically by !area and the API. The gate differs on
+	// purpose: !area always filters, because it is handed a membership list
+	// rather than a human.
+	allowedSet := communityAllowedSet(a.cfg.Area.Communities, communities)
 
 	var areas []AreaInfo
 	for _, f := range a.fences {
-		if f.UserSelectable && allowedSet[strings.ToLower(f.Name)] {
+		if f.UserSelectable && communityPermits(f, allowedSet) {
 			areas = append(areas, AreaInfo{
 				Name:           f.Name,
 				Group:          f.Group,
@@ -231,36 +234,6 @@ func (a *AreaLogic) FindFence(name string) *geofence.Fence {
 		}
 	}
 	return nil
-}
-
-// ValidateAndPrune removes areas from a user's list that are no longer permitted
-// given their current community membership. When area security is disabled, all
-// areas are valid. Returns the pruned list and the removed areas.
-// Used by reconciliation after community membership changes.
-func (a *AreaLogic) ValidateAndPrune(currentAreas []string, communities []string) (valid []string, removed []string) {
-	if !a.cfg.Area.Enabled {
-		return currentAreas, nil
-	}
-
-	allowedSet := a.buildAllowedSet(communities)
-	if len(allowedSet) == 0 {
-		// No communities → no allowed areas → all removed
-		return nil, currentAreas
-	}
-
-	for _, area := range currentAreas {
-		if allowedSet[strings.ToLower(area)] {
-			valid = append(valid, area)
-		} else {
-			removed = append(removed, area)
-		}
-	}
-	return
-}
-
-// buildAllowedSet builds a set of lowercase area names allowed by the given communities.
-func (a *AreaLogic) buildAllowedSet(communities []string) map[string]bool {
-	return BuildPermittedSet(a.cfg.Area.Communities, communities)
 }
 
 // BuildPermittedSet returns a lowercase set of all areas permitted by the given
