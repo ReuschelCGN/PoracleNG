@@ -1155,6 +1155,37 @@ func TestV2Humans_SetAreas_MemberWithoutRestrictionIsCommunityFiltered(t *testin
 	}
 }
 
+// D4: the listing reports exemptFromAreaSecurity, and under area_security
+// includes exempt fences so a client can explain why they behave differently.
+func TestV2Humans_AreasGet_ReportsExempt(t *testing.T) {
+	r, _ := newCoastOnlyAPI(t) // private is drawn+exempt, in no community
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/areas", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	exempt := map[string]bool{}
+	for _, m := range v2RulesArray(t, v2DecodeBody(t, w), "areas") {
+		name, _ := m["name"].(string)
+		ex, ok := m["exemptFromAreaSecurity"].(bool)
+		if !ok {
+			t.Fatalf("area %q has no exemptFromAreaSecurity field: %v", name, m)
+		}
+		exempt[name] = ex
+	}
+	if _, listed := exempt["private"]; !listed || !exempt["private"] {
+		t.Errorf("private must be listed and exempt: %v", exempt)
+	}
+	if _, listed := exempt["gamma"]; listed {
+		t.Errorf("gamma is another community's fence and must not be listed: %v", exempt)
+	}
+	if _, listed := exempt["lone"]; listed {
+		t.Errorf("lone is in no community and not exempt; must not be listed: %v", exempt)
+	}
+	if exempt["alpha"] {
+		t.Errorf("alpha is not exempt: %v", exempt)
+	}
+}
+
 // newCoastOnlyAPI: area_security on, u1 in "coast" (alpha, beta), and the
 // drawn "private" fence in NO community, as a real drawn fence is.
 func newCoastOnlyAPI(t *testing.T) (*gin.Engine, *store.MockHumanStore) {
