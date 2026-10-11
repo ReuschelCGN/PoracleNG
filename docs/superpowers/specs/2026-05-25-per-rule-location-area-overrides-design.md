@@ -153,8 +153,9 @@ When a user loses access to an area (community-role change, manual `!area remove
 
 - Adds one query per affected user during reconciliation
 - Piggybacks on the existing `AreaLogic.ValidateAndPrune` path
-> Correction (#243): ValidateAndPrune never had a caller and was deleted; the prune runs through bot.PruneForMembership.
 - No effect when area-security mode is off
+
+> Correction (#243): ValidateAndPrune never had a caller and was deleted; the prune runs through bot.PruneForMembership.
 
 ## REST API
 
