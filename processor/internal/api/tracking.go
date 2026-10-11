@@ -263,12 +263,10 @@ func normalizeAreaKey(s string) string {
 	return geofence.NormalizeAreaKey(s)
 }
 
-// newOverrideContext fetches the full human record once and pre-builds the
-// permitted-area set. It is called once per handler invocation, outside the
-// per-row loop, so that a batch POST of N rows only issues one Get query.
-// Returns an error message + HTTP status on failure.
 // newOverrideContext resolves the human and the set of areas they may scope a
-// rule to.
+// rule to. It is called once per handler invocation, outside the per-row loop,
+// so that a batch POST of N rows only issues one Get query. Returns an error
+// message + HTTP status on failure.
 //
 // The permitted set used to come from AreaLogic alone, and AreaLogic is nil in
 // production (main.go never sets it), so the set was always nil and the
@@ -295,6 +293,10 @@ func newOverrideContext(deps *TrackingDeps, humanID string, trusted bool) (overr
 	case deps.StateMgr != nil && deps.StateMgr.Get() != nil:
 		// Production path: AreaLogic is nil in main.go (#211).
 		fences = deps.StateMgr.Get().Fences
+	case deps.StateMgr != nil:
+		// State not loaded yet: fail closed (empty set rejects every
+		// override_areas value) rather than skipping the check.
+		return overrideContext{human: human, permitted: map[string]bool{}}, "", 0
 	default:
 		return overrideContext{human: human}, "", 0
 	}
