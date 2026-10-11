@@ -16,7 +16,9 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/community"
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/dts"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
+	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -34,7 +36,10 @@ type TelegramReconciliation struct {
 	cfg          *config.Config
 	translations *i18n.Bundle
 	dtsStore     *dts.TemplateStore
-	log          *log.Entry
+	// stateMgr gives reconciliation the live fence list, without which it
+	// cannot apply userSelectable or exemptFromAreaSecurity when pruning (#243).
+	stateMgr *state.Manager
+	log      *log.Entry
 }
 
 // NewTelegramReconciliation creates a new TelegramReconciliation instance.
@@ -44,6 +49,7 @@ func NewTelegramReconciliation(
 	cfg *config.Config,
 	translations *i18n.Bundle,
 	dtsStore *dts.TemplateStore,
+	stateMgr *state.Manager,
 ) *TelegramReconciliation {
 	return &TelegramReconciliation{
 		api:          api,
@@ -51,8 +57,22 @@ func NewTelegramReconciliation(
 		cfg:          cfg,
 		translations: translations,
 		dtsStore:     dtsStore,
+		stateMgr:     stateMgr,
 		log:          log.WithField("component", "reconciliation-telegram"),
 	}
+}
+
+// fences returns the live fence list, or nil when no state is loaded. nil
+// means "unknown", and the prune paths treat it as a reason to skip.
+func (r *TelegramReconciliation) fences() []geofence.Fence {
+	if r.stateMgr == nil {
+		return nil
+	}
+	st := r.stateMgr.Get()
+	if st == nil {
+		return nil
+	}
+	return st.Fences
 }
 
 // getChannelList returns the list of channel/group IDs to check membership against.
