@@ -1195,6 +1195,9 @@
           "displayInMatches": {
             "type": "boolean"
           },
+          "exemptFromAreaSecurity": {
+            "type": "boolean"
+          },
           "group": {
             "type": "string"
           },
@@ -1258,7 +1261,8 @@
           "group",
           "description",
           "userSelectable",
-          "displayInMatches"
+          "displayInMatches",
+          "exemptFromAreaSecurity"
         ],
         "type": "object"
       },
