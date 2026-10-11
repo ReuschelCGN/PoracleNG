@@ -251,4 +251,11 @@ type HumanStore interface {
 	// override list becomes empty, the column is NULLed so the rule falls
 	// back to the human's areas. No-op when the user has no override rows.
 	PruneOverrideAreas(humanID string, permitted map[string]bool) error
+
+	// PruneUserAreas drops every area not in permitted (keyed lowercase) from
+	// humans.area and from EVERY profile row of this human, in one
+	// transaction. Every profile, because SwitchProfile copies profiles.area
+	// into humans.area. Returns the distinct names removed. Destroys
+	// user-entered data: callers gate it behind prune_user_areas (#243).
+	PruneUserAreas(humanID string, permitted map[string]bool) (removed []string, err error)
 }

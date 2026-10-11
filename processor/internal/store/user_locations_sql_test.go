@@ -2,6 +2,7 @@ package store
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,6 +68,20 @@ func openTestDB(t *testing.T) *sqlx.DB {
 		UNIQUE KEY uniq_id_label (id, label)
 	) ENGINE=InnoDB`)
 
+	// Mirrors 000001_initial_schema.up.sql.
+	exec(`CREATE TABLE IF NOT EXISTS profiles (
+		uid          int unsigned NOT NULL AUTO_INCREMENT,
+		id           varchar(255) NOT NULL,
+		profile_no   int NOT NULL DEFAULT 1,
+		name         varchar(255) NOT NULL,
+		area         text NOT NULL,
+		latitude     float(14,10) NOT NULL DEFAULT 0,
+		longitude    float(14,10) NOT NULL DEFAULT 0,
+		active_hours varchar(4096) NOT NULL DEFAULT '[]',
+		PRIMARY KEY (uid),
+		UNIQUE KEY profile_unique (id, profile_no)
+	) ENGINE=InnoDB`)
+
 	// Minimal tracking tables needed by CountLocationReferences and PruneOverrideAreas (all 10 types).
 	for _, tbl := range []string{"monsters", "raid", "egg", "quest", "invasion", "lures", "nests", "gym", "forts", "maxbattle"} {
 		exec(`CREATE TABLE IF NOT EXISTS ` + tbl + ` (
@@ -88,6 +103,7 @@ func openTestDB(t *testing.T) *sqlx.DB {
 		for _, tbl := range []string{"monsters", "raid", "egg", "quest", "invasion", "lures", "nests", "gym", "forts", "maxbattle"} {
 			_, _ = db.Exec(`DELETE FROM ` + tbl + ` WHERE id = 'u1'`)
 		}
+		_, _ = db.Exec(`DELETE FROM profiles WHERE id = 'u1'`)
 		_, _ = db.Exec(`DELETE FROM humans WHERE id = 'u1'`)
 		_ = db.Close()
 	})
@@ -254,5 +270,49 @@ func TestUserLocationsSQL_UpdateUnchangedCoordinates(t *testing.T) {
 	// A genuinely missing label must still report not-found.
 	if err := s.UpdateLocation("u1", "nowhere", 1, 2); err == nil {
 		t.Fatal("UpdateLocation on missing label should fail")
+	}
+}
+
+func TestPruneUserAreas_SQL(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+	mustExec(t, dbx, `UPDATE humans SET area = '["alpha","beta","gent_centrum"]', current_profile_no = 1 WHERE id = 'u1'`)
+	mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES
+		('u1', 1, 'one', '["alpha","beta","gent_centrum"]'),
+		('u1', 2, 'two', '["beta","delta"]')`)
+
+	removed, err := s.PruneUserAreas("u1", map[string]bool{"alpha": true, "gent_centrum": true, "delta": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(removed, []string{"beta"}) {
+		t.Errorf("removed = %v, want [beta]", removed)
+	}
+	var humanArea string
+	if err := dbx.Get(&humanArea, `SELECT area FROM humans WHERE id='u1'`); err != nil {
+		t.Fatal(err)
+	}
+	if humanArea != `["alpha","gent_centrum"]` {
+		t.Errorf("humans.area = %s", humanArea)
+	}
+	var rows []struct {
+		ProfileNo int    `db:"profile_no"`
+		Area      string `db:"area"`
+	}
+	if err := dbx.Select(&rows, `SELECT profile_no, area FROM profiles WHERE id='u1' ORDER BY profile_no`); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Area != `["alpha","gent_centrum"]` || rows[1].Area != `["delta"]` {
+		t.Errorf("profiles = %+v", rows)
+	}
+	// Everything pruned writes [] (not NULL), matching marshalStringSlice.
+	if _, err := s.PruneUserAreas("u1", map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbx.Get(&humanArea, `SELECT area FROM humans WHERE id='u1'`); err != nil {
+		t.Fatal(err)
+	}
+	if humanArea != `[]` {
+		t.Errorf("fully pruned humans.area = %q, want []", humanArea)
 	}
 }

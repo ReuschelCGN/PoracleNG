@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -533,4 +534,36 @@ func (m *MockHumanStore) PruneOverrideAreas(humanID string, permitted map[string
 	}
 	m.PrunedAreaCalls[humanID] = permitted
 	return nil
+}
+
+// PruneUserAreas mirrors SQLHumanStore.PruneUserAreas: humans row first, then
+// profiles by profile_no; an all-pruned list becomes empty non-nil.
+func (m *MockHumanStore) PruneUserAreas(humanID string, permitted map[string]bool) ([]string, error) {
+	m.record("PruneUserAreas")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var removed []string
+	seen := map[string]bool{}
+	prune := func(areas []string) []string {
+		kept := make([]string, 0, len(areas))
+		for _, a := range areas {
+			low := strings.ToLower(a)
+			if permitted[low] {
+				kept = append(kept, a)
+			} else if !seen[low] {
+				seen[low] = true
+				removed = append(removed, low)
+			}
+		}
+		return kept
+	}
+	if h, ok := m.humans[humanID]; ok {
+		h.Area = prune(h.Area)
+	}
+	ps := m.profiles[humanID]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		ps[i].Area = prune(ps[i].Area)
+	}
+	return removed, nil
 }
