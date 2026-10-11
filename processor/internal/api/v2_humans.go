@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/community"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/store"
@@ -652,61 +653,20 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 
 // --- shared helpers --------------------------------------------------------
 
-// settableAreaSet is THE definition of "which fences may this human be given",
-// shared by set-areas (#215) and per-rule override_areas validation (#211) so
-// the two cannot drift apart.
-//
-// Membership in the set always requires the fence to EXIST. On top of that:
-//   - admins, and trusted callers, may select any fence;
-//   - everyone else is limited to userSelectable fences;
-//   - area_security, when enabled, further narrows to the human's communities.
-//
-// trusted is an assertion by a caller holding the API secret that the change
-// is already authorised on the user's behalf — it lifts userSelectable, never
-// the existence check.
-func settableAreaNames(deps *TrackingDeps, human *store.Human, admin, trusted bool) []string {
+// settableAreaSet keys bot.PermittedAreas for the set-areas path, which
+// stores names lowercased. (The per-rule override path keys the same policy
+// with normalizeAreaKey instead, because that is how it stores.)
+func settableAreaSet(deps *TrackingDeps, human *store.Human, admin, trusted bool) map[string]bool {
+	set := make(map[string]bool)
 	if deps.StateMgr == nil {
-		return nil
+		return set
 	}
 	st := deps.StateMgr.Get()
 	if st == nil {
-		return nil
+		return set
 	}
-	// The two filters are deliberately NOT folded together.
-	//
-	// trusted lifts userSelectable only: it is a server-side client asserting
-	// "this user drew this fence, so let them select it". That assertion says
-	// nothing about which community the user belongs to, and area_security is
-	// the operator's restriction rather than the fence author's. Folding both
-	// behind one flag made trusted hand the human every fence on the instance,
-	// which made it unusable for the one path it exists for — saving a
-	// selection holding both admin areas and the user's own drawn fences
-	// (#228).
-	//
-	// admin lifts both, which is deliberate and unchanged.
-	var allowed []string
-	for _, f := range st.Fences {
-		if !admin && !trusted && !f.UserSelectable {
-			continue
-		}
-		allowed = append(allowed, strings.ToLower(f.Name))
-	}
-	if deps.Config != nil && deps.Config.Area.Enabled && !admin &&
-		human != nil && human.AreaRestriction != nil {
-		allowed = community.FilterAreas(
-			deps.Config.Area.Communities, human.CommunityMembership, allowed)
-	}
-	return allowed
-}
-
-// settableAreaSet keys settableAreaNames for the set-areas path, which stores
-// names lowercased. (The per-rule override path keys the same policy with
-// normalizeAreaKey instead, because that is how it stores.)
-func settableAreaSet(deps *TrackingDeps, human *store.Human, admin, trusted bool) map[string]bool {
-	names := settableAreaNames(deps, human, admin, trusted)
-	set := make(map[string]bool, len(names))
-	for _, a := range names {
-		set[strings.ToLower(a)] = true
+	for _, a := range bot.PermittedAreas(st.Fences, deps.Config, human, admin, trusted) {
+		set[a] = true
 	}
 	return set
 }

@@ -22,6 +22,9 @@ type AreaLogic struct {
 	cfg    *config.Config
 }
 
+// Fences returns the fence list this AreaLogic was built from.
+func (a *AreaLogic) Fences() []geofence.Fence { return a.fences }
+
 // NewAreaLogic creates a new AreaLogic from fence data and config.
 func NewAreaLogic(fences []geofence.Fence, cfg *config.Config) *AreaLogic {
 	return &AreaLogic{fences: fences, cfg: cfg}

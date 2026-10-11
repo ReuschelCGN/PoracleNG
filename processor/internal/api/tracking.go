@@ -15,6 +15,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
@@ -259,7 +260,7 @@ type overrideContext struct {
 // normalizeAreaKey keys an area name for permission comparison, matching
 // normalizeOverrideAreas' storage normalisation exactly.
 func normalizeAreaKey(s string) string {
-	return strings.ToLower(strings.ReplaceAll(s, "_", " "))
+	return geofence.NormalizeAreaKey(s)
 }
 
 // newOverrideContext fetches the full human record once and pre-builds the
@@ -287,18 +288,17 @@ func newOverrideContext(deps *TrackingDeps, humanID string, trusted bool) (overr
 	}
 	admin := isAdmin(deps, humanID)
 
-	var names []string
-	if deps.AreaLogic != nil {
-		// Prefer AreaLogic when present (community-aware, like the bot).
-		for _, a := range deps.AreaLogic.GetAvailableAreas(human.CommunityMembership, admin) {
-			names = append(names, a.Name)
-		}
-	} else if deps.StateMgr != nil {
-		// Production path: same policy, sourced from the live fences.
-		names = settableAreaNames(deps, human, admin, trusted)
-	} else {
+	var fences []geofence.Fence
+	switch {
+	case deps.AreaLogic != nil:
+		fences = deps.AreaLogic.Fences()
+	case deps.StateMgr != nil && deps.StateMgr.Get() != nil:
+		// Production path: AreaLogic is nil in main.go (#211).
+		fences = deps.StateMgr.Get().Fences
+	default:
 		return overrideContext{human: human}, "", 0
 	}
+	names := bot.PermittedAreas(fences, deps.Config, human, admin, trusted)
 
 	permitted := make(map[string]bool, len(names))
 	for _, n := range names {
