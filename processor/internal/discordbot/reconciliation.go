@@ -451,14 +451,25 @@ func (r *Reconciliation) reconcileAreaSecurity(id string, user *store.Human, nam
 			r.log.Infof("Update user %s %s with communities %v", id, name, communityList)
 		}
 
-		// When community membership changes, per-rule override_areas may reference
-		// areas no longer permitted. Prune them so rules fall back to the human's
-		// own area list rather than matching nothing.
+		// A membership change may leave areas this human can no longer hold.
+		// Pruned through PermittedAreas so exempt and trusted-granted fences
+		// survive. override_areas always; humans.area only when the operator
+		// has asserted their community config is complete (#243).
 		if communityChanged {
-			permitted := bot.BuildPermittedSet(r.cfg.Area.Communities, communityList)
-			if err := r.humanStore.PruneOverrideAreas(id, permitted); err != nil {
-				r.log.Errorf("prune override areas for %s: %v", id, err)
-				// best effort — don't abort reconciliation
+			fences := r.fences()
+			if len(fences) == 0 {
+				r.log.Warnf("prune areas for %s skipped: no geofences loaded", id)
+			} else {
+				after := &store.Human{ID: id, CommunityMembership: communityList, AreaRestriction: areaRestriction}
+				removed, err := bot.PruneForMembership(r.humanStore, fences, r.cfg, after,
+					slices.Contains(r.cfg.Discord.Admins, id),
+					bot.PruneOptions{Overrides: true, UserAreas: r.cfg.Reconciliation.Discord.PruneUserAreas})
+				if err != nil {
+					r.log.Errorf("prune areas for %s: %v", id, err) // best effort — don't abort reconciliation
+				}
+				if len(removed) > 0 {
+					r.log.Infof("Pruned areas %v from %s after community change", removed, id)
+				}
 			}
 		}
 	}

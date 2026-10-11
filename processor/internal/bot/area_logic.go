@@ -235,21 +235,3 @@ func (a *AreaLogic) FindFence(name string) *geofence.Fence {
 	}
 	return nil
 }
-
-// BuildPermittedSet returns a lowercase set of all areas permitted by the given
-// community list. It is a package-level function so callers without an AreaLogic
-// instance (e.g. discordbot reconciliation) can use the same logic without
-// duplicating the community-walk.
-func BuildPermittedSet(communities []config.CommunityConfig, memberOf []string) map[string]bool {
-	permitted := make(map[string]bool)
-	for _, comm := range communities {
-		for _, m := range memberOf {
-			if strings.EqualFold(comm.Name, m) {
-				for _, area := range comm.AllowedAreas {
-					permitted[strings.ToLower(area)] = true
-				}
-			}
-		}
-	}
-	return permitted
-}
