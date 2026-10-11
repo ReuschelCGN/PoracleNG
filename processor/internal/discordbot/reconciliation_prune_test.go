@@ -51,7 +51,7 @@ func TestReconcileAreaSecurity_DefaultLeavesHumanAreas(t *testing.T) {
 	if len(h.Area) != 3 {
 		t.Fatalf("humans.area pruned without prune_user_areas: %v", h.Area)
 	}
-	if hs.PrunedAreaCalls["u1"] == nil || hs.PrunedAreaCalls["u1"]["beta"] {
-		t.Fatalf("override prune must still run against the new membership: %v", hs.PrunedAreaCalls["u1"])
+	if hs.StrippedAreaCalls["u1"] == nil || !hs.StrippedAreaCalls["u1"]["beta"] || hs.StrippedAreaCalls["u1"]["alpha"] {
+		t.Fatalf("override strip must still run and deny beta, not alpha: %v", hs.StrippedAreaCalls["u1"])
 	}
 }

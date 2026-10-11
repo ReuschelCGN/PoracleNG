@@ -203,13 +203,13 @@ func TestMockHumanStore_CreateDefaultsProfileNo(t *testing.T) {
 	}
 }
 
-func TestMockHumanStore_PruneUserAreas(t *testing.T) {
+func TestMockHumanStore_StripUserAreas(t *testing.T) {
 	m := NewMockHumanStore()
 	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha", "beta", "gent_centrum"}})
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha", "beta", "gent_centrum"}})
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 2, Area: []string{"beta", "delta"}})
 
-	removed, err := m.PruneUserAreas("u1", map[string]bool{"alpha": true, "gent_centrum": true, "delta": true})
+	removed, err := m.StripUserAreas("u1", map[string]bool{"beta": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,12 +228,20 @@ func TestMockHumanStore_PruneUserAreas(t *testing.T) {
 	if !slices.Equal(byNo[1], []string{"alpha", "gent_centrum"}) || !slices.Equal(byNo[2], []string{"delta"}) {
 		t.Errorf("profiles = %v, want 1:[alpha gent_centrum] 2:[delta]", byNo)
 	}
+	// A name absent from denied survives even though it is not a known fence.
+	m.AddHuman(&Human{ID: "u2", Area: []string{"ghost", "beta"}})
+	if _, err := m.StripUserAreas("u2", map[string]bool{"beta": true}); err != nil {
+		t.Fatal(err)
+	}
+	if h2, _ := m.Get("u2"); !slices.Equal(h2.Area, []string{"ghost"}) {
+		t.Errorf("u2 humans.area = %v, want [ghost]", h2.Area)
+	}
 	// Idempotent: nothing left to remove.
-	if removed, _ := m.PruneUserAreas("u1", map[string]bool{"alpha": true, "gent_centrum": true, "delta": true}); len(removed) != 0 {
+	if removed, _ := m.StripUserAreas("u1", map[string]bool{"beta": true}); len(removed) != 0 {
 		t.Errorf("second prune removed %v, want nothing", removed)
 	}
 	// Everything pruned leaves an empty non-nil list, like SQL's [].
-	if _, err := m.PruneUserAreas("u1", map[string]bool{}); err != nil {
+	if _, err := m.StripUserAreas("u1", map[string]bool{"alpha": true, "beta": true, "gent_centrum": true, "delta": true}); err != nil {
 		t.Fatal(err)
 	}
 	h, _ = m.Get("u1")
@@ -242,11 +250,11 @@ func TestMockHumanStore_PruneUserAreas(t *testing.T) {
 	}
 }
 
-func TestMockHumanStore_PruneUserAreas_NoHuman(t *testing.T) {
+func TestMockHumanStore_StripUserAreas_NoHuman(t *testing.T) {
 	m := NewMockHumanStore()
 	m.SeedProfile(Profile{ID: "ghost", ProfileNo: 1, Area: []string{"beta", "alpha"}})
 
-	removed, err := m.PruneUserAreas("ghost", map[string]bool{"alpha": true})
+	removed, err := m.StripUserAreas("ghost", map[string]bool{"beta": true})
 	if err != nil {
 		t.Fatal(err)
 	}

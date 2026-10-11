@@ -246,16 +246,18 @@ type HumanStore interface {
 	// when references exist.
 	CountLocationReferences(id, label string) ([]ReferencingRule, error)
 
-	// PruneOverrideAreas walks every tracking row for the given human and
-	// drops areas no longer in `permitted` from override_areas. If the
-	// override list becomes empty, the column is NULLed so the rule falls
-	// back to the human's areas. No-op when the user has no override rows.
-	PruneOverrideAreas(humanID string, permitted map[string]bool) error
+	// StripOverrideAreas walks every tracking row for the given human and
+	// drops areas present in `denied` (keyed lowercase) from override_areas.
+	// Names absent from denied are kept, even if they are not known fences.
+	// If the override list becomes empty, the column is NULLed so the rule
+	// falls back to the human's areas. No-op when the user has no override rows.
+	StripOverrideAreas(humanID string, denied map[string]bool) error
 
-	// PruneUserAreas drops every area not in permitted (keyed lowercase) from
+	// StripUserAreas drops every area present in denied (keyed lowercase) from
 	// humans.area and from EVERY profile row of this human, in one
 	// transaction. Every profile, because SwitchProfile copies profiles.area
-	// into humans.area. Returns the distinct names removed. Destroys
+	// into humans.area. Returns the distinct lowercased names removed, in
+	// first-seen order. Names absent from denied are kept. Destroys
 	// user-entered data: callers gate it behind prune_user_areas (#243).
-	PruneUserAreas(humanID string, permitted map[string]bool) (removed []string, err error)
+	StripUserAreas(humanID string, denied map[string]bool) (removed []string, err error)
 }

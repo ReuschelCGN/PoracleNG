@@ -673,8 +673,8 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// PruneUserAreas implements HumanStore.
-func (s *SQLHumanStore) PruneUserAreas(humanID string, permitted map[string]bool) (removed []string, err error) {
+// StripUserAreas implements HumanStore.
+func (s *SQLHumanStore) StripUserAreas(humanID string, denied map[string]bool) (removed []string, err error) {
 	tx, err := s.db.Beginx()
 	if err != nil {
 		return nil, fmt.Errorf("prune user areas %s: begin: %w", humanID, err)
@@ -691,7 +691,7 @@ func (s *SQLHumanStore) PruneUserAreas(humanID string, permitted map[string]bool
 		kept = make([]string, 0, len(areas))
 		for _, a := range areas {
 			low := strings.ToLower(a)
-			if permitted[low] {
+			if !denied[low] {
 				kept = append(kept, a)
 				continue
 			}

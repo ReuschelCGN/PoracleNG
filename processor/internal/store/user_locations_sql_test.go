@@ -82,7 +82,7 @@ func openTestDB(t *testing.T) *sqlx.DB {
 		UNIQUE KEY profile_unique (id, profile_no)
 	) ENGINE=InnoDB`)
 
-	// Minimal tracking tables needed by CountLocationReferences and PruneOverrideAreas (all 10 types).
+	// Minimal tracking tables needed by CountLocationReferences and StripOverrideAreas (all 10 types).
 	for _, tbl := range []string{"monsters", "raid", "egg", "quest", "invasion", "lures", "nests", "gym", "forts", "maxbattle"} {
 		exec(`CREATE TABLE IF NOT EXISTS ` + tbl + ` (
 			uid                     INT PRIMARY KEY AUTO_INCREMENT,
@@ -169,57 +169,46 @@ func TestCountLocationReferences(t *testing.T) {
 	}
 }
 
-// --- filterPermittedAreas (pure in-memory helper) ---
+// --- dropDeniedAreas (pure in-memory helper) ---
 
-func TestFilterPermittedAreas_StripsDisallowed(t *testing.T) {
-	permitted := map[string]bool{"munich": true, "berlin": true}
-	result := filterPermittedAreas([]string{"munich", "berlin", "hamburg"}, permitted)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 kept, got %d: %v", len(result), result)
-	}
-	for _, a := range result {
-		if !permitted[a] {
-			t.Errorf("unexpected area %q in result", a)
-		}
+func TestDropDeniedAreas_StripsDenied(t *testing.T) {
+	result := dropDeniedAreas([]string{"munich", "berlin", "hamburg"}, map[string]bool{"hamburg": true})
+	if !slices.Equal(result, []string{"munich", "berlin"}) {
+		t.Fatalf("got %v", result)
 	}
 }
 
-func TestFilterPermittedAreas_AllDisallowed(t *testing.T) {
-	permitted := map[string]bool{"munich": true}
-	result := filterPermittedAreas([]string{"berlin", "hamburg"}, permitted)
+func TestDropDeniedAreas_AllDenied(t *testing.T) {
+	result := dropDeniedAreas([]string{"berlin", "hamburg"}, map[string]bool{"berlin": true, "hamburg": true})
 	if len(result) != 0 {
 		t.Fatalf("expected empty result, got %v", result)
 	}
 }
 
-func TestFilterPermittedAreas_NoneDisallowed(t *testing.T) {
-	permitted := map[string]bool{"munich": true, "berlin": true}
-	result := filterPermittedAreas([]string{"munich", "berlin"}, permitted)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 kept, got %d", len(result))
+// A name absent from denied survives even if it is not a known fence.
+func TestDropDeniedAreas_UnknownNameKept(t *testing.T) {
+	result := dropDeniedAreas([]string{"ghost", "berlin"}, map[string]bool{"berlin": true})
+	if !slices.Equal(result, []string{"ghost"}) {
+		t.Fatalf("got %v, want [ghost]", result)
 	}
 }
 
-func TestFilterPermittedAreas_EmptyInput(t *testing.T) {
-	permitted := map[string]bool{"munich": true}
-	result := filterPermittedAreas(nil, permitted)
-	if len(result) != 0 {
+func TestDropDeniedAreas_EmptyInput(t *testing.T) {
+	if result := dropDeniedAreas(nil, map[string]bool{"munich": true}); len(result) != 0 {
 		t.Fatalf("expected empty result for nil input, got %v", result)
 	}
 }
 
-func TestFilterPermittedAreas_CaseInsensitive(t *testing.T) {
-	// Areas stored in mixed case should match lowercase permitted keys.
-	permitted := map[string]bool{"munich": true}
-	result := filterPermittedAreas([]string{"Munich", "BERLIN"}, permitted)
+func TestDropDeniedAreas_CaseInsensitive(t *testing.T) {
+	result := dropDeniedAreas([]string{"Munich", "BERLIN"}, map[string]bool{"berlin": true})
 	if len(result) != 1 || result[0] != "Munich" {
 		t.Fatalf("expected [Munich], got %v", result)
 	}
 }
 
-// --- PruneOverrideAreas (integration test, requires PORACLENG_TEST_DSN) ---
+// --- StripOverrideAreas (integration test, requires PORACLENG_TEST_DSN) ---
 
-func TestPruneOverrideAreas_StripsDisallowed(t *testing.T) {
+func TestStripOverrideAreas_StripsDenied(t *testing.T) {
 	dbx := openTestDB(t)
 	s := &SQLHumanStore{db: dbx}
 
@@ -227,9 +216,9 @@ func TestPruneOverrideAreas_StripsDisallowed(t *testing.T) {
 		('u1', 0, 25, '["berlin","munich"]'),
 		('u1', 0, 26, '["berlin"]')`)
 
-	permitted := map[string]bool{"munich": true}
-	if err := s.PruneOverrideAreas("u1", permitted); err != nil {
-		t.Fatalf("PruneOverrideAreas: %v", err)
+	denied := map[string]bool{"berlin": true}
+	if err := s.StripOverrideAreas("u1", denied); err != nil {
+		t.Fatalf("StripOverrideAreas: %v", err)
 	}
 
 	var rows []struct {
@@ -273,7 +262,7 @@ func TestUserLocationsSQL_UpdateUnchangedCoordinates(t *testing.T) {
 	}
 }
 
-func TestPruneUserAreas_SQL(t *testing.T) {
+func TestStripUserAreas_SQL(t *testing.T) {
 	dbx := openTestDB(t)
 	s := &SQLHumanStore{db: dbx}
 	mustExec(t, dbx, `UPDATE humans SET area = '["alpha","beta","gent_centrum"]', current_profile_no = 1 WHERE id = 'u1'`)
@@ -281,7 +270,7 @@ func TestPruneUserAreas_SQL(t *testing.T) {
 		('u1', 1, 'one', '["alpha","beta","gent_centrum"]'),
 		('u1', 2, 'two', '["beta","delta"]')`)
 
-	removed, err := s.PruneUserAreas("u1", map[string]bool{"alpha": true, "gent_centrum": true, "delta": true})
+	removed, err := s.StripUserAreas("u1", map[string]bool{"beta": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +284,14 @@ func TestPruneUserAreas_SQL(t *testing.T) {
 	if humanArea != `["alpha","gent_centrum"]` {
 		t.Errorf("humans.area = %s", humanArea)
 	}
+	// A name absent from denied survives even when it is not a fence.
+	mustExec(t, dbx, `UPDATE humans SET area = '["ghost","beta"]' WHERE id = 'u1'`)
+	if _, err := s.StripUserAreas("u1", map[string]bool{"beta": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbx.Get(&humanArea, `SELECT area FROM humans WHERE id='u1'`); err != nil || humanArea != `["ghost"]` {
+		t.Errorf("humans.area = %q err=%v, want [\"ghost\"] kept", humanArea, err)
+	}
 	var rows []struct {
 		ProfileNo int    `db:"profile_no"`
 		Area      string `db:"area"`
@@ -306,7 +303,7 @@ func TestPruneUserAreas_SQL(t *testing.T) {
 		t.Errorf("profiles = %+v", rows)
 	}
 	// Everything pruned writes [] (not NULL), matching marshalStringSlice.
-	if _, err := s.PruneUserAreas("u1", map[string]bool{}); err != nil {
+	if _, err := s.StripUserAreas("u1", map[string]bool{"alpha": true, "beta": true, "ghost": true, "gent_centrum": true, "delta": true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := dbx.Get(&humanArea, `SELECT area FROM humans WHERE id='u1'`); err != nil {
@@ -317,13 +314,13 @@ func TestPruneUserAreas_SQL(t *testing.T) {
 	}
 }
 
-func TestPruneUserAreas_SQL_NoHuman(t *testing.T) {
+func TestStripUserAreas_SQL_NoHuman(t *testing.T) {
 	dbx := openTestDB(t)
 	s := &SQLHumanStore{db: dbx}
 	mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES ('ghost', 1, 'one', '["beta","alpha"]')`)
 	t.Cleanup(func() { _, _ = dbx.Exec(`DELETE FROM profiles WHERE id = 'ghost'`) })
 
-	removed, err := s.PruneUserAreas("ghost", map[string]bool{"alpha": true})
+	removed, err := s.StripUserAreas("ghost", map[string]bool{"beta": true})
 	if err != nil {
 		t.Fatal(err)
 	}

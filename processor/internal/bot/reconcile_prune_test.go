@@ -48,15 +48,38 @@ func TestPruneForMembership_UserAreasOn(t *testing.T) {
 	if !slices.Equal(h.Area, []string{"alpha", "priv", "drawn", "gent_centrum"}) {
 		t.Errorf("humans.area = %v", h.Area)
 	}
-	// override_areas are keyed with spaces: "gent centrum" must be permitted.
-	p := hs.PrunedAreaCalls["u1"]
+	// Denied set: beta only. alpha, priv, drawn and both spellings of the
+	// underscore fence must NOT be denied.
+	d := hs.StrippedAreaCalls["u1"]
+	if !d["beta"] {
+		t.Errorf("denied set missing beta: %v", d)
+	}
 	for _, k := range []string{"alpha", "priv", "drawn", "gent centrum", "gent_centrum"} {
-		if !p[k] {
-			t.Errorf("override permitted set missing %q: %v", k, p)
+		if d[k] {
+			t.Errorf("denied set must not hold %q: %v", k, d)
 		}
 	}
-	if p["beta"] {
-		t.Errorf("override permitted set must not hold beta: %v", p)
+}
+
+// A partial fence load: "ghost" is not a loaded fence, so it must never be
+// stripped from humans.area nor denied for override_areas.
+func TestPruneForMembership_PartialFenceLoadKeepsMissingFences(t *testing.T) {
+	fences, cfg, _, after := pruneFixture()
+	hs := store.NewMockHumanStore()
+	hs.AddHuman(&store.Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha", "beta", "ghost"}, CommunityMembership: []string{"coast", "harbour"}})
+	removed, err := PruneForMembership(hs, fences, cfg, after, false, PruneOptions{Overrides: true, UserAreas: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(removed, []string{"beta"}) {
+		t.Fatalf("removed = %v, want [beta]", removed)
+	}
+	h, _ := hs.Get("u1")
+	if !slices.Equal(h.Area, []string{"alpha", "ghost"}) {
+		t.Errorf("humans.area = %v, want [alpha ghost]", h.Area)
+	}
+	if hs.StrippedAreaCalls["u1"]["ghost"] {
+		t.Errorf("denied set must not hold ghost: %v", hs.StrippedAreaCalls["u1"])
 	}
 }
 
@@ -71,7 +94,7 @@ func TestPruneForMembership_UserAreasOff(t *testing.T) {
 	if len(h.Area) != 5 {
 		t.Errorf("humans.area pruned with prune_user_areas off: %v", h.Area)
 	}
-	if hs.PrunedAreaCalls["u1"] == nil {
+	if hs.StrippedAreaCalls["u1"] == nil {
 		t.Error("override prune must still run")
 	}
 }
@@ -84,8 +107,8 @@ func TestPruneForMembership_NoFencesSkipsEverything(t *testing.T) {
 		t.Fatalf("removed=%v err=%v, want a skip", removed, err)
 	}
 	h, _ := hs.Get("u1")
-	if len(h.Area) != 5 || hs.PrunedAreaCalls["u1"] != nil {
-		t.Fatalf("pruned with no fences: area=%v overrides=%v", h.Area, hs.PrunedAreaCalls["u1"])
+	if len(h.Area) != 5 || hs.StrippedAreaCalls["u1"] != nil {
+		t.Fatalf("pruned with no fences: area=%v overrides=%v", h.Area, hs.StrippedAreaCalls["u1"])
 	}
 }
 
@@ -95,5 +118,11 @@ func TestPruneForMembership_AdminKeepsAll(t *testing.T) {
 	removed, _ := PruneForMembership(hs, fences, cfg, after, true, PruneOptions{Overrides: true, UserAreas: true})
 	if len(removed) != 0 {
 		t.Fatalf("admin pruned %v", removed)
+	}
+	if d := hs.StrippedAreaCalls["u1"]; len(d) != 0 {
+		t.Fatalf("admin denied set = %v, want empty", d)
+	}
+	if h, _ := hs.Get("u1"); len(h.Area) != 5 {
+		t.Fatalf("admin humans.area = %v", h.Area)
 	}
 }
