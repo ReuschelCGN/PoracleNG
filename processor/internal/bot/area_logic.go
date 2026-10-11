@@ -32,8 +32,8 @@ func NewAreaLogic(fences []geofence.Fence, cfg *config.Config) *AreaLogic {
 
 // GetAvailableAreas returns the list of areas available to a user.
 // When area security is disabled, all user-selectable fences are returned.
-// When enabled, only fences whose names appear in the community's allowed
-// areas are returned.
+// When enabled, fences whose names appear in the community's allowed areas
+// are returned, plus any fence marked exemptFromAreaSecurity.
 //
 // Admins bypass both filters (matching PoracleJS area.js semantics):
 // they see every fence regardless of UserSelectable, and area_security
