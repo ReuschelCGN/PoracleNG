@@ -59,6 +59,7 @@ that doesn't belong to the addressed human.
 | `POST /api/humans/{id}/adminDisabled` | `POST /api/v2/humans/{id}/admin-disable` | Body `{disabled: bool}` |
 | `POST /api/humans/{id}/language` | `POST /api/v2/humans/{id}/language` | Body `{language: string}`, validated against available locales |
 | `POST /api/humans/{id}/setLocation/{lat}/{lon}` | `POST /api/v2/humans/{id}/location` | Body `{lat, lon}` floats |
+| — | `DELETE /api/v2/humans/{id}/location` | **NEW** — clear the location (`?profile=` as for set). Not subject to the area-restriction check |
 | `GET /api/humans/{id}/checkLocation/{lat}/{lon}` | `GET /api/v2/humans/{id}/check-location?lat=&lon=` | |
 | `POST /api/humans/{id}/setAreas` | `POST /api/v2/humans/{id}/areas` | Body `{areas: []string}` |
 | `POST /api/humans/{id}/switchProfile/{n}` | `POST /api/v2/humans/{id}/profile` | Body `{profile_no: int}` |
@@ -132,18 +133,22 @@ is **not** a sentinel to avoid.
 
 ### Type-specific changes
 
+- **`ping`** — optional string on every type; null when empty.
 - **invasion** — v2 requires **exactly one** targeting mode per rule: `type_id` (int poke-type,
   optional `gender`) | `grunt_id` (int exact character) | `everything: true` | `boss: true`. The
   facade translates down to the same stored grunt-type names v1 wrote.
 - **incident (NEW)** — pokestop events (e.g. Showcases) split out of invasion into their own type,
   keyed by the game's `display_type` int. Not available on v1.
+- **`distance`** — clamped to the server's `[tracking] max_distance` on every type (v1 only capped at the
+  earth's circumference). Read the limit from `GET /api/config/poracleWeb` (`maxDistance`) to warn users first.
+  A stored rule above a since-lowered limit is reported as `updated` (rewritten at the limit) when posted back.
 - **fort** — `include_empty` now defaults to **`true`** when omitted (v1 defaulted false).
 - **quest** — `reward_type` (proto int: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon,
   `12`=mega_energy) is required; `reward`, `amount`, `form`, `shiny` optional.
 - **pokemon** — `pvp_ranking_evolution` (int mega/temp-evolution discriminator: `0` base, `1` Mega,
   `2` Mega X, `3` Mega Y) is new on v2.
 - **`active_hours`** (profile PATCH and `POST /api/summaries/{id}/{alertType}`) — now a validated
-  typed array of `{day 0–6, hours 0–23, mins 0–59, optional step/end_hours/end_mins}` entries,
+  typed array of `{day 1–7 (ISO: 1=Monday … 7=Sunday), hours 0–23, mins 0–59, optional step/end_hours/end_mins}` entries,
   strict ints, no cross-midnight ranges. v1's freeform JSON passthrough is gone.
 
 ### Response shapes

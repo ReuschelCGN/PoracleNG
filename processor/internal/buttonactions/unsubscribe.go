@@ -63,7 +63,11 @@ func deleteTrackingByAlertType(alertType, humanID string, uids []int64, deps Dep
 		return 0, errors.New("nil Tracking")
 	}
 	switch alertType {
-	case "monster", "monsterChanged":
+	// Keys are RenderJob.AlertType values as emitted by the webhook handlers
+	// in cmd/processor (the snapshot copies them verbatim), plus legacy
+	// template-type spellings. Keep in step with
+	// TestUnsubscribeRoutesEveryRenderedAlertType.
+	case "pokemon", "monster", "monsterChanged":
 		return deleteUIDsAndReport(deps.Tracking.Monsters.DeleteByUIDs, humanID, uids)
 	case "raid":
 		return deleteUIDsAndReport(deps.Tracking.Raids.DeleteByUIDs, humanID, uids)
@@ -79,7 +83,7 @@ func deleteTrackingByAlertType(alertType, humanID string, uids []int64, deps Dep
 		return deleteUIDsAndReport(deps.Tracking.Nests.DeleteByUIDs, humanID, uids)
 	case "gym":
 		return deleteUIDsAndReport(deps.Tracking.Gyms.DeleteByUIDs, humanID, uids)
-	case "fort_update":
+	case "fort-update", "fort_update":
 		return deleteUIDsAndReport(deps.Tracking.Forts.DeleteByUIDs, humanID, uids)
 	case "max_battle", "maxbattle":
 		return deleteUIDsAndReport(deps.Tracking.Maxbattles.DeleteByUIDs, humanID, uids)

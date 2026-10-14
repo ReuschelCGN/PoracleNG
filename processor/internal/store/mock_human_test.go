@@ -76,7 +76,7 @@ func TestMockHumanStore_SetEnabled(t *testing.T) {
 
 func TestMockHumanStore_SetLocation(t *testing.T) {
 	m := NewMockHumanStore()
-	m.AddHuman(&Human{ID: "123"})
+	m.AddHuman(&Human{ID: "123", CurrentProfileNo: 1})
 
 	m.SetLocation("123", 1, 51.5, -0.1)
 	got, _ := m.Get("123")
@@ -87,7 +87,7 @@ func TestMockHumanStore_SetLocation(t *testing.T) {
 
 func TestMockHumanStore_SetArea(t *testing.T) {
 	m := NewMockHumanStore()
-	m.AddHuman(&Human{ID: "123"})
+	m.AddHuman(&Human{ID: "123", CurrentProfileNo: 1})
 
 	m.SetArea("123", 1, []string{"downtown", "park"})
 	got, _ := m.Get("123")
@@ -174,5 +174,28 @@ func TestMockHumanStore_CallTracking(t *testing.T) {
 	}
 	if m.Calls[0] != "Get" || m.Calls[1] != "SetEnabled" || m.Calls[2] != "SetLanguage" {
 		t.Errorf("unexpected call sequence: %v", m.Calls)
+	}
+}
+
+// Profile 0 does not exist: every human starts on the default profile 1, and
+// rules saved to a profile other than the active one never match.
+func TestMockHumanStore_CreateDefaultsProfileNo(t *testing.T) {
+	m := NewMockHumanStore()
+
+	if err := m.Create(&Human{ID: "unset", Type: "discord:user"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Create(&Human{ID: "explicit", Type: "discord:user", CurrentProfileNo: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	for id, want := range map[string]int{"unset": 1, "explicit": 3} {
+		got, err := m.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentProfileNo != want {
+			t.Errorf("%s: CurrentProfileNo = %d, want %d", id, got.CurrentProfileNo, want)
+		}
 	}
 }

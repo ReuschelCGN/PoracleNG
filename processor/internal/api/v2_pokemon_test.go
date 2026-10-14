@@ -15,8 +15,10 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/rowtext"
+	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -58,8 +60,22 @@ func newV2PokemonTestAPI(t *testing.T) (*gin.Engine, *store.MockTrackingStore[db
 		},
 	}
 
+	// Live fences, so override_areas validation has something to validate
+	// against. Production carries no AreaLogic, so StateMgr is the only
+	// source of the permitted set (#211).
+	fences := []geofence.Fence{
+		humanSquareFence("alpha", 10, 10, 1),
+		humanSquareFence("beta", 20, 20, 1),
+		// A user-drawn fence: served by the client, deliberately kept out of
+		// the bot picker, so not selectable without an explicit assertion.
+		privateFence("drawn", 30, 30, 1),
+	}
+	mgr := state.NewManager()
+	mgr.Set(&state.State{Fences: fences, Geofence: geofence.NewSpatialIndex(fences)})
+
 	deps := &TrackingDeps{
 		Humans:   humans,
+		StateMgr: mgr,
 		Tracking: &store.TrackingStores{Monsters: monsterStore},
 		Config:   &config.Config{},
 		RowText: &rowtext.Generator{
@@ -189,12 +205,20 @@ func TestV2Pokemon_RejectsWrongType(t *testing.T) {
 	}
 }
 
-func TestV2Pokemon_RejectsMissingPokemonID(t *testing.T) {
-	r, _, _, restore := newV2PokemonTestAPI(t)
+// Omitting pokemon_id used to be 422. It is now the catch-all — blank is the
+// wildcard in v2, and the pokemon_id=0 rule the matcher branches on had no
+// other way to be written (#227). A filtered catch-all like this one is the
+// ordinary shape: "anything at 95 IV or better".
+func TestV2Pokemon_MissingPokemonIDIsTheCatchAll(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
 	defer restore()
-	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon", `[{"min_iv":95}]`)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for missing pokemon_id, got %d: %s", w.Code, w.Body.String())
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true", `[{"min_iv":95}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := monsterStore.AllRows()
+	if len(rows) != 1 || rows[0].PokemonID != 0 || rows[0].MinIV != 95 {
+		t.Fatalf("stored = %+v, want the catch-all at min_iv 95", rows)
 	}
 }
 
@@ -780,6 +804,267 @@ func TestV2Pokemon_AcceptsValidPVPLeagues(t *testing.T) {
 			fmt.Sprintf(`[{"pokemon_id":25,"pvp_ranking_league":%d,"pvp_ranking_worst":10}]`, league))
 		if w.Code != http.StatusOK {
 			t.Fatalf("league %d should be accepted, got %d: %s", league, w.Code, w.Body.String())
+		}
+	}
+}
+
+// --- #211: override_areas must actually be validated ------------------------
+
+// validateOverrideFields has always contained an override_areas check, but it
+// only runs when oc.permitted is non-nil, and permitted is nil whenever
+// deps.AreaLogic is nil — which it always is in production (main.go never sets
+// it). The check was dead code on every tracking write, v1 and v2, for all 11
+// types, so a rule could be scoped to a fence that does not exist and would
+// simply never match.
+func TestV2Pokemon_RejectsUnknownOverrideArea(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"pokemon_id":25,"override_areas":["nosuchfence"]}]`)
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 4xx for an unknown override area, got %d: %s", w.Code, w.Body.String())
+	}
+	if n := len(monsterStore.AllRows()); n != 0 {
+		t.Errorf("a rejected rule must not be stored; store has %d rows", n)
+	}
+}
+
+func TestV2Pokemon_AcceptsKnownOverrideArea(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"pokemon_id":25,"override_areas":["alpha"]}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for a known area, got %d: %s", w.Code, w.Body.String())
+	}
+	if n := len(monsterStore.AllRows()); n != 1 {
+		t.Fatalf("expected the rule stored, store has %d rows", n)
+	}
+}
+
+// Storage normalises underscores to spaces (normalizeOverrideAreas) while the
+// permitted set is keyed on raw lowercased fence names. Validating without the
+// same normalisation would reject a name that would have stored and matched
+// perfectly well.
+func TestV2Pokemon_OverrideAreaNormalisationMatchesStorage(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	// Fence is named "alpha"; underscores and case must not change the verdict.
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"pokemon_id":25,"override_areas":["ALPHA"]}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for a case-variant known area, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := monsterStore.AllRows()
+	if len(rows) != 1 || len(rows[0].OverrideAreas) != 1 || rows[0].OverrideAreas[0] != "alpha" {
+		t.Errorf("stored override_areas = %+v, want normalised [alpha]", rows)
+	}
+}
+
+// --- #211: value bounds -----------------------------------------------------
+
+// v2 is strict about SHAPE (unknown fields and query params are 422) but was
+// not strict about VALUES, which is surprising in the other direction. A rule
+// with min_iv 200 was accepted, stored and read back verbatim; IV is 0-100, so
+// it could never match, with no warning at write time and nothing to see at
+// run time. It surfaced only when a screenshot read "IV 200-100%".
+func TestV2Pokemon_RejectsOutOfRangeFilterValues(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"min_iv above 100", `{"pokemon_id":25,"min_iv":200}`},
+		{"min_iv below 0", `{"pokemon_id":25,"min_iv":-5}`},
+		{"max_iv above 100", `{"pokemon_id":25,"max_iv":250}`},
+		{"min_level above 55", `{"pokemon_id":25,"min_level":99}`},
+		{"max_level above 55", `{"pokemon_id":25,"max_level":99}`},
+		{"atk above 15", `{"pokemon_id":25,"atk":16}`},
+		{"def below 0", `{"pokemon_id":25,"def":-1}`},
+		{"sta above 15", `{"pokemon_id":25,"sta":99}`},
+		{"max_atk above 15", `{"pokemon_id":25,"max_atk":16}`},
+		{"max_rarity above 6", `{"pokemon_id":25,"max_rarity":9}`},
+		{"max_size above 5", `{"pokemon_id":25,"max_size":9}`},
+		{"pvp_ranking_evolution above 3", `{"pokemon_id":25,"pvp_ranking_evolution":7}`},
+		{"negative distance", `{"pokemon_id":25,"distance":-1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+			defer restore()
+
+			w := v2DoReq(t, r, http.MethodPost,
+				"/api/v2/humans/u1/tracking/pokemon?silent=true", "["+tc.body+"]")
+			if w.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
+			}
+			if n := len(monsterStore.AllRows()); n != 0 {
+				t.Errorf("a rejected rule must not be stored; store has %d rows", n)
+			}
+		})
+	}
+}
+
+// The bounds must not reject legitimate edge values.
+func TestV2Pokemon_AcceptsBoundaryFilterValues(t *testing.T) {
+	body := `[{"pokemon_id":25,"min_iv":0,"max_iv":100,"min_level":0,"max_level":55,` +
+		`"atk":0,"def":15,"sta":15,"max_atk":15,"max_rarity":6,"max_size":5,` +
+		`"pvp_ranking_evolution":3,"distance":0}]`
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for boundary values, got %d: %s", w.Code, w.Body.String())
+	}
+	if n := len(monsterStore.AllRows()); n != 1 {
+		t.Errorf("expected the rule stored, got %d rows", n)
+	}
+}
+
+// --- trusted override_areas -------------------------------------------------
+
+// Confining an alarm to a fence the user drew themselves answered
+// 422 "area not permitted", with no way to assert the same exception
+// setAreas already allows — so that path stayed a direct database write.
+// ?trusted=true is the per-rule counterpart of the setAreas body flag.
+func TestV2Pokemon_TrustedAllowsUserDrawnOverrideArea(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	// Without the assertion it is refused, as before.
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"pokemon_id":25,"override_areas":["drawn"]}]`)
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 4xx without trusted, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// With it, accepted.
+	w = v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true&trusted=true",
+		`[{"pokemon_id":25,"override_areas":["drawn"]}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with trusted, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := monsterStore.AllRows()
+	if len(rows) != 1 || len(rows[0].OverrideAreas) != 1 || rows[0].OverrideAreas[0] != "drawn" {
+		t.Fatalf("stored = %+v, want override_areas [drawn]", rows)
+	}
+}
+
+// trusted asserts a userSelectable exception, not that any string is a fence.
+func TestV2Pokemon_TrustedStillRejectsUnknownOverrideArea(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true&trusted=true",
+		`[{"pokemon_id":25,"override_areas":["nosuchfence"]}]`)
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 4xx for an unknown area even when trusted, got %d: %s", w.Code, w.Body.String())
+	}
+	if n := len(monsterStore.AllRows()); n != 0 {
+		t.Errorf("rejected rule must not be stored; %d rows", n)
+	}
+}
+
+// --- #227: a read must not emit values the write refuses --------------------
+
+// pokemon_id 0 is the catch-all the matcher branches on before the by-id
+// lookup (matching/pokemon.go), created by !track everything and governed by
+// its own everything_flag_permissions mode. minimum:"1" made it unwritable
+// while the read emitted it unchanged, so GET then PUT of an untouched rule
+// failed on the most common tracking type.
+func TestV2Pokemon_CatchAllIsWritableByOmission(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"distance":500}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for an omitted pokemon_id, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := monsterStore.AllRows()
+	if len(rows) != 1 || rows[0].PokemonID != 0 {
+		t.Fatalf("stored = %+v, want the pokemon_id=0 catch-all", rows)
+	}
+}
+
+// And the read must emit it as the wildcard, so the two shapes round-trip.
+func TestV2Pokemon_CatchAllReadsBackAsNull(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+	monsterStore.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, PokemonID: 0, MaxIV: 100})
+
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/pokemon", "")
+	rules := v2RulesArray(t, v2DecodeBody(t, w), "rules")
+	if got := rules[0]["pokemon_id"]; got != nil {
+		t.Errorf("pokemon_id = %v, want null for the catch-all", got)
+	}
+
+	// The emitted body must be one the write accepts.
+	w = v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon?silent=true",
+		`[{"pokemon_id":null,"max_iv":100}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("re-posting the emitted rule = %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// A stored pvp_ranking_best of 0 is not a valid rank — no current write path
+// produces one (the column defaults to 1, the bot sets 1, both APIs default to
+// 1), but such rows exist. The read emitted the 0 and minimum:"1" then refused
+// it, so those rules could be read and rendered but not saved. Treat 0 as the
+// wildcard on read so the rule round-trips to the canonical value.
+func TestV2Pokemon_LegacyZeroPVPRanksReadAsWildcard(t *testing.T) {
+	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+	monsterStore.Insert(&db.MonsterTrackingAPI{
+		ID: "u1", ProfileNo: 1, PokemonID: 25,
+		PVPRankingBest: 0, PVPRankingWorst: 0, Rarity: 0, Size: 0,
+	})
+
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/tracking/pokemon", "")
+	rules := v2RulesArray(t, v2DecodeBody(t, w), "rules")
+	for _, k := range []string{"pvp_ranking_best", "pvp_ranking_worst", "rarity", "size"} {
+		if got := rules[0][k]; got != nil {
+			t.Errorf("%s = %v, want null — a stored 0 is not a value the write accepts", k, got)
+		}
+	}
+}
+
+func TestV2Pokemon_EditTrueAccepted(t *testing.T) {
+	r, ps, _, restore := newV2PokemonTestAPI(t)
+	defer restore()
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon", `[{"pokemon_id":25,"edit":true}]`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit:true must be accepted on pokemon, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := ps.AllRows()
+	if len(rows) != 1 || rows[0].Clean&2 == 0 {
+		t.Fatalf("edit bit (2) should be stored, got %+v", rows)
+	}
+}
+
+func TestClampV2Distance(t *testing.T) {
+	withMax := func(max int) *TrackingDeps {
+		return &TrackingDeps{Config: &config.Config{Tracking: config.TrackingConfig{MaxDistance: max}}}
+	}
+	cases := []struct {
+		name     string
+		deps     *TrackingDeps
+		in, want int
+	}{
+		{"no limit configured keeps value", withMax(0), 5000, 5000},
+		{"no limit configured caps at earth", withMax(0), earthCircumference + 1, earthCircumference},
+		{"under limit unchanged", withMax(10000), 9999, 9999},
+		{"over limit clamped", withMax(10000), 25000, 10000},
+		{"area mode untouched", withMax(10000), 0, 0},
+		{"nil config caps at earth", &TrackingDeps{}, earthCircumference + 1, earthCircumference},
+	}
+	for _, c := range cases {
+		if got := clampV2Distance(c.deps, c.in); got != c.want {
+			t.Errorf("%s: clampV2Distance(%d) = %d, want %d", c.name, c.in, got, c.want)
 		}
 	}
 }

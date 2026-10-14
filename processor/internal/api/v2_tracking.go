@@ -93,12 +93,31 @@ type v2TrackingType[Req any, T any] struct {
 	// existing-rows set fed into the create/PUT diff (so one type never diffs
 	// against the other's rows).
 	Filter func(*T) bool
+
+	// Canonicalize, when non-nil, rewrites a STORED row's alias wildcard values
+	// to the value Translate stores for the same "any" (e.g. pvp_ranking_best
+	// 0 → 1). Applied to the existing rows fed into the create/PUT diff only,
+	// so a GET → POST of a row stored with an alias diffs as unchanged instead
+	// of inserting a duplicate. The stored rows themselves are not rewritten.
+	Canonicalize func(*T)
 }
 
 // passesFilter reports whether row is visible to this type. A nil Filter admits
 // everything (the single-type-per-store case).
 func (typ v2TrackingType[Req, T]) passesFilter(row *T) bool {
 	return typ.Filter == nil || typ.Filter(row)
+}
+
+// diffRows returns scopedRows with Canonicalize applied, for diffing only.
+func (typ v2TrackingType[Req, T]) diffRows(deps *TrackingDeps, humanID string, profileNo int) ([]T, error) {
+	rows, err := typ.scopedRows(deps, humanID, profileNo)
+	if err != nil || typ.Canonicalize == nil {
+		return rows, err
+	}
+	for i := range rows {
+		typ.Canonicalize(&rows[i])
+	}
+	return rows, nil
 }
 
 // scopedRows returns the human+profile rows visible to this type (Filter applied
@@ -357,7 +376,12 @@ type v2CreateInput[Req any] struct {
 	Profile             int    `query:"profile" default:"-1" doc:"Profile number; defaults to the human's active profile"`
 	IncludeDescriptions bool   `query:"include_descriptions" doc:"Add a human-readable description to each rule in the response"`
 	Silent              bool   `query:"silent" doc:"Apply without sending the confirmation push"`
-	Body                []Req
+	// Per-rule counterpart of the set-areas body flag: lets a server-side
+	// client confine a rule to a fence the user drew themselves. Lifts the
+	// userSelectable filter on override_areas only — an unknown fence name is
+	// still rejected, and the community restriction still applies (#228).
+	Trusted bool `query:"trusted" doc:"Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply."`
+	Body    []Req
 }
 
 // v2PutInput is a PUT body of a single strict rule object.
@@ -367,7 +391,12 @@ type v2PutInput[Req any] struct {
 	Profile             int    `query:"profile" default:"-1" doc:"Profile number; defaults to the human's active profile"`
 	IncludeDescriptions bool   `query:"include_descriptions" doc:"Add a human-readable description to the rule in the response"`
 	Silent              bool   `query:"silent" doc:"Apply without sending the confirmation push"`
-	Body                Req
+	// Per-rule counterpart of the set-areas body flag: lets a server-side
+	// client confine a rule to a fence the user drew themselves. Lifts the
+	// userSelectable filter on override_areas only — an unknown fence name is
+	// still rejected, and the community restriction still applies (#228).
+	Trusted bool `query:"trusted" doc:"Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply."`
+	Body    Req
 }
 
 func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T], in *v2CreateInput[Req]) (*v2CreateOutput[Req], error) {
@@ -379,7 +408,7 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 		return nil, huma.Error422UnprocessableEntity("body must contain at least one rule")
 	}
 
-	oc, ocMsg, ocCode := newOverrideContext(deps, human.ID)
+	oc, ocMsg, ocCode := newOverrideContext(deps, human.ID, in.Trusted)
 	if ocMsg != "" {
 		return nil, humaErr(ocCode, ocMsg)
 	}
@@ -395,7 +424,7 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 
 	// Scope the existing set through Filter so a shared-store type never diffs
 	// (and thus never deletes-as-update) against the other type's rows.
-	existing, err := typ.scopedRows(deps, human.ID, profileNo)
+	existing, err := typ.diffRows(deps, human.ID, profileNo)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("database error")
 	}
@@ -427,7 +456,7 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 		return nil, err
 	}
 
-	oc, ocMsg, ocCode := newOverrideContext(deps, human.ID)
+	oc, ocMsg, ocCode := newOverrideContext(deps, human.ID, in.Trusted)
 	if ocMsg != "" {
 		return nil, humaErr(ocCode, ocMsg)
 	}
@@ -445,7 +474,7 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	// destroy the addressed rule when the insert collides — deterministic
 	// data loss on databases still carrying the legacy invasion/lures
 	// unique keys, a silent duplicate on the keyless tables.
-	existing, err := typ.scopedRows(deps, human.ID, profileNo)
+	existing, err := typ.diffRows(deps, human.ID, profileNo)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("database error")
 	}
@@ -626,6 +655,21 @@ func parseUIDList(s string) ([]int64, error) {
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+// rejectEdit returns a 422 when a rule asks for edit mode on a tracking type
+// whose alerts never carry an edit key (the flag would be silently ignored).
+// nil/false are accepted so GET -> PUT round-trips of legacy rows keep working.
+func rejectEdit(typeName string, edit *bool) error {
+	if edit == nil || !*edit {
+		return nil
+	}
+	msg := "edit is not supported for " + typeName + " tracking"
+	return huma.Error422UnprocessableEntity(msg, &huma.ErrorDetail{
+		Location: "body.edit",
+		Message:  msg,
+		Value:    true,
+	})
 }
 
 // humaErr maps an (httpStatus, message) pair from the shared override

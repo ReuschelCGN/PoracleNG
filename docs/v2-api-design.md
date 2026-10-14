@@ -141,7 +141,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 | `distance` | int | metres; `0` = use the profile's areas instead of a radius |
 | `template` | string | template name; empty = server default |
 | `clean` | bool | auto-delete the alert on expiry |
-| `edit` | bool | keep the message updated in place |
+| `edit` | bool | keep the message updated in place — honoured for pokemon (within the server's edit window), raid, egg, lure and incident (showcase); rejected with 422 for gym, invasion, nest, maxbattle and quest |
 | `summary` | bool | route into the summary digest (where supported) |
 | `ping` | string | mention string appended to the alert |
 | `override_location_label` | string? | use a saved named location instead of the profile location |
@@ -224,7 +224,7 @@ Today this is stored as freeform JSON and the API dumps whatever the client send
 
 | field | type | required | bounds |
 |---|---|---|---|
-| `day` | int | yes | `0`–`6` (0 = Sunday) |
+| `day` | int | yes | `1`–`7` (ISO: 1 = Monday … 7 = Sunday) |
 | `hours` | int | yes | `0`–`23` |
 | `mins` | int | yes | `0`–`59` |
 | `step` | int | no | `≥ 0` hours; `> 0` ⇒ this is a **range** entry, else **single-fire** |
@@ -233,7 +233,7 @@ Today this is stored as freeform JSON and the API dumps whatever the client send
 
 - **Single-fire**: `{day, hours, mins}` → fires once that day at `HH:MM`.
 - **Range**: adds `{step, end_hours, end_mins}` → fires at `HH:MM`, `+step h`, … up to and including `end`. **No cross-midnight** — `end` must be ≥ start (reject otherwise, `422`).
-- v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /v2/summaries/{id}/{alertType}` and the profile-schedule update endpoint. (Confirm `day` indexing against the scheduler at build: comment indicates `0 = Sunday`, matching Go `time.Weekday`.)
+- v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /v2/summaries/{id}/{alertType}` and the profile-schedule update endpoint. `day` is ISO 8601 (1 = Monday … 7 = Sunday), matching `isoDow` in `cmd/processor/profiles.go`, the bot, and v1. It was documented as 0–6 until #208: Sunday was unexpressible and `day: 0` stored a schedule that never fired.
 
 ### `blocked_alerts` (read-only on the human resource)
 

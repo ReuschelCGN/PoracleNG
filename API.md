@@ -264,7 +264,7 @@ When a tracked pokemon's data changes after the initial sighting (form, species,
 | `original.encountered` | bool | true once CP > 0 |
 | `original.name`, `formName`, `weatherName`, `fullName` | string | translated to the recipient's language |
 
-The encounter event itself (non-IV → IV) deliberately re-fires the regular `monster` template threaded as a reply — it's the natural fulfilment of the non-IV alert, not a "change". Reply threading is implicit (every pokemon render carries a reply key keyed on the encounter ID) and applies to both Discord (`message_reference`) and Telegram (`reply_to_message_id`). Edit mode (clean bit 2) takes priority when set: the prior message is updated in place rather than replied to. Users matched at the change event with no prior message receive a fresh `monster` render (no reply target, no `monsterChanged` — they never saw the original).
+The encounter event itself (non-IV → IV) deliberately re-fires the regular `monster` template threaded as a reply — it's the natural fulfilment of the non-IV alert, not a "change". Reply threading is implicit (every pokemon render carries a reply key keyed on the encounter ID) and applies to both Discord (`message_reference`) and Telegram (`reply_to_message_id`). Edit mode (clean bit 2) takes priority when set and `[tracking] pokemon_edit` is on (default): while the original alert is at most `pokemon_edit_window_mins` old (default 5, `0` = no limit, measured from the first send), the follow-up edits it in place — with the `monster` template if the rule still matches, or the `monsterChanged` template if it no longer does. Once the original is older than the window, follow-ups arrive as threaded replies instead, so they aren't lost further up a busy channel. Users matched at the change event with no prior message receive a fresh `monster` render (no reply target, no `monsterChanged` — they never saw the original).
 
 Ships a default `monsterChanged` template per platform in `fallbacks/dts.json`; admins can override via `config/dts.json` or `config/dts/` like any other type.
 
@@ -757,6 +757,13 @@ Get weather data for a specific S2 cell.
 ### GET /api/config/poracleWeb
 
 Server configuration for the web UI (locale, prefix, PVP settings, admin lists, etc.).
+
+Two fields client authors most often need:
+
+| Field | Meaning |
+|-------|---------|
+| `availableLanguages` | The allow-list enforced by the set-language endpoints, sorted. **`null` means unrestricted** — the server accepts any language, so offer your full menu. A non-null array is exhaustive: anything outside it is rejected with 400. |
+| `disabledHooks` | Alert types disabled on this server, named to match the tracking-type names (`pokemon`, `raid`, `fort`, `invasion`, `lure`, `quest`, `weather`, `nest`, `gym`, `maxbattle`). Only flags the processor actually enforces appear; `disable_pokestop` is a deprecated no-op and is never reported. |
 
 ### GET /api/config/templates
 

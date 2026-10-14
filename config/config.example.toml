@@ -43,7 +43,11 @@ cache_dir = ".cache/geofences"           # shared cache directory for downloaded
 #   (eg vaporeon would match an eevee)
 
 [pvp]
-level_caps = [50]                        # level caps to include in rank calculations, eg [50, 51]
+# level_caps - level caps to include in rank calculations, eg [50, 51].
+#   Should match the level caps configured in Golbat's PVP settings. Ranks Golbat
+#   sends for a cap not listed here are ignored, so with [50] a rank-5 cap-51
+#   (best buddy) result will not match any PVP tracking.
+level_caps = [50]
 # include_mega_evolution - server default for PVP rules that do NOT specify a
 # mega keyword (i.e. pvp_ranking_evolution = 0). false: those rules match base
 # forms only; true: they also match mega/temporary-evolution ranks. Per-rule
@@ -219,7 +223,7 @@ role_check_mode = "ignore"
 # disable_* - disable individual hook processing for particular webhook types
 disable_pokemon = false
 disable_raid = false
-disable_pokestop = false                 # also disables invasion processing for RDM/Golbat
+disable_pokestop = false                 # DEPRECATED no-op — nothing reads it; use disable_lure / disable_invasion / disable_quest
 disable_invasion = false
 disable_lure = false
 disable_quest = false
@@ -579,8 +583,20 @@ default_user_tracking_level_cap = 0      # default pvp tracking level cap (0 = a
 # gender, weather-boost shift) and the non-IV → IV transition for users with
 # a prior message fire a reply-threaded `monsterChanged` (or threaded
 # `monster` for the encounter event). Set to false to suppress all of this:
-# change events still re-render as a regular `monster` send to matched users.
+# change events still re-render as a regular `monster` send to matched users
+# (rules with `edit` still edit the original in place while pokemon_edit is on
+# and the alert is within pokemon_edit_window_mins).
 pokemon_change_tracking = true
+# pokemon_edit - honour the `edit` flag on pokemon tracking. When true, a
+#   follow-up for the same encounter (IV reveal, weather boost, species/form
+#   change) edits the original alert in place while it is recent enough.
+#   When false, pokemon rules with `edit` behave as if it were not set:
+#   follow-ups arrive as threaded replies.
+pokemon_edit = true
+# pokemon_edit_window_mins - only edit while the original alert is at most
+#   this many minutes old; after that, follow-ups arrive as threaded replies
+#   so they aren't lost further up a busy channel. 0 = no limit.
+pokemon_edit_window_mins = 5
 
 # Quest summary — when on, quest tracking rules with the summary clean bit set
 # (clean & 4) defer matched quests into a per-user in-memory buffer instead of

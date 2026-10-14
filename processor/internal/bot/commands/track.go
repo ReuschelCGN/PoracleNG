@@ -91,7 +91,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	// meaningfully narrow results. "shiny" alone doesn't — almost everything
 	// can be shiny.
 	if parsed.HasKeyword("arg.everything") && !ctx.IsAdmin {
-		hasFilters := len(parsed.Singles) > 0 || len(parsed.Ranges) > 0 ||
+		hasFilters := len(parsed.Singles) > 0 || narrowingRanges(parsed.Ranges) ||
 			len(parsed.Types) > 0 || parsed.Gender != 0 || len(parsed.PVP) > 0 ||
 			costume != 9000
 		if !hasFilters {
@@ -317,6 +317,7 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 		{Type: bot.ParamKeyword, Key: "arg.remove"},
 		{Type: bot.ParamKeyword, Key: "arg.clean"},
+		{Type: bot.ParamKeyword, Key: "arg.edit"},
 		{Type: bot.ParamKeyword, Key: "arg.shiny"},
 		{Type: bot.ParamGender},
 		{Type: bot.ParamTypeName},
@@ -666,6 +667,45 @@ func speciesHasTempEvo(gd *gamedata.GameData, pokemonID, tempEvoID int) bool {
 	}
 	for _, te := range mon.TempEvolutions {
 		if te.TempEvoID == tempEvoID {
+			return true
+		}
+	}
+	return false
+}
+
+// modalClass names the class that holds the bulk of spawns for each class-style
+// range filter. A filter still admitting that class narrows almost nothing.
+var modalClass = map[string]int{
+	"size":   3, // M
+	"rarity": 1, // Common
+}
+
+// narrowingRanges reports whether any range filter meaningfully narrows the
+// candidate set, for the non-admin "everything" guard.
+//
+// Most ranges (iv, cp, level, atk/def/sta) narrow by construction. size and
+// rarity do not: both are class filters that resolve to an EXACT match when no
+// max is given (see applyFilters), and their modal class carries most spawns —
+// so `everything size:m` or `everything rarity:common` cleared the guard while
+// subscribing to very nearly every spawn, which is the outcome the guard exists
+// to prevent. A class range that EXCLUDES the modal class does narrow, and
+// still counts: "any species but only XXL" is both reasonable and small.
+//
+// Became reachable in two clicks from the slash UI once /track emitted a real
+// size: token (#238); before that the bare token aborted the command and the
+// guard was never reached.
+func narrowingRanges(ranges map[string]bot.Range) bool {
+	for name, r := range ranges {
+		modal, isClass := modalClass[name]
+		if !isClass {
+			return true
+		}
+		// Absent max means an exact match on Min, mirroring applyFilters.
+		max := r.Min
+		if r.HasMax {
+			max = r.Max
+		}
+		if modal < r.Min || modal > max {
 			return true
 		}
 	}

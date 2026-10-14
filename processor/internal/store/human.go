@@ -131,11 +131,13 @@ type HumanStore interface {
 	// disabled_date to now. When enabling, clears disabled_date.
 	SetAdminDisable(id string, disable bool) error
 
-	// SetLocation updates latitude and longitude on both humans and the
-	// active profile.
+	// SetLocation updates latitude and longitude on profile profileNo, and on
+	// humans only when profileNo is the human's current profile (humans holds
+	// the live, matched-against copy of the active profile).
 	SetLocation(id string, profileNo int, lat, lon float64) error
 
-	// SetArea updates the area JSON on both humans and the active profile.
+	// SetArea updates the area JSON on profile profileNo, and on humans only
+	// when profileNo is the human's current profile.
 	SetArea(id string, profileNo int, areas []string) error
 
 	// SetLanguage updates the language field.
@@ -189,8 +191,11 @@ type HumanStore interface {
 	// the profile does not exist.
 	SwitchProfile(id string, profileNo int) (bool, error)
 
-	// AddProfile creates a new profile, auto-assigning the next profile_no.
-	AddProfile(id string, name string, activeHours string) error
+	// AddProfile creates a new profile, auto-assigning the LOWEST FREE
+	// profile_no (not max+1 — with 1 and 3 taken the new one is 2), and
+	// returns the number it assigned. Callers cannot predict it, so returning
+	// it is the only way for an API to report what it created (#213).
+	AddProfile(id string, name string, activeHours string) (int, error)
 
 	// DeleteProfile removes a profile and its tracking data. If the
 	// deleted profile was current, switches to the lowest remaining.
@@ -204,6 +209,10 @@ type HumanStore interface {
 
 	// UpdateProfileHours updates the active_hours field on a profile.
 	UpdateProfileHours(id string, profileNo int, activeHours string) error
+
+	// UpdateProfileName renames a profile, leaving its schedule, area and
+	// location untouched (#213).
+	UpdateProfileName(id string, profileNo int, name string) error
 
 	// --- Saved locations ---
 

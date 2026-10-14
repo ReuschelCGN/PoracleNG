@@ -89,6 +89,7 @@ func (m *MockHumanStore) Create(h *Human) error {
 		return fmt.Errorf("human %s already exists", h.ID)
 	}
 	cp := *h
+	cp.CurrentProfileNo = profileNoOrDefault(cp.CurrentProfileNo)
 	m.humans[h.ID] = &cp
 	return nil
 }
@@ -137,19 +138,46 @@ func (m *MockHumanStore) SetLocation(id string, profileNo int, lat, lon float64)
 	m.record("SetLocation")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if h, ok := m.humans[id]; ok {
+	if h, ok := m.humans[id]; ok && h.CurrentProfileNo == profileNo {
 		h.Latitude = lat
 		h.Longitude = lon
+	}
+	for i := range m.profiles[id] {
+		if m.profiles[id][i].ProfileNo == profileNo {
+			m.profiles[id][i].Latitude = lat
+			m.profiles[id][i].Longitude = lon
+		}
 	}
 	return nil
 }
 
+// SetArea mirrors SQLHumanStore: it writes the named profile's area, and
+// humans.area only when profileNo is the current profile. The mock previously
+// ignored profileNo entirely, so a test could not tell a per-profile write
+// from a global one.
 func (m *MockHumanStore) SetArea(id string, profileNo int, areas []string) error {
 	m.record("SetArea")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if h, ok := m.humans[id]; ok {
+	if h, ok := m.humans[id]; ok && h.CurrentProfileNo == profileNo {
 		h.Area = areas
+	}
+	for i := range m.profiles[id] {
+		if m.profiles[id][i].ProfileNo == profileNo {
+			m.profiles[id][i].Area = areas
+		}
+	}
+	return nil
+}
+
+// AreaForProfile returns the areas stored against one profile. Test helper.
+func (m *MockHumanStore) AreaForProfile(id string, profileNo int) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, p := range m.profiles[id] {
+		if p.ProfileNo == profileNo {
+			return p.Area
+		}
 	}
 	return nil
 }
@@ -333,15 +361,20 @@ func (m *MockHumanStore) SwitchProfile(id string, profileNo int) (bool, error) {
 	return false, nil
 }
 
-func (m *MockHumanStore) AddProfile(id string, name string, activeHours string) error {
+func (m *MockHumanStore) AddProfile(id string, name string, activeHours string) (int, error) {
 	m.record("AddProfile")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	newNo := 1
+	// Lowest FREE profile_no, matching SQLHumanStore — not max+1. The two
+	// diverged, so a test could assert the wrong number and still pass here
+	// while production assigned another (#213).
+	taken := make(map[int]bool, len(m.profiles[id]))
 	for _, p := range m.profiles[id] {
-		if p.ProfileNo >= newNo {
-			newNo = p.ProfileNo + 1
-		}
+		taken[p.ProfileNo] = true
+	}
+	newNo := 1
+	for taken[newNo] {
+		newNo++
 	}
 	m.profiles[id] = append(m.profiles[id], Profile{
 		ID:          id,
@@ -349,7 +382,7 @@ func (m *MockHumanStore) AddProfile(id string, name string, activeHours string) 
 		Name:        name,
 		ActiveHours: activeHours,
 	})
-	return nil
+	return newNo, nil
 }
 
 func (m *MockHumanStore) DeleteProfile(id string, profileNo int) error {
@@ -395,6 +428,19 @@ func (m *MockHumanStore) UpdateProfileHours(id string, profileNo int, activeHour
 		if p.ProfileNo == profileNo {
 			m.profiles[id][i].ActiveHours = activeHours
 			break
+		}
+	}
+	return nil
+}
+
+func (m *MockHumanStore) UpdateProfileName(id string, profileNo int, name string) error {
+	m.record("UpdateProfileName")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.profiles[id] {
+		if m.profiles[id][i].ProfileNo == profileNo {
+			m.profiles[id][i].Name = name
+			return nil
 		}
 	}
 	return nil

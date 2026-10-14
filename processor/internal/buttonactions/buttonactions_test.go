@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/pokemon/poracleng/processor/internal/buttons"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/snapshots"
+	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
 func TestRegistryDispatch(t *testing.T) {
@@ -214,6 +216,67 @@ func TestDurationFromParams(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := muteDurationFromParams(tc.params); got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// recordingStore records which per-type store received DeleteByUIDs.
+// Embeds the interface so only the method under test needs a body.
+type recordingStore[T any] struct {
+	store.TrackingStore[T]
+	name string
+	hits *[]string
+}
+
+func (r recordingStore[T]) DeleteByUIDs(_ string, _ []int64) error {
+	*r.hits = append(*r.hits, r.name)
+	return nil
+}
+
+func recordingTrackingStores(hits *[]string) *store.TrackingStores {
+	return &store.TrackingStores{
+		Monsters:   recordingStore[db.MonsterTrackingAPI]{name: "monsters", hits: hits},
+		Raids:      recordingStore[db.RaidTrackingAPI]{name: "raids", hits: hits},
+		Eggs:       recordingStore[db.EggTrackingAPI]{name: "eggs", hits: hits},
+		Quests:     recordingStore[db.QuestTrackingAPI]{name: "quests", hits: hits},
+		Invasions:  recordingStore[db.InvasionTrackingAPI]{name: "invasions", hits: hits},
+		Lures:      recordingStore[db.LureTrackingAPI]{name: "lures", hits: hits},
+		Nests:      recordingStore[db.NestTrackingAPI]{name: "nests", hits: hits},
+		Gyms:       recordingStore[db.GymTrackingAPI]{name: "gyms", hits: hits},
+		Forts:      recordingStore[db.FortTrackingAPI]{name: "forts", hits: hits},
+		Maxbattles: recordingStore[db.MaxbattleTrackingAPI]{name: "maxbattles", hits: hits},
+	}
+}
+
+// TestUnsubscribeRoutesEveryRenderedAlertType covers every RenderJob.AlertType
+// the webhook handlers in cmd/processor actually emit (and therefore every
+// value a snapshot can carry). A handler using a name the switch doesn't know
+// makes the unsubscribe button fail with "unknown alert type" — which is how
+// "pokemon" and "fort-update" were broken.
+func TestUnsubscribeRoutesEveryRenderedAlertType(t *testing.T) {
+	cases := map[string]string{
+		"pokemon":     "monsters",   // pokemon.go
+		"raid":        "raids",      // raid.go
+		"egg":         "eggs",       // raid.go
+		"quest":       "quests",     // quest.go
+		"invasion":    "invasions",  // invasion.go
+		"incident":    "invasions",  // invasion.go, showcase.go
+		"lure":        "lures",      // lure.go
+		"nest":        "nests",      // nest.go
+		"gym":         "gyms",       // gym.go
+		"fort-update": "forts",      // fort.go
+		"maxbattle":   "maxbattles", // maxbattle.go
+	}
+	for alertType, want := range cases {
+		t.Run(alertType, func(t *testing.T) {
+			var hits []string
+			n, err := deleteTrackingByAlertType(alertType, "u1", []int64{7}, Deps{Tracking: recordingTrackingStores(&hits)})
+			if err != nil {
+				t.Fatalf("deleteTrackingByAlertType(%q): %v", alertType, err)
+			}
+			if n != 1 || len(hits) != 1 || hits[0] != want {
+				t.Errorf("deleteTrackingByAlertType(%q): n=%d hits=%v, want 1 delete on %s", alertType, n, hits, want)
 			}
 		})
 	}

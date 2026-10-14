@@ -1,6 +1,10 @@
 package api
 
 import (
+	"encoding/json"
+	"time"
+
+	"github.com/guregu/null/v6"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -11,11 +15,20 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
+	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
 // --- harness ----------------------------------------------------------------
+
+// privateFence is a square fence with userSelectable:false — the shape
+// PoracleWeb.NET serves for user-drawn geofences.
+func privateFence(name string, lat, lon, half float64) geofence.Fence {
+	f := humanSquareFence(name, lat, lon, half)
+	f.UserSelectable = false
+	return f
+}
 
 // humanSquareFence builds an axis-aligned square fence centred on (lat,lon) with the
 // given half-side. Used so MatchedAreaNames / PointInPolygon are predictable.
@@ -56,6 +69,10 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 	fences := []geofence.Fence{
 		humanSquareFence("alpha", 10, 10, 1),
 		humanSquareFence("beta", 20, 20, 1),
+		humanSquareFence("gamma", 40, 40, 1),
+		// A user-drawn private fence: served by the client, deliberately kept
+		// out of the bot's !area picker (#215).
+		privateFence("private", 30, 30, 1),
 	}
 	idx := geofence.NewSpatialIndex(fences) // mutates fences in place (NormalizedName)
 	mgr := state.NewManager()
@@ -65,11 +82,19 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 		cfg = &config.Config{}
 	}
 
+	// A bundle with known locales, so language validation has a set to
+	// validate against (#216).
+	bundle := i18n.NewBundle()
+	for _, code := range []string{"en", "de", "fr", "zh-cn"} {
+		bundle.AddTranslator(i18n.NewTranslator(code, map[string]string{"x": "y"}))
+	}
+
 	var reloads int32
 	deps := &TrackingDeps{
-		Humans:   humans,
-		StateMgr: mgr,
-		Config:   cfg,
+		Translations: bundle,
+		Humans:       humans,
+		StateMgr:     mgr,
+		Config:       cfg,
 		ReloadFunc: func() {
 			atomic.AddInt32(&reloads, 1)
 		},
@@ -180,8 +205,19 @@ func TestV2Humans_AreasGet_AllWhenUnrestricted(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	areas := v2RulesArray(t, v2DecodeBody(t, w), "areas")
-	if len(areas) != 2 {
-		t.Fatalf("expected 2 available areas, got %d: %v", len(areas), areas)
+	if len(areas) != 4 {
+		t.Fatalf("expected 4 available areas, got %d: %v", len(areas), areas)
+	}
+	// The listing reports every fence with its userSelectable flag, so a
+	// client can tell which ones need trusted:true to set (#215).
+	selectable := map[string]bool{}
+	for _, m := range areas {
+		name, _ := m["name"].(string)
+		sel, _ := m["userSelectable"].(bool)
+		selectable[name] = sel
+	}
+	if !selectable["alpha"] || selectable["private"] {
+		t.Errorf("userSelectable flags = %v, want alpha true and private false", selectable)
 	}
 }
 
@@ -404,6 +440,85 @@ func TestV2Humans_SetLocation_AllowedInsideRestriction(t *testing.T) {
 	}
 }
 
+func TestV2Humans_ClearLocation(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/location", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	assertStatusOK(t, w)
+	h, _ := humans.Get("u1")
+	if h.Latitude != 0 || h.Longitude != 0 {
+		t.Fatalf("location not cleared: %+v", h)
+	}
+	if atomic.LoadInt32(reloads) != 1 {
+		t.Fatalf("expected 1 reload, got %d", atomic.LoadInt32(reloads))
+	}
+}
+
+func TestV2Humans_ClearLocation_IgnoresRestriction(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, &config.Config{
+		Area: config.AreaConfig{Enabled: true},
+	})
+	humans.AddHuman(&store.Human{
+		ID: "u1", Type: "discord:user", Name: "User1", Enabled: true, Language: "en",
+		CurrentProfileNo: 1, AreaRestriction: []string{"alpha"}, Latitude: 10, Longitude: 10,
+	})
+	// POST {0,0} would be 403 here: 0,0 is outside alpha.
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/location", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for a restricted human, got %d: %s", w.Code, w.Body.String())
+	}
+	h, _ := humans.Get("u1")
+	if h.Latitude != 0 || h.Longitude != 0 {
+		t.Fatalf("location not cleared: %+v", h)
+	}
+}
+
+func TestV2Humans_ClearLocation_404(t *testing.T) {
+	r, _, reloads := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/nobody/location", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Fatalf("404 must not reload")
+	}
+}
+
+// A ?profile= naming an inactive profile writes that profile only. The matcher
+// reads humans.latitude/longitude, so writing it there too would move (or, for
+// DELETE, wipe) the location the active profile is matching against.
+func TestV2Humans_Location_InactiveProfileLeavesLiveLocation(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, body string
+		wantLat            float64
+	}{
+		{"set", http.MethodPost, `{"lat":20,"lon":20}`, 20},
+		{"clear", http.MethodDelete, "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, humans, _ := newV2HumansTestAPI(t, nil)
+			humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Name: "Default", Latitude: 10, Longitude: 10})
+			humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Name: "Weekend", Latitude: 5, Longitude: 5})
+
+			w := v2DoReq(t, r, tc.method, "/api/v2/humans/u1/location?profile=2", tc.body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			if h, _ := humans.Get("u1"); h.Latitude != 10 || h.Longitude != 10 {
+				t.Errorf("live location = %v,%v, want untouched 10,10", h.Latitude, h.Longitude)
+			}
+			profiles, _ := humans.GetProfiles("u1")
+			for _, p := range profiles {
+				if p.ProfileNo == 2 && p.Latitude != tc.wantLat {
+					t.Errorf("profile 2 lat = %v, want %v", p.Latitude, tc.wantLat)
+				}
+			}
+		})
+	}
+}
+
 // --- check-location ---------------------------------------------------------
 
 func TestV2Humans_CheckLocation_DisabledAlwaysOK(t *testing.T) {
@@ -455,7 +570,6 @@ func TestV2Humans_SetAreas_IntersectsAllowed(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	assertStatusOK(t, w)
 	h, _ := humans.Get("u1")
 	if len(h.Area) != 1 || h.Area[0] != "alpha" {
 		t.Fatalf("expected stored areas [alpha] (deduped, lowered, filtered), got %v", h.Area)
@@ -499,4 +613,439 @@ func assertStatusOK(t *testing.T, w *httptest.ResponseRecorder) {
 
 func hasCall(m *store.MockHumanStore, name string) bool {
 	return slices.Contains(m.Calls, name)
+}
+
+// --- #214: list and delete -------------------------------------------------
+
+// seedHumans adds extra humans of assorted types to the fixture store.
+func seedHumans(humans *store.MockHumanStore) {
+	humans.AddHuman(&store.Human{ID: "u2", Type: "discord:user", Name: "User2", Enabled: true})
+	humans.AddHuman(&store.Human{ID: "w1", Type: "webhook", Name: "Hook1", Enabled: true})
+	humans.AddHuman(&store.Human{ID: "w2", Type: "webhook", Name: "Hook2", Enabled: false})
+}
+
+type v2HumanListBody struct {
+	Humans []struct {
+		ID      string `json:"id"`
+		Type    string `json:"type"`
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
+	} `json:"humans"`
+}
+
+func listHumans(t *testing.T, r *gin.Engine, query string) v2HumanListBody {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans"+query, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/v2/humans%s = %d: %s", query, w.Code, w.Body.String())
+	}
+	var got v2HumanListBody
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+	}
+	return got
+}
+
+// "Who is registered on this instance" had no answer on either API version,
+// so PoracleWeb.NET kept a repository over the Poracle database alive for its
+// admin user list.
+func TestV2Humans_List_ReturnsEveryone(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	seedHumans(humans)
+
+	got := listHumans(t, r, "")
+	if len(got.Humans) != 4 {
+		t.Fatalf("listed %d humans, want 4: %+v", len(got.Humans), got.Humans)
+	}
+	// Deterministic order so clients can cache and diff.
+	ids := make([]string, len(got.Humans))
+	for i, h := range got.Humans {
+		ids[i] = h.ID
+	}
+	want := []string{"u1", "u2", "w1", "w2"}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("ids = %v, want ascending %v", ids, want)
+		}
+	}
+}
+
+// ?type=webhook alone closes the delegated-webhook half of their need.
+func TestV2Humans_List_FiltersByType(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	seedHumans(humans)
+
+	got := listHumans(t, r, "?type=webhook")
+	if len(got.Humans) != 2 {
+		t.Fatalf("listed %d webhooks, want 2: %+v", len(got.Humans), got.Humans)
+	}
+	for _, h := range got.Humans {
+		if h.Type != "webhook" {
+			t.Errorf("got type %q in a ?type=webhook listing", h.Type)
+		}
+	}
+}
+
+// Batch read by id, same comma-separated form as the v2 bulk delete's ?uid=,
+// so an admin page resolving many display names makes one request not N.
+func TestV2Humans_List_BatchByID(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	seedHumans(humans)
+
+	got := listHumans(t, r, "?id=u1,w2")
+	if len(got.Humans) != 2 {
+		t.Fatalf("listed %d, want 2: %+v", len(got.Humans), got.Humans)
+	}
+	if got.Humans[0].ID != "u1" || got.Humans[1].ID != "w2" {
+		t.Errorf("ids = %+v, want u1 and w2", got.Humans)
+	}
+}
+
+// An id that does not exist is simply absent, not a 404 — a batch read of
+// mixed-validity ids should return what it found.
+func TestV2Humans_List_BatchIgnoresUnknownIDs(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	seedHumans(humans)
+
+	got := listHumans(t, r, "?id=u1,nope")
+	if len(got.Humans) != 1 || got.Humans[0].ID != "u1" {
+		t.Fatalf("got %+v, want just u1", got.Humans)
+	}
+}
+
+// Deleting in the client's own database means knowing every table a human
+// touches — PoracleNG's schema, not theirs, going stale silently.
+func TestV2Humans_Delete_RemovesHuman(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	seedHumans(humans)
+
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u2", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("DELETE = %d: %s", w.Code, w.Body.String())
+	}
+	if h, _ := humans.Get("u2"); h != nil {
+		t.Errorf("human u2 still present after delete: %+v", h)
+	}
+	if atomic.LoadInt32(reloads) != 1 {
+		t.Errorf("expected 1 reload after delete, got %d", atomic.LoadInt32(reloads))
+	}
+}
+
+func TestV2Humans_Delete_UnknownHuman404(t *testing.T) {
+	r, _, reloads := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/nope", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Errorf("a failed delete must not reload")
+	}
+}
+
+// --- #215: setAreas must not drop names silently ----------------------------
+
+type v2SetAreasResult struct {
+	Areas    []string `json:"areas"`
+	Rejected []string `json:"rejected"`
+}
+
+func setAreas(t *testing.T, r *gin.Engine, body string) (int, v2SetAreasResult) {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/areas", body)
+	var got v2SetAreasResult
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+		}
+	}
+	return w.Code, got
+}
+
+// A 200 and {"status":"ok"} over a request where a name was silently
+// discarded is indistinguishable from one where everything was stored.
+func TestV2Humans_SetAreas_ReportsWhatItStoredAndRejected(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+
+	code, got := setAreas(t, r, `{"areas":["alpha","ghost"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "alpha" {
+		t.Errorf("areas = %v, want [alpha]", got.Areas)
+	}
+	if len(got.Rejected) != 1 || got.Rejected[0] != "ghost" {
+		t.Errorf("rejected = %v, want [ghost] — a dropped name must be reported", got.Rejected)
+	}
+}
+
+// PoracleWeb.NET serves user-drawn private geofences with userSelectable:false
+// deliberately, to keep their names out of the bot's !area picker and DM text.
+// The same flag then made them unsettable by the very user who drew them, so
+// every user-geofence change became a direct database write. The caller holds
+// the API secret, which is what distinguishes a server-side client from a
+// user, so it may assert trust explicitly.
+func TestV2Humans_SetAreas_TrustedBypassesUserSelectable(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+
+	// Without trust, a non-user-selectable fence is rejected...
+	code, got := setAreas(t, r, `{"areas":["private"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 0 || len(got.Rejected) != 1 {
+		t.Fatalf("untrusted: areas=%v rejected=%v, want the private fence rejected", got.Areas, got.Rejected)
+	}
+
+	// ...and with it, stored.
+	code, got = setAreas(t, r, `{"areas":["private"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "private" {
+		t.Fatalf("trusted: areas=%v rejected=%v, want the private fence stored", got.Areas, got.Rejected)
+	}
+	h, _ := humans.Get("u1")
+	if len(h.Area) != 1 || h.Area[0] != "private" {
+		t.Errorf("stored areas = %v, want [private]", h.Area)
+	}
+}
+
+// trusted must not invent fences: a name that matches nothing is still
+// rejected, so a typo cannot become a stored area that matches no geofence.
+func TestV2Humans_SetAreas_TrustedStillRejectsUnknownNames(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+	code, got := setAreas(t, r, `{"areas":["alpha","nosuchfence"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "alpha" {
+		t.Errorf("areas = %v, want [alpha]", got.Areas)
+	}
+	if len(got.Rejected) != 1 || got.Rejected[0] != "nosuchfence" {
+		t.Errorf("rejected = %v, want [nosuchfence] even when trusted", got.Rejected)
+	}
+}
+
+// --- #216: language validation ----------------------------------------------
+
+// On a deployment that configures available_languages an unknown code is
+// refused; on one that configures nothing, any string was accepted and stored.
+// "Unrestricted" should not mean "unvalidated" — the set of languages the
+// server has translations for is known either way.
+func TestV2Humans_Language_RejectsUnknownCodeWhenUnrestricted(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/language", `{"language":"zz"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for an unknown language, got %d: %s", w.Code, w.Body.String())
+	}
+	if h, _ := humans.Get("u1"); h.Language == "zz" {
+		t.Errorf("rejected language must not be stored, got %q", h.Language)
+	}
+}
+
+func TestV2Humans_Language_AcceptsKnownCodeWhenUnrestricted(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/language", `{"language":"de"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for a loaded language, got %d: %s", w.Code, w.Body.String())
+	}
+	h, _ := humans.Get("u1")
+	if h.Language != "de" {
+		t.Errorf("stored language = %q, want %q", h.Language, "de")
+	}
+}
+
+// The write lowercases; documented so a client comparing what it sent with
+// what it reads back does not think the write failed.
+func TestV2Humans_Language_LowercasesWhatItStores(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/language", `{"language":"DE"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if h, _ := humans.Get("u1"); h.Language != "de" {
+		t.Errorf("stored language = %q, want lowercased %q", h.Language, "de")
+	}
+}
+
+// --- #229: the list must back an admin grid ---------------------------------
+
+// The list projection omitted last_checked, disabled_date and notes, which the
+// admin user grid renders as columns. Fetching them per-id is not an option at
+// 2333 humans, so those three columns were the only reason a client still
+// mapped the humans table directly. They are already selected by
+// humanRowColumns for the single GET, so this is the same projection rather
+// than new query work.
+func TestV2Humans_List_CarriesAdminGridColumns(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	checked := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	humans.AddHuman(&store.Human{
+		ID: "u9", Type: "discord:user", Name: "Dormant", Enabled: false,
+		AdminDisable: true,
+		LastChecked:  null.TimeFrom(checked),
+		DisabledDate: null.TimeFrom(checked),
+		Notes:        "asked to be paused",
+	})
+
+	got := listHumans(t, r, "?id=u9")
+	if len(got.Humans) != 1 {
+		t.Fatalf("listed %d, want 1", len(got.Humans))
+	}
+
+	// Decode again as raw JSON so absent keys are distinguishable from zero.
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans?id=u9", "")
+	var raw struct {
+		Humans []map[string]any `json:"humans"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	h := raw.Humans[0]
+	for _, k := range []string{"last_checked", "disabled_date", "notes"} {
+		if _, ok := h[k]; !ok {
+			t.Errorf("list item missing %q; keys: %v", k, h)
+		}
+	}
+	if h["notes"] != "asked to be paused" {
+		t.Errorf("notes = %v, want the stored note", h["notes"])
+	}
+}
+
+// A human never checked and never disabled must report null rather than a zero
+// timestamp, or an admin grid sorts 0001-01-01 to the top.
+func TestV2Humans_List_NullTimestampsStayNull(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans?id=u1", "")
+	var raw struct {
+		Humans []map[string]any `json:"humans"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if v := raw.Humans[0]["last_checked"]; v != nil {
+		t.Errorf("last_checked = %v, want null for a never-checked human", v)
+	}
+}
+
+// --- #228: trusted must not lift the community restriction ------------------
+
+// newAreaSecurityAPI builds a fixture with area_security on: the human belongs
+// to one community whose allowed areas are alpha and beta, while "private" is
+// a non-userSelectable fence and "gamma" belongs to nobody's community.
+func newAreaSecurityAPI(t *testing.T) (*gin.Engine, *store.MockHumanStore) {
+	t.Helper()
+	cfg := &config.Config{}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{
+		{Name: "coast", AllowedAreas: []string{"alpha", "beta", "private"}},
+	}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+
+	h, _ := humans.Get("u1")
+	h.CommunityMembership = []string{"coast"}
+	h.AreaRestriction = []string{"alpha", "beta", "private"}
+	humans.AddHuman(h)
+	return r, humans
+}
+
+// trusted exists so a server-side client can assert "the user drew this fence,
+// so let them select it". Its doc comment says it lifts the userSelectable
+// filter ONLY. It also skipped community.FilterAreas, so a trusted call handed
+// the human every fence on the instance — which makes the flag unusable for
+// the one path that needs it: saving a selection containing both admin areas
+// (which must stay community-filtered) and the user's own drawn fences.
+func TestV2Humans_SetAreas_TrustedDoesNotLiftCommunityRestriction(t *testing.T) {
+	r, _ := newAreaSecurityAPI(t)
+
+	// gamma is a real fence but outside this human's community.
+	code, got := setAreas(t, r, `{"areas":["alpha","gamma"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	for _, a := range got.Areas {
+		if a == "gamma" {
+			t.Errorf("trusted stored %q, which is outside the human's community; "+
+				"trusted lifts userSelectable only. areas=%v rejected=%v", a, got.Areas, got.Rejected)
+		}
+	}
+	if len(got.Rejected) != 1 || got.Rejected[0] != "gamma" {
+		t.Errorf("rejected = %v, want [gamma]", got.Rejected)
+	}
+}
+
+// The case trusted was built for must keep working: a non-userSelectable fence
+// that IS inside the human's community.
+func TestV2Humans_SetAreas_TrustedStillLiftsUserSelectableWithinCommunity(t *testing.T) {
+	r, _ := newAreaSecurityAPI(t)
+
+	code, got := setAreas(t, r, `{"areas":["private"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "private" {
+		t.Errorf("areas = %v rejected = %v, want the in-community private fence stored",
+			got.Areas, got.Rejected)
+	}
+}
+
+// --- setAreas profile targeting ---------------------------------------------
+
+// setAreas wrote human.CurrentProfileNo only, so a client could not target
+// another profile — and removing an area from EVERY profile, which is what
+// happens when a user deletes a fence they had drawn, had no API form at all
+// and still needed a direct database write. ?profile= mirrors the convention
+// the tracking endpoints and setLocation already use.
+func TestV2Humans_SetAreas_TargetsNamedProfile(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Name: "Default"})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Name: "Weekend"})
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/areas?profile=2", `{"areas":["alpha"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := humans.AreaForProfile("u1", 2); len(got) != 1 || got[0] != "alpha" {
+		t.Errorf("profile 2 areas = %v, want [alpha]", got)
+	}
+	// The active profile must be untouched.
+	if got := humans.AreaForProfile("u1", 1); len(got) != 0 {
+		t.Errorf("profile 1 areas = %v, want untouched", got)
+	}
+	// So must the live copy the matcher reads (humans.area).
+	if h, _ := humans.Get("u1"); len(h.Area) != 0 {
+		t.Errorf("humans.area = %v, want untouched", h.Area)
+	}
+}
+
+// all_profiles is the shape that actually answers "the user deleted a fence,
+// drop it everywhere" in one call.
+func TestV2Humans_SetAreas_AllProfiles(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Name: "Default"})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Name: "Weekend"})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 3, Name: "Holiday"})
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/areas?all_profiles=true", `{"areas":["beta"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for _, no := range []int{1, 2, 3} {
+		if got := humans.AreaForProfile("u1", no); len(got) != 1 || got[0] != "beta" {
+			t.Errorf("profile %d areas = %v, want [beta]", no, got)
+		}
+	}
+}
+
+// Asking for both is a client bug, not something to guess at.
+func TestV2Humans_SetAreas_ProfileAndAllProfilesConflict(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodPost,
+		"/api/v2/humans/u1/areas?profile=2&all_profiles=true", `{"areas":["alpha"]}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for profile + all_profiles, got %d: %s", w.Code, w.Body.String())
+	}
 }

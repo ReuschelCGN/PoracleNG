@@ -385,6 +385,7 @@ func main() {
 	api.RegisterStatsShiny(humaAPI, proc.stats.ExportShinyStats)
 	api.RegisterStatsShinyPossible(humaAPI, proc.stats.ExportShinyPossible)
 	api.RegisterGeocode(humaAPI, proc.enricher.Geocoder)
+	api.RegisterGeocodeReverse(humaAPI, proc.enricher.Geocoder)
 
 	// poracle-test (migrated to huma, in place — same path, same {"status":"ok"}
 	// body, open `webhook` request part, problem+json errors).
@@ -657,7 +658,11 @@ func main() {
 	// Masterdata reads (migrated to huma, in place — typed maps re-marshalled to
 	// the same JSON the gin handlers produced).
 	api.RegisterMasterdataMonsters(humaAPI, proc.enricher.GameData, proc.enricher.Translations)
-	api.RegisterMasterdataGrunts(humaAPI, proc.enricher.GameData)
+	api.RegisterMasterdataGrunts(humaAPI, proc.enricher.GameData, proc.enricher.Translations)
+	api.RegisterMasterdataCostumes(humaAPI, proc.enricher.GameData, proc.enricher.Translations)
+	// Recently-seen bosses/rewards/costumes/forms, for clients populating
+	// pickers with what is live rather than the whole masterfile.
+	api.RegisterV2Activity(humaAPI, proc.recentActivity)
 
 	// Snapshot inspection (migrated to huma, in place) — admin-only via the
 	// api_secret middleware. Returns 503 if [snapshots] enabled = false; 404 on
@@ -886,14 +891,22 @@ func main() {
 				metrics.DeliveryLaneMaxDepth.Set(float64(maxDepth))
 				metrics.DeliveryLanesNearCapacity.Set(float64(nearCap))
 
-				// Escalate to WARN when a lane nears capacity OR backpressure
-				// advanced since the last sample — the "developing bad
-				// situation" signal.
+				// Escalate to WARN when a lane nears capacity OR a lane hit
+				// capacity since the last sample — the "developing bad
+				// situation" signal. Say "shedding" rather than "backing up"
+				// once anything has actually been discarded: enqueue never
+				// blocks, so a full lane means messages were thrown away, not
+				// merely delayed.
 				bp := proc.dispatcher.BackpressureCount()
+				shed := proc.dispatcher.ShedCount()
 				buf := proc.dispatcher.PerRouteBuffer()
 				if (buf > 0 && maxDepth >= buf*8/10) || bp > lastBackpressureSeen {
-					log.Warnf("[Status] delivery backing up: %d lanes, %d queued, deepest lane %d/%d (%s), %d near-cap, backpressure=%d",
-						active, total, maxDepth, buf, deepestTarget, nearCap, bp)
+					state := "backing up"
+					if shed > 0 {
+						state = "shedding messages"
+					}
+					log.Warnf("[Status] delivery %s: %d lanes, %d queued, deepest lane %d/%d (%s), %d near-cap, lane-full=%d, shed=%d",
+						state, active, total, maxDepth, buf, deepestTarget, nearCap, bp, shed)
 				}
 				lastBackpressureSeen = bp
 			}
@@ -1050,6 +1063,42 @@ func main() {
 				})
 			}
 			return gscope, guildScopes, nil
+		},
+		SlashList: func(guildID string) ([]bot.SlashScopeCommands, error) {
+			d := discordBotSlashDispatcher(discordBot)
+			if d == nil {
+				return nil, slash.ErrSlashNotConfigured
+			}
+			// Which scopes to read: the configured ones, plus the guild the
+			// command was invoked from. Guild-scoped registrations get
+			// different ids per guild, so an operator running this inside a
+			// guild must see that guild's ids even if it isn't in [guilds].
+			var scopes []string
+			if d.IsGlobal() {
+				scopes = append(scopes, "")
+			}
+			scopes = append(scopes, d.ConfiguredGuilds()...)
+			if guildID != "" && !slices.Contains(scopes, guildID) {
+				scopes = append(scopes, guildID)
+			}
+
+			out := make([]bot.SlashScopeCommands, 0, len(scopes))
+			for _, scope := range scopes {
+				mentions, err := d.ListRegistered(scope)
+				if err != nil {
+					return nil, err
+				}
+				name := scope
+				if name == "" {
+					name = "global"
+				}
+				cmds := make([]bot.SlashCommandMention, 0, len(mentions))
+				for _, m := range mentions {
+					cmds = append(cmds, bot.SlashCommandMention{Path: m.Path, ID: m.ID})
+				}
+				out = append(out, bot.SlashScopeCommands{Name: name, Commands: cmds})
+			}
+			return out, nil
 		},
 	}
 
