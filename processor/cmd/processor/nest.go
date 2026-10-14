@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -73,7 +71,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 			l.Infof("Nest %s (avg %.1f/hr) areas(%s) and %d humans cared",
 				ps.pokemonName(nest.PokemonID, nest.Form), nest.PokemonAvg, areaNames(matchedAreas), len(matched))
 
-			mode := ps.tileMode("nest", matched, strconv.FormatInt(nest.NestID, 10))
+			mode := ps.tileMode("nest", matched, nest.NestID)
 			enrichmentData, tilePending := ps.enricher.Nest(&nest, mode)
 
 			// Compute per-language translated enrichment
@@ -99,7 +97,7 @@ func (ps *ProcessorService) ProcessNest(raw json.RawMessage) error {
 				MatchedUsers:      matched,
 				MatchedAreas:      matchedAreas,
 				TileGate:          ps.newTileGate(tilePending),
-				LogReference:      fmt.Sprintf("%d", nest.NestID),
+				LogReference:      nest.NestID,
 			}
 		} else {
 			l.Debugf("Nest %s (avg %.1f/hr) and 0 humans cared",
