@@ -140,6 +140,7 @@ type monsterInsertRequest struct {
 	PVPRankingMinCP       flexInt  `json:"pvp_ranking_min_cp"`
 	PVPRankingCap         flexInt  `json:"pvp_ranking_cap"`
 	PVPRankingEvolution   flexInt  `json:"pvp_ranking_evolution"`
+	ShinyPredict          flexInt  `json:"shiny_predict"`
 	OverrideLocationLabel string   `json:"override_location_label"`
 	OverrideAreas         []string `json:"override_areas"`
 }
@@ -265,6 +266,7 @@ func HandleCreateMonster(deps *TrackingDeps) gin.HandlerFunc {
 				PVPRankingMinCP:     req.PVPRankingMinCP.intValue(0),
 				PVPRankingCap:       req.PVPRankingCap.intValue(0),
 				PVPRankingEvolution: req.PVPRankingEvolution.intValue(0),
+				ShinyPredict:        req.ShinyPredict.intValue(0),
 			}
 
 			if req.UID.isSet() {
