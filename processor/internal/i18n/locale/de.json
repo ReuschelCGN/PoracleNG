@@ -1353,6 +1353,18 @@
 
   "cmd.maintenance.active_suffix": "🔧 Wartungsmodus aktiv - Meldungen werden nicht ausgeliefert.",
 
+  "showcase_focus_pokemon": "Pokémon",
+  "showcase_focus_type": "Typ",
+  "showcase_focus_alignment": "Ausrichtung",
+  "showcase_focus_class": "Klasse",
+  "showcase_focus_family": "Familie",
+  "showcase_focus_buddy": "Kumpel",
+  "showcase_focus_generation": "Generation",
+  "showcase_focus_hatched": "Ausgebrütet",
+  "showcase_focus_mega": "Mega",
+  "showcase_focus_shiny": "Schillernd",
+  "showcase_class_ultra_beast": "Ultrabestie",
+
   "arg.myshiny": "meinshiny",
   "msg.track.myshiny_not_linked": "Für persönliche Shiny-Meldungen brauchst du einen verknüpften Trainer. Verknüpfe ihn auf der Karte unter Profil → Trainer-Profil.",
   "tracking.myshiny": "✨ nur deine Shinys"
