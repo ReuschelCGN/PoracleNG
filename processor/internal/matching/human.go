@@ -127,6 +127,7 @@ func ValidateHumans(
 			PVPRankingWorst:   monster.PVPRankingWorst,
 			TrackDistance:     monster.Distance,
 			RuleUID:           monster.UID,
+			PersonalShiny:     monster.ShinyPredict != 0,
 		})
 	}
 	return result
