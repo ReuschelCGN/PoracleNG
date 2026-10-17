@@ -77,7 +77,11 @@ func (c *MaxbattleCommand) Run(ctx *bot.CommandContext, args []string) []bot.Rep
 	// Move filter — match by translated name
 	move := bot.WildcardID
 	if moveName, ok := parsed.Strings["move"]; ok {
-		move = resolveMoveByName(ctx, moveName)
+		id, found := resolveMoveByName(ctx, moveName)
+		if !found {
+			return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.move.unknown", moveName)}}
+		}
+		move = id
 	}
 
 	// Handle remove

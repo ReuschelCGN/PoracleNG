@@ -27,7 +27,6 @@ var raidParams = []bot.ParamDef{
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.costume"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.gym"},
-	{Type: bot.ParamPrefixSingle, Key: "arg.prefix.gen"},
 	{Type: bot.ParamPrefixString, Key: "arg.prefix.location"},
 	{Type: bot.ParamPrefixStringList, Key: "arg.prefix.area"},
 	{Type: bot.ParamKeyword, Key: "arg.remove"},
@@ -40,7 +39,9 @@ var raidParams = []bot.ParamDef{
 	{Type: bot.ParamKeyword, Key: "arg.rsvp_only"},
 	{Type: bot.ParamTeam},
 	{Type: bot.ParamRaidLevelName},
-	{Type: bot.ParamTypeName},
+	// No gen/type params: !raid has no gen or type filter, so accepting
+	// them would silently track more than asked. (PoracleJS expanded a
+	// type into every species of it — not ported yet.)
 	{Type: bot.ParamPokemonName},
 }
 
@@ -99,7 +100,11 @@ func (c *RaidCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	// Move filter — match by translated name
 	move := bot.WildcardID
 	if moveName, ok := parsed.Strings["move"]; ok {
-		move = resolveMoveByName(ctx, moveName)
+		id, found := resolveMoveByName(ctx, moveName)
+		if !found {
+			return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.move.unknown", moveName)}}
+		}
+		move = id
 	}
 
 	// Handle remove

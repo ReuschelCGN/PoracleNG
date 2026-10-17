@@ -176,68 +176,12 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, 0, 0, amountVal))
 	}
 
-	if stardustVal, ok := parsed.Strings["stardust"]; ok {
-		// Explicit stardust:N wins over a peer amount:N — the explicit
-		// form is unambiguous about which column to fill.
-		_ = amountSet
-		amount := questParseInt(stardustVal)
-		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, amount, 0, 0))
-	} else if parsed.HasKeyword("arg.stardust") {
-		// bare "stardust" + amount:N — route amount into the Reward
-		// column (the stardust grammar's own min-amount slot). bare
-		// "stardust" alone means "any amount".
-		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, amountVal, 0, 0))
-	} else if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
-		// pokecoins:N — min amount lives in Reward, mirroring stardust.
-		_ = amountSet
-		amount := questParseInt(pokecoinVal)
-		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amount, 0, 0))
-	} else if parsed.HasKeyword("arg.pokecoin") {
-		// bare "pokecoins" + amount:N — route amount into Reward
-		// (pokecoins' own min-amount slot). bare "pokecoins" alone means
-		// "any amount".
-		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amountVal, 0, 0))
-	} else if energyVal, ok := parsed.Strings["energy"]; ok {
-		// energy:charizard — resolve pokemon name
-		resolved := ctx.Resolver.Resolve(energyVal, ctx.Language)
-		if len(resolved) > 0 {
-			for _, mon := range resolved {
-				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, mon.PokemonID, mon.Form, amountVal))
-			}
-		} else {
-			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, 0, 0, amountVal))
-		}
-	} else if parsed.HasKeyword("arg.energy") {
-		// bare "energy" — check for pokemon in args
-		if len(parsed.Pokemon) > 0 {
-			for _, mon := range parsed.Pokemon {
-				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, mon.PokemonID, mon.Form, amountVal))
-			}
-		} else {
-			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, 0, 0, amountVal))
-		}
-	} else if candyVal, ok := parsed.Strings["candy"]; ok {
-		// candy:pikachu — resolve pokemon name
-		resolved := ctx.Resolver.Resolve(candyVal, ctx.Language)
-		if len(resolved) > 0 {
-			for _, mon := range resolved {
-				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, mon.PokemonID, mon.Form, amountVal))
-			}
-		} else {
-			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, 0, 0, amountVal))
-		}
-	} else if parsed.HasKeyword("arg.candy") {
-		// bare "candy" — check for pokemon in args
-		if len(parsed.Pokemon) > 0 {
-			for _, mon := range parsed.Pokemon {
-				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, mon.PokemonID, mon.Form, amountVal))
-			}
-		} else {
-			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, 0, 0, amountVal))
-		}
-	} else if parsed.HasKeyword("arg.everything") {
-		// Everything: track all quest reward types. When amount:N is
-		// paired with everything, apply it per-row where supported:
+	// Every reward named in the command becomes a rule, as in PoracleJS
+	// (`!quest stardust pikachu` tracks both). `everything` already covers
+	// every reward type, so it stands alone.
+	if parsed.HasKeyword("arg.everything") {
+		// When amount:N is paired with everything, apply it per-row where
+		// supported:
 		//
 		//	pokemon (7)        — no amount semantics; always 0
 		//	stardust (3)       — min lives in Reward (matcher quirk)
@@ -248,41 +192,105 @@ func (c *QuestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 12, 0, 0, amountVal))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 4, 0, 0, amountVal))
 		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, 0, 0, amountVal))
-	} else if len(parsed.Pokemon) > 0 {
-		if amountSet {
+	} else {
+		// amountUsed records whether a reward that honours amount:N was
+		// named, so amount:N alongside only pokemon rewards can be refused.
+		amountUsed := false
+		// A bare energy/candy keyword takes the named pokemon as its
+		// target; those pokemon are then not pokemon rewards themselves.
+		pokemonConsumed := false
+
+		// Stardust and pokecoins hold their minimum in Reward, so amount:N
+		// counts as used by either form.
+		if stardustVal, ok := parsed.Strings["stardust"]; ok {
+			// Explicit stardust:N wins over a peer amount:N — the explicit
+			// form is unambiguous about which column to fill.
+			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, questParseInt(stardustVal), 0, 0))
+			amountUsed = true
+		} else if parsed.HasKeyword("arg.stardust") {
+			// bare "stardust" + amount:N — route amount into the Reward
+			// column (the stardust grammar's own min-amount slot). bare
+			// "stardust" alone means "any amount".
+			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 3, amountVal, 0, 0))
+			amountUsed = true
+		}
+
+		if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
+			// pokecoins:N — min amount lives in Reward, mirroring stardust.
+			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, questParseInt(pokecoinVal), 0, 0))
+			amountUsed = true
+		} else if parsed.HasKeyword("arg.pokecoin") {
+			// bare "pokecoins" + amount:N — route amount into Reward.
+			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 8, amountVal, 0, 0))
+			amountUsed = true
+		}
+
+		// energy (12) and candy (4) share a grammar: kind:pokemon names the
+		// pokemon; a bare keyword uses the pokemon named elsewhere in the
+		// command, or any pokemon when none is.
+		for _, kind := range []struct {
+			rewardType int
+			key        string
+		}{{12, "energy"}, {4, "candy"}} {
+			var mons []bot.ResolvedPokemon
+			if val, ok := parsed.Strings[kind.key]; ok {
+				mons = ctx.Resolver.Resolve(val, ctx.Language)
+			} else if parsed.HasKeyword("arg." + kind.key) {
+				mons = parsed.Pokemon
+				pokemonConsumed = pokemonConsumed || len(mons) > 0
+			} else {
+				continue
+			}
+			amountUsed = true
+			if len(mons) == 0 {
+				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, kind.rewardType, 0, 0, amountVal))
+			}
+			for _, mon := range mons {
+				insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, kind.rewardType, mon.PokemonID, mon.Form, amountVal))
+			}
+		}
+
+		if len(parsed.Pokemon) > 0 && !pokemonConsumed {
+			// Pokemon quest tracking (reward_type = 7)
+			monsterList, formReply := c.resolveMonsters(ctx, parsed)
+			if formReply != nil {
+				return []bot.Reply{*formReply}
+			}
+			for _, mon := range monsterList {
+				insert = append(insert, db.QuestTrackingAPI{
+					ID:                    ctx.TargetID,
+					ProfileNo:             ctx.ProfileNo,
+					Ping:                  pings,
+					Template:              common.Template,
+					Distance:              common.Distance,
+					Clean:                 common.Clean,
+					Shiny:                 db.IntBool(shiny),
+					RewardType:            7,
+					Reward:                mon.PokemonID,
+					Form:                  mon.Form,
+					Amount:                0,
+					OverrideLocationLabel: override.LocationLabel,
+					OverrideAreas:         override.Areas,
+				})
+			}
+		}
+
+		if itemID := c.matchItemName(ctx, parsed); itemID > 0 {
+			// Item quest tracking (reward_type = 2)
+			// Consume matched item tokens from Unrecognized
+			parsed.Unrecognized = nil
+			insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, itemID, 0, amountVal))
+			amountUsed = true
+		}
+
+		if amountSet && !amountUsed && !wantsAllItems && len(insert) > 0 {
+			// amount:N with only pokemon rewards (which have no amount
+			// semantics) would be a silent no-op.
 			return []bot.Reply{{React: "🙅", Text: tr.T("msg.quest.amount_not_applicable")}}
 		}
-		// Pokemon quest tracking (reward_type = 7)
-		monsterList, formReply := c.resolveMonsters(ctx, parsed)
-		if formReply != nil {
-			return []bot.Reply{*formReply}
+		if len(insert) == 0 {
+			return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_quest_type")}}
 		}
-		for _, mon := range monsterList {
-			insert = append(insert, db.QuestTrackingAPI{
-				ID:                    ctx.TargetID,
-				ProfileNo:             ctx.ProfileNo,
-				Ping:                  pings,
-				Template:              common.Template,
-				Distance:              common.Distance,
-				Clean:                 common.Clean,
-				Shiny:                 db.IntBool(shiny),
-				RewardType:            7,
-				Reward:                mon.PokemonID,
-				Form:                  mon.Form,
-				Amount:                0,
-				OverrideLocationLabel: override.LocationLabel,
-				OverrideAreas:         override.Areas,
-			})
-		}
-	} else if itemID := c.matchItemName(ctx, parsed); itemID > 0 {
-		// Item quest tracking (reward_type = 2)
-		// Consume matched item tokens from Unrecognized
-		parsed.Unrecognized = nil
-		insert = append(insert, c.makeQuest(ctx, common, override, shiny, pings, 2, itemID, 0, amountVal))
-	} else if len(insert) == 0 {
-		// No reward-specific branch matched and no bulk wildcard was
-		// pre-appended above — nothing to track.
-		return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_quest_type")}}
 	}
 
 	// Check for remaining unrecognized args (after item matching had a chance)

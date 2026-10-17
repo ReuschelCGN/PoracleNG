@@ -318,7 +318,6 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamKeyword, Key: "arg.remove"},
 		{Type: bot.ParamKeyword, Key: "arg.clean"},
 		{Type: bot.ParamKeyword, Key: "arg.edit"},
-		{Type: bot.ParamKeyword, Key: "arg.shiny"},
 		{Type: bot.ParamGender},
 		{Type: bot.ParamTypeName},
 		{Type: bot.ParamPokemonName},

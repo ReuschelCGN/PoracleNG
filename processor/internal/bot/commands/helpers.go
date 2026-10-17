@@ -219,21 +219,22 @@ func validateTemplate(ctx *bot.CommandContext, dtsType, templateID string) (*bot
 	return &bot.Reply{React: "🙅", Text: tr.Tf("tracking.template_not_found", templateID)}, ""
 }
 
-// resolveMoveByName looks up a move ID by its translated name.
-// Returns bot.WildcardID if no match is found.
-func resolveMoveByName(ctx *bot.CommandContext, moveName string) int {
+// resolveMoveByName looks up a move ID by its translated (or English)
+// name. ok is false when nothing matches; callers must reject the command
+// rather than fall back to "any move".
+func resolveMoveByName(ctx *bot.CommandContext, moveName string) (id int, ok bool) {
 	if ctx.GameData == nil {
-		return bot.WildcardID
+		return 0, false
 	}
 	tr := ctx.Tr()
 	enTr := ctx.Translations.For("en")
 	for id := range ctx.GameData.Moves {
 		key := gamedata.MoveTranslationKey(id)
 		if strings.EqualFold(tr.T(key), moveName) || strings.EqualFold(enTr.T(key), moveName) {
-			return id
+			return id, true
 		}
 	}
-	return bot.WildcardID
+	return 0, false
 }
 
 // buildTrackingMessage generates the confirmation message for tracking mutations.
