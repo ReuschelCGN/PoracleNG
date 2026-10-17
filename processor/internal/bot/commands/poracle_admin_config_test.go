@@ -436,3 +436,39 @@ func TestConfig_OutputInCodeBlock(t *testing.T) {
 		})
 	}
 }
+
+// TestConfig_SectionNameNormalised — the parser lowercases input and turns
+// unquoted underscores into spaces, so `!pa config alert_limits` arrives as
+// "alert limits" and `webhookLogging` as "webhooklogging". Both must still
+// select the section (#282).
+func TestConfig_SectionNameNormalised(t *testing.T) {
+	cases := []struct {
+		args    []string
+		section string
+	}{
+		{[]string{"alert limits"}, "[alert_limits]"},
+		{[]string{"alert", "limits"}, "[alert_limits]"},
+		{[]string{"ALERT_LIMITS"}, "[alert_limits]"},
+		{[]string{"webhooklogging"}, "[webhookLogging]"},
+	}
+	for _, tc := range cases {
+		ctx := adminCtx(t)
+		ctx.Config.AlertLimits.DMLimit = 20
+		ctx.Config.WebhookLogging.Filename = "webhooks.log"
+		text := collectText(paConfig.run(ctx, tc.args))
+		if !containsStr(text, tc.section) {
+			t.Errorf("args %q: want section %s; got:\n%s", tc.args, tc.section, text)
+		}
+	}
+}
+
+// TestConfig_SearchUnderscoreTolerant — `search dm_log` arrives as "dm log"
+// from the parser; it must still match dotted paths containing underscores.
+func TestConfig_SearchUnderscoreTolerant(t *testing.T) {
+	ctx := adminCtx(t)
+	ctx.Config.AlertLimits.DMLimit = 20
+	text := collectText(paConfig.run(ctx, []string{"search", "dm limit"}))
+	if !containsStr(text, "alert_limits.dm_limit") {
+		t.Errorf("search 'dm limit' should match alert_limits.dm_limit; got:\n%s", text)
+	}
+}
