@@ -8,6 +8,17 @@
 
 ---
 
+## Changes
+
+**2026-10 — v2 owns its response shapes (#294).** Breaking for v2 clients:
+
+- **Human** (`GET /v2/humans/{id}`, `POST /v2/humans`, snapshot `human`): `enabled` / `admin_disable` are booleans (were `1`/`0`); `area`, `community_membership`, `blocked_alerts` are arrays (were JSON-encoded strings); `area_restriction` is an array or `null` (was a JSON string or `null`); `language` is `""` when unset (was `null`). See [Human resource](#human-resource).
+- **Profiles** (`GET …/profiles`, snapshot `profiles`): `area` is an array (was a JSON-encoded string). The snapshot's profiles now also return `active_hours` as the typed array (was a raw string), matching `GET …/profiles`.
+- **Coordinates are `latitude` / `longitude` everywhere.** Request bodies of `POST …/location`, `POST …/locations` and `PUT …/locations/{label}`, and the `check-location` query parameters, change from `lat` / `lon`.
+- **`POST /v2/humans`**: `area` is an array of area names (was a JSON-encoded string).
+- **Snapshot `summaries`**: each entry is `{alert_type, active_hours}` with typed ISO-weekday entries; the redundant `id` is gone.
+- **`PUT …/tracking/{type}/{uid}` keeps the rule's `uid`** (it used to return a new one).
+
 ## 1. Why v2 (and why freeze v1)
 
 The existing `/api/*` surface is undocumented, accreted, and tolerant of malformed input by necessity (the `flexBool`/`flexInt` coercion exists because real clients send wrong types). An attempt to retrofit OpenAPI docs onto it in place meant paying two costs on every endpoint — faithfully reproducing v1's quirks **and** cleaning up the representation — while still mutating v1's contract.
@@ -70,14 +81,15 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 | `GET` | `/api/v2/humans/{id}/tracking/{type}` | List one type |
 | `POST` | `/api/v2/humans/{id}/tracking/{type}` | Create rule(s) |
 | `GET` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Fetch one rule |
-| `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule |
+| `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule (the rule keeps its `uid`) |
 | `DELETE` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Delete one rule |
 | `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete |
 
 - `{id}` (the human) is **always in the path** — required, and the ownership scope for every op. `profile` is a query param (`?profile={n}`, defaults to the human's active profile).
 - **Create** body is an **array** of rule objects (a single rule is a one-element array); the owner is the path `{id}`, not repeated per rule.
-- **List one type** returns `{ "rules": [ <rule>, … ] }`. **Full snapshot** (`…/tracking`, no `{type}`) returns `{ "human": {…}, "tracking": { "pokemon": [...], "raid": [...], … }, "profiles": [...], "locations": [...], "summaries": [...] }` — replaces v1's `all/{id}`; `?all_profiles=true` spans every profile (v1's `allProfiles/{id}`).
+- **List one type** returns `{ "rules": [ <rule>, … ] }`. **Full snapshot** (`…/tracking`, no `{type}`) returns `{ "human": {…}, "tracking": { "pokemon": [...], "raid": [...], … }, "profiles": [...], "locations": { "default": {…}, "named": [...] }, "summaries": [...], "mutes": [...] }`. Each sub-object has the same shape as its own v2 endpoint (`human` as `GET /v2/humans/{id}`, `profiles` as `GET …/profiles`, `locations` as `GET …/locations`) — replaces v1's `all/{id}`; `?all_profiles=true` spans every profile (v1's `allProfiles/{id}`).
 - **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour). Delete returns `{ "deleted": [<rule>] }`.
+- **PUT** (full replace) returns `{ "updated": [<rule>] }`. The rule **keeps its `uid`**, so ids held by clients, tracking mutes and `id:N` bot commands stay valid.
 - **`?include_descriptions=true`** works uniformly on **every** tracking endpoint — reads **and** mutations. When set, each rule object in the response (in `rules`, or `created`/`updated`/`unchanged`/`deleted`) carries a `description` (its human-readable rowtext, in the human's language). The status (added/updated/removed) is conveyed by which array the rule is in, so there is **no** separate assembled `message` field. (The prefixed, assembled confirmation message remains purely the Discord/Telegram push, gated by `?silent`.)
 - **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. (No `PATCH`/partial-update in v2.)
 - Mutations (`POST`/`PUT`/`DELETE`) accept **`?silent=true`** (default false) — apply without notifying the user. (Single param; replaces v1's `silent`+`suppressMessage`.)
@@ -137,7 +149,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 
 | field | type | notes |
 |---|---|---|
-| `uid` | int | response/identifier; required in `PUT` body |
+| `uid` | int | response/identifier; addressed by the `{uid}` path parameter (never sent in a body) |
 | `distance` | int | metres; `0` = use the profile's areas instead of a radius |
 | `template` | string | template name; empty = server default |
 | `clean` | bool | auto-delete the alert on expiry |
@@ -235,6 +247,23 @@ Today this is stored as freeform JSON and the API dumps whatever the client send
 - **Range**: adds `{step, end_hours, end_mins}` → fires at `HH:MM`, `+step h`, … up to and including `end`. **No cross-midnight** — `end` must be ≥ start (reject otherwise, `422`).
 - v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /v2/summaries/{id}/{alertType}` and the profile-schedule update endpoint. `day` is ISO 8601 (1 = Monday … 7 = Sunday), matching `isoDow` in `cmd/processor/profiles.go`, the bot, and v1. It was documented as 0–6 until #208: Sunday was unexpressible and `day: 0` stored a schedule that never fired.
 
+### Human resource
+
+`GET /v2/humans/{id}`, `POST /v2/humans` and the snapshot's `human` all return the same typed object — v2 does not reuse v1's legacy human shape (0/1 flags, JSON-encoded string arrays):
+
+| field | type | notes |
+|---|---|---|
+| `id`, `type`, `name`, `notes` | string | |
+| `enabled`, `admin_disable` | bool | |
+| `area`, `community_membership`, `blocked_alerts` | `[]string` | `[]` when empty |
+| `area_restriction` | `[]string` \| `null` | `null` = unrestricted; `[]` = no areas allowed |
+| `latitude`, `longitude` | float | `0` when unset |
+| `language` | string | `""` when unset (the configured default locale applies) |
+| `current_profile_no`, `fails` | int | |
+| `last_checked`, `disabled_date` | timestamp \| `null` | |
+
+Profiles likewise return `area` as `[]string` and `active_hours` as the typed array below.
+
 ### `blocked_alerts` (read-only on the human resource)
 
 `[]string`, **derived from `command_security` during reconciliation — not settable via the API**. Appears in `GET /v2/humans/{id}`. Enum values: `monster` (= pokemon alerts), `pvp`, `raid`, `egg`, `quest`, `invasion`, `lure`, `nest`, `gym`, `fort`, `maxbattle`, `specificgym`, `specificstation`. (Note the `monster`↔pokemon token mismatch is a v1 carry-over; documented, not "fixed," since it's an internal-derived read field.)
@@ -247,8 +276,8 @@ A saved-locations API already exists (`user_locations`: `label` → `lat`/`lon`)
 |---|---|---|---|
 | GET | `/v2/humans/{id}/locations` | — | list |
 | GET | `/v2/humans/{id}/locations/{label}` | — | one |
-| POST | `/v2/humans/{id}/locations` | `{label, lat, lon}` | create (was `…/locations/add`) |
-| **PUT** | `/v2/humans/{id}/locations/{label}` | `{lat, lon}` | **NEW** — update a saved location's coordinates |
+| POST | `/v2/humans/{id}/locations` | `{label, latitude, longitude}` | create (was `…/locations/add`) |
+| **PUT** | `/v2/humans/{id}/locations/{label}` | `{latitude, longitude}` | **NEW** — update a saved location's coordinates |
 | DELETE | `/v2/humans/{id}/locations/{label}` | — | delete (`409` if referenced by a rule's `override_location_label`) |
 
 The **PUT** is net-new functionality (v1 forces delete+re-add to move a saved location).

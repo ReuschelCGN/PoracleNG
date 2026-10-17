@@ -37,7 +37,7 @@ source of truth. Design rationale: [`v2-api-design.md`](v2-api-design.md).
 | `GET /api/tracking/{type}/{id}` | `GET /api/v2/humans/{id}/tracking/{type}` | `?profile=` defaults to the active profile. Returns `{rules:[…]}` |
 | `POST /api/tracking/{type}/{id}` | `POST /api/v2/humans/{id}/tracking/{type}` | Body is an **array** of rules. Returns `{created, updated, unchanged}` |
 | — | `GET /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — fetch one rule |
-| — | `PUT /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — full replace (omitted fields reset to defaults; no PATCH) |
+| — | `PUT /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — full replace (omitted fields reset to defaults; no PATCH); the rule keeps its `uid` |
 | `DELETE /api/tracking/{type}/{id}/byUid/{uid}` | `DELETE /api/v2/humans/{id}/tracking/{type}/{uid}` | Returns `{deleted:[…]}` |
 | `POST /api/tracking/{type}/{id}/delete` (body `[uids]`) | `DELETE /api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete via query |
 | `GET /api/tracking/all/{id}` | `GET /api/v2/humans/{id}/tracking` | Full snapshot: `{human, tracking:{<type>:[…]}, profiles, locations, summaries}` |
@@ -58,15 +58,15 @@ that doesn't belong to the addressed human.
 | `POST /api/humans/{id}/stop` | `POST /api/v2/humans/{id}/disable` | No body |
 | `POST /api/humans/{id}/adminDisabled` | `POST /api/v2/humans/{id}/admin-disable` | Body `{disabled: bool}` |
 | `POST /api/humans/{id}/language` | `POST /api/v2/humans/{id}/language` | Body `{language: string}`, validated against available locales |
-| `POST /api/humans/{id}/setLocation/{lat}/{lon}` | `POST /api/v2/humans/{id}/location` | Body `{lat, lon}` floats |
+| `POST /api/humans/{id}/setLocation/{lat}/{lon}` | `POST /api/v2/humans/{id}/location` | Body `{latitude, longitude}` floats |
 | — | `DELETE /api/v2/humans/{id}/location` | **NEW** — clear the location (`?profile=` as for set). Not subject to the area-restriction check |
-| `GET /api/humans/{id}/checkLocation/{lat}/{lon}` | `GET /api/v2/humans/{id}/check-location?lat=&lon=` | |
+| `GET /api/humans/{id}/checkLocation/{lat}/{lon}` | `GET /api/v2/humans/{id}/check-location?latitude=&longitude=` | |
 | `POST /api/humans/{id}/setAreas` | `POST /api/v2/humans/{id}/areas` | Body `{areas: []string}` |
 | `POST /api/humans/{id}/switchProfile/{n}` | `POST /api/v2/humans/{id}/profile` | Body `{profile_no: int}` |
 | `GET /api/humans/{id}/locations` | `GET /api/v2/humans/{id}/locations` | |
 | `GET /api/humans/{id}/locations/{label}` | `GET /api/v2/humans/{id}/locations/{label}` | |
-| `POST /api/humans/{id}/locations/add` | `POST /api/v2/humans/{id}/locations` | Body `{label, lat, lon}` |
-| — | `PUT /api/v2/humans/{id}/locations/{label}` | **NEW** — update coords (v1 forced delete + re-add). Body `{lat, lon}` |
+| `POST /api/humans/{id}/locations/add` | `POST /api/v2/humans/{id}/locations` | Body `{label, latitude, longitude}` |
+| — | `PUT /api/v2/humans/{id}/locations/{label}` | **NEW** — update coords (v1 forced delete + re-add). Body `{latitude, longitude}` |
 | `POST /api/humans/{id}/locations/{label}/delete` | `DELETE /api/v2/humans/{id}/locations/{label}` | `409` if referenced by a rule's `override_location_label` |
 | `GET /api/humans/{id}/roles` | `GET /api/v2/humans/{id}/roles` | |
 | `POST /api/humans/{id}/roles/add/{roleId}` | `POST /api/v2/humans/{id}/roles/{roleId}` | |

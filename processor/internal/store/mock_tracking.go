@@ -99,6 +99,18 @@ func (m *MockTrackingStore[T]) DeleteByUIDs(id string, uids []int64) error {
 	return nil
 }
 
+// ReassignUID moves the row (owned by id) at uid from to uid to.
+func (m *MockTrackingStore[T]) ReassignUID(id string, from, to int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.rows {
+		if m.getUID(&m.rows[i]) == from && (m.getID == nil || m.getID(&m.rows[i]) == id) {
+			m.setUID(&m.rows[i], to)
+		}
+	}
+	return nil
+}
+
 func (m *MockTrackingStore[T]) DeleteByUID(id string, uid int64) error {
 	return m.DeleteByUIDs(id, []int64{uid})
 }

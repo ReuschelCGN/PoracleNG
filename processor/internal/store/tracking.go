@@ -20,6 +20,14 @@ type TrackingStore[T any] interface {
 	DeleteByUID(id string, uid int64) error
 }
 
+// UIDReassigner is implemented by tracking stores that can move a row to a
+// specific uid. A full replace (delete + insert) uses it to give the new row
+// the replaced row's uid, so rule ids that clients, mutes and `id:N`
+// commands hold on to stay valid.
+type UIDReassigner interface {
+	ReassignUID(id string, from, to int64) error
+}
+
 // DiffResult holds the classified results of comparing insert candidates
 // against existing tracked rows.
 type DiffResult[T any] struct {

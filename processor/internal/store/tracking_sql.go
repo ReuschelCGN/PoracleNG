@@ -28,6 +28,10 @@ func (s *sqlTrackingStore[T]) DeleteByUIDs(id string, uids []int64) error {
 	return db.DeleteByUIDs(s.database, s.table, id, uids)
 }
 
+func (s *sqlTrackingStore[T]) ReassignUID(id string, from, to int64) error {
+	return db.ReassignUID(s.database, s.table, id, from, to)
+}
+
 func (s *sqlTrackingStore[T]) DeleteByUID(id string, uid int64) error {
 	return db.DeleteByUID(s.database, s.table, id, uid)
 }

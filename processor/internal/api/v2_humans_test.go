@@ -382,7 +382,7 @@ func TestV2Humans_Language_EmptyRejected(t *testing.T) {
 
 func TestV2Humans_SetLocation_BodyFloats(t *testing.T) {
 	r, humans, reloads := newV2HumansTestAPI(t, nil)
-	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"lat":33.5,"lon":-44.25}`)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"latitude":33.5,"longitude":-44.25}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -401,7 +401,7 @@ func TestV2Humans_SetLocation_BodyFloats(t *testing.T) {
 
 func TestV2Humans_SetLocation_RejectsMissingLat(t *testing.T) {
 	r, _, _ := newV2HumansTestAPI(t, nil)
-	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"lon":5}`)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"longitude":5}`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for missing lat, got %d: %s", w.Code, w.Body.String())
 	}
@@ -416,7 +416,7 @@ func TestV2Humans_SetLocation_ForbiddenOutsideRestriction(t *testing.T) {
 		ID: "u1", Type: "discord:user", Name: "User1", Enabled: true, Language: "en",
 		CurrentProfileNo: 1, AreaRestriction: []string{"alpha"},
 	})
-	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"lat":20,"lon":20}`)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"latitude":20,"longitude":20}`)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 outside restriction, got %d: %s", w.Code, w.Body.String())
 	}
@@ -434,7 +434,7 @@ func TestV2Humans_SetLocation_AllowedInsideRestriction(t *testing.T) {
 		CurrentProfileNo: 1, AreaRestriction: []string{"alpha"},
 	})
 	// (10,10) is inside alpha.
-	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"lat":10,"lon":10}`)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/location", `{"latitude":10,"longitude":10}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 inside restriction, got %d: %s", w.Code, w.Body.String())
 	}
@@ -494,7 +494,7 @@ func TestV2Humans_Location_InactiveProfileLeavesLiveLocation(t *testing.T) {
 		name, method, body string
 		wantLat            float64
 	}{
-		{"set", http.MethodPost, `{"lat":20,"lon":20}`, 20},
+		{"set", http.MethodPost, `{"latitude":20,"longitude":20}`, 20},
 		{"clear", http.MethodDelete, "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -523,7 +523,7 @@ func TestV2Humans_Location_InactiveProfileLeavesLiveLocation(t *testing.T) {
 
 func TestV2Humans_CheckLocation_DisabledAlwaysOK(t *testing.T) {
 	r, _, _ := newV2HumansTestAPI(t, nil) // area_security disabled
-	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?lat=99&lon=99", "")
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?latitude=99&longitude=99", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -542,12 +542,12 @@ func TestV2Humans_CheckLocation_InsideOutside(t *testing.T) {
 	})
 
 	// Inside alpha → true.
-	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?lat=10&lon=10", "")
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?latitude=10&longitude=10", "")
 	if ok, _ := v2DecodeBody(t, w)["locationOk"].(bool); !ok {
 		t.Fatalf("expected locationOk=true inside alpha")
 	}
 	// Outside (near beta) → false.
-	w = v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?lat=20&lon=20", "")
+	w = v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?latitude=20&longitude=20", "")
 	if ok, _ := v2DecodeBody(t, w)["locationOk"].(bool); ok {
 		t.Fatalf("expected locationOk=false outside alpha")
 	}
@@ -555,7 +555,7 @@ func TestV2Humans_CheckLocation_InsideOutside(t *testing.T) {
 
 func TestV2Humans_CheckLocation_RejectsMissingQuery(t *testing.T) {
 	r, _, _ := newV2HumansTestAPI(t, nil)
-	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?lat=10", "")
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/check-location?latitude=10", "")
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for missing lon, got %d: %s", w.Code, w.Body.String())
 	}
