@@ -641,7 +641,7 @@ Template selection uses a two-pass mechanism. The first pass considers only user
 5. Default + configured locale: type + default template + platform + `[general] locale` (only when the user's language differs from the configured locale)
 6. Default + any language: type + default template + platform (last resort, any language)
 
-Within each level, the **last match wins** so that `config/dts/` overrides `config/dts.json` (later-loaded files are appended). Levels 3 and 4 share a return check: a level 4 match supersedes a level 3 match.
+Within each level, the **last match wins** so that `config/dts/` overrides `config/dts.json` (later-loaded files are appended). The first level with a match returns it, so a default in the user's language (level 3) beats a language-less default (level 4).
 
 Step 5 protects against a real-world failure mode: a user with a legacy language setting (e.g. `language="nl"`) that no longer ships templates would otherwise drop to step 6, where "last match wins" picks whichever default entry was loaded last — often a language unrelated to the operator's chosen `[general] locale`. Preferring the configured locale before step 6 keeps these users on the operator's default language rather than an arbitrary one.
 
