@@ -240,8 +240,20 @@ func (c *MaxbattleCommand) removeMaxbattles(ctx *bot.CommandContext, parsed *bot
 		for _, mon := range parsed.Pokemon {
 			removeIDs[mon.PokemonID] = true
 		}
+		levelRange, hasLevel := parsed.Ranges["level"]
+		matchesLevel := func(existing *db.MaxbattleTrackingAPI) bool {
+			// Level rules are the by-level rows (wildcard pokemon); a
+			// pokemon-specific rule is removed by naming the pokemon.
+			if !hasLevel || existing.PokemonID != bot.WildcardID {
+				return false
+			}
+			if levelRange.HasMax {
+				return existing.Level >= levelRange.Min && existing.Level <= levelRange.Max
+			}
+			return existing.Level == levelRange.Min
+		}
 		for _, existing := range tracked {
-			if removeIDs[existing.PokemonID] {
+			if removeIDs[existing.PokemonID] || matchesLevel(&existing) {
 				uids = append(uids, existing.UID)
 				removed = append(removed, existing)
 			}

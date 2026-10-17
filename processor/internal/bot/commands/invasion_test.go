@@ -96,3 +96,78 @@ func TestInvasionAcceptsPlainName(t *testing.T) {
 		t.Errorf("giovanni was rejected: %+v", replies[0])
 	}
 }
+
+func seedInvasions(t *testing.T, invasions *store.MockTrackingStore[db.InvasionTrackingAPI], rows ...db.InvasionTrackingAPI) {
+	t.Helper()
+	for i := range rows {
+		rows[i].ID = "user1"
+		rows[i].ProfileNo = 1
+		if _, err := invasions.Insert(&rows[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A typo on remove used to fall through to "everything" and delete every
+// invasion rule the user had (#279). It must be rejected and delete nothing.
+func TestInvasionRemoveTypoDeletesNothing(t *testing.T) {
+	for _, args := range [][]string{
+		{"remove", "giovani"},
+		{"remove", "giovanni", "npc 0x"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			ctx, invasions := invasionTestCtx(t)
+			seedInvasions(t, invasions,
+				db.InvasionTrackingAPI{GruntType: "giovanni"},
+				db.InvasionTrackingAPI{GruntType: "npc_0"},
+			)
+			replies := (&InvasionCommand{}).Run(ctx, args)
+			if len(replies) == 0 || replies[0].React != "🙅" {
+				t.Errorf("expected rejection, got %+v", replies)
+			}
+			if n := len(invasions.AllRows()); n != 2 {
+				t.Errorf("rows after remove = %d, want 2 (nothing deleted)", n)
+			}
+		})
+	}
+}
+
+// A typo alongside a valid type must not be silently dropped when adding.
+func TestInvasionAddRejectsTrailingTypo(t *testing.T) {
+	ctx, invasions := invasionTestCtx(t)
+	replies := (&InvasionCommand{}).Run(ctx, []string{"giovanni", "giovani"})
+	if len(replies) == 0 || replies[0].React != "🙅" {
+		t.Errorf("expected rejection, got %+v", replies)
+	}
+	if n := len(invasions.AllRows()); n != 0 {
+		t.Errorf("rows = %d, want 0", n)
+	}
+}
+
+// Bare remove still clears everything (documented behaviour).
+func TestInvasionBareRemoveClearsAll(t *testing.T) {
+	ctx, invasions := invasionTestCtx(t)
+	seedInvasions(t, invasions,
+		db.InvasionTrackingAPI{GruntType: "giovanni"},
+		db.InvasionTrackingAPI{GruntType: "npc_0"},
+	)
+	(&InvasionCommand{}).Run(ctx, []string{"remove"})
+	if n := len(invasions.AllRows()); n != 0 {
+		t.Errorf("rows = %d, want 0", n)
+	}
+}
+
+// A gender on remove narrows the removal rather than being ignored.
+func TestInvasionRemoveRespectsGender(t *testing.T) {
+	ctx, invasions := invasionTestCtx(t)
+	seedInvasions(t, invasions,
+		db.InvasionTrackingAPI{GruntType: "giovanni", Gender: 1},
+		db.InvasionTrackingAPI{GruntType: "giovanni", Gender: 2},
+		db.InvasionTrackingAPI{GruntType: "npc_0", Gender: 2},
+	)
+	(&InvasionCommand{}).Run(ctx, []string{"remove", "female"})
+	rows := invasions.AllRows()
+	if len(rows) != 1 || rows[0].Gender != 1 {
+		t.Errorf("rows = %+v, want only the male giovanni rule left", rows)
+	}
+}

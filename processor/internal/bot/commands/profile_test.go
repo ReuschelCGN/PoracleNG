@@ -36,3 +36,28 @@ func TestProfileAddReportsTheNumberActuallyAssigned(t *testing.T) {
 		t.Errorf("reply = %q, wrongly reports the pre-existing same-named profile 3", replies[0].Text)
 	}
 }
+
+// /profile copyto autocompletes profile NUMBERS, but copyto matched names
+// only, so picking from the autocomplete always failed (#281).
+func TestProfileCopyToAcceptsNumber(t *testing.T) {
+	ctx, humans := testCtx(t)
+	humans.SeedProfile(store.Profile{ID: "user1", ProfileNo: 1, Name: "Default"})
+	humans.SeedProfile(store.Profile{ID: "user1", ProfileNo: 2, Name: "Work"})
+
+	replies := (&ProfileCommand{}).Run(ctx, []string{"copyto", "2"})
+	if len(replies) != 1 || replies[0].React != "✅" || !strings.Contains(replies[0].Text, "Work") {
+		t.Fatalf("expected copy to profile 2 (Work), got %+v", replies)
+	}
+}
+
+// Copying to the current profile by number is still rejected.
+func TestProfileCopyToRejectsCurrentProfileNumber(t *testing.T) {
+	ctx, humans := testCtx(t)
+	humans.SeedProfile(store.Profile{ID: "user1", ProfileNo: 1, Name: "Default"})
+	humans.SeedProfile(store.Profile{ID: "user1", ProfileNo: 2, Name: "Work"})
+
+	replies := (&ProfileCommand{}).Run(ctx, []string{"copyto", "1"})
+	if len(replies) != 1 || replies[0].React != "🙅" {
+		t.Fatalf("expected rejection, got %+v", replies)
+	}
+}

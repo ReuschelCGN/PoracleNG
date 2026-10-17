@@ -92,7 +92,7 @@ func (s *Store) Add(e Entry) (replaced bool) {
 	defer s.mu.Unlock()
 	list := s.entries[e.HumanID]
 	for i, existing := range list {
-		if existing.ScopeType == e.ScopeType && existing.ScopeValue == e.ScopeValue {
+		if existing.ScopeType == e.ScopeType && sameScopeValue(e.ScopeType, existing.ScopeValue, e.ScopeValue) {
 			list[i] = e
 			s.entries[e.HumanID] = list
 			return true
@@ -109,7 +109,7 @@ func (s *Store) Remove(humanID, scopeType, scopeValue string) bool {
 	defer s.mu.Unlock()
 	list := s.entries[humanID]
 	for i, e := range list {
-		if e.ScopeType == scopeType && e.ScopeValue == scopeValue {
+		if e.ScopeType == scopeType && sameScopeValue(scopeType, e.ScopeValue, scopeValue) {
 			s.entries[humanID] = append(list[:i], list[i+1:]...)
 			if len(s.entries[humanID]) == 0 {
 				delete(s.entries, humanID)
@@ -118,6 +118,17 @@ func (s *Store) Remove(humanID, scopeType, scopeValue string) bool {
 		}
 	}
 	return false
+}
+
+// sameScopeValue compares two scope values for identity. Area names are
+// case-insensitive (as in matchScope): !mute area stores the display-cased
+// name while !unmute area arrives lowercased from the tokenizer. Every
+// other scope value is an opaque ID compared exactly.
+func sameScopeValue(scopeType, a, b string) bool {
+	if scopeType == ScopeArea {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // RemoveAll drops every mute for a given user. Returns the count removed.
@@ -177,7 +188,8 @@ func (s *Store) ListActive(humanID string, now int64) []Entry {
 //     resolved case-insensitively so mute commands follow suit).
 //   - ScopePokestop matches when ev.PokestopID equals the entry's ScopeValue.
 //   - ScopeStation matches when ev.StationID equals the entry's ScopeValue.
-//   - ScopeTracking is currently a no-op (see the const comment above).
+//   - ScopeTracking matches when ev.MatchedRuleUID equals the entry's
+//     ScopeValue.
 func (s *Store) Match(humanID string, ev Event, now int64) bool {
 	s.mu.RLock()
 	list := s.entries[humanID]
