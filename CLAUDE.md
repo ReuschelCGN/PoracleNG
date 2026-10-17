@@ -337,7 +337,7 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 
 **Shared secret** (`x-poracle-secret`):
 - All `/api/*` endpoints are protected by the `X-Poracle-Secret` header matching `[processor] api_secret` (with legacy `[alerter] api_secret` as a backward-compatible fallback — if the processor key is empty, the alerter key is copied over at config load)
-- If `api_secret` is empty/unset, auth is disabled (all requests allowed)
+- If `api_secret` is empty/unset, auth is disabled (all requests allowed). By design — but startup logs a WARN when the secret is blank and the effective bind host (after the `PORACLE_HOST` default, e.g. Docker's `0.0.0.0`) is not loopback (`ProcessorConfig.BlankAPISecretExposed`, #266)
 - The `RequireSecretGin` middleware in `api/middleware.go` is applied to the `/api/*` route group in `cmd/processor/main.go`
 
 **Unprotected endpoints**:

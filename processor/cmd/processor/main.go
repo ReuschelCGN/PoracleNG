@@ -341,6 +341,9 @@ func main() {
 	// Authenticated API group
 	apiGroup := r.Group("/api")
 	apiGroup.Use(api.RequireSecretGin(cfg.Processor.APISecret))
+	if cfg.Processor.BlankAPISecretExposed() {
+		log.Warnf("[processor] api_secret is empty and the API listens on %q (not loopback): every /api endpoint, including writes (users, tracking, config, DTS, commands), is open to anyone who can reach port %d. Set api_secret or bind host to 127.0.0.1.", cfg.Processor.Host, cfg.Processor.Port)
+	}
 
 	// Wire the huma API: serves /openapi.json and /docs publicly, and now serves
 	// the migrated in-place endpoints (reloads, with more to come) on the shared

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -464,6 +465,26 @@ func tomlTokens(v any) []string {
 		return tokens
 	}
 	return nil
+}
+
+// IsLoopbackHost reports whether a listen host binds only to the loopback
+// interface: "localhost" or any loopback IP (127.0.0.0/8, ::1), optionally
+// bracketed. An empty host binds all interfaces and is not loopback.
+func IsLoopbackHost(host string) bool {
+	h := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(host), "["), "]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(h)
+	return err == nil && a.Unmap().IsLoopback()
+}
+
+// BlankAPISecretExposed reports whether the API is unauthenticated (blank
+// api_secret, which disables auth by design) while listening on a
+// non-loopback host — the case that warrants a startup warning (#266).
+// Host is the effective host, i.e. after the PORACLE_HOST default applies.
+func (p ProcessorConfig) BlankAPISecretExposed() bool {
+	return p.APISecret == "" && !IsLoopbackHost(p.Host)
 }
 
 // ListenAddr returns the host:port listen address.

@@ -17,6 +17,9 @@ ip_blacklist = []
 # ip_whitelist/ip_blacklist, you MUST list the proxy here, e.g. ["172.16.0.0/12"] —
 # otherwise every request appears to come from the proxy's address.
 trusted_proxies = []
+# api_secret: value required in the X-Poracle-Secret header on /api/*. Blank disables
+# API authentication entirely; a startup warning is logged if it is blank and host is
+# not loopback (e.g. Docker's 0.0.0.0).
 api_secret = ""
 enable_pprof = false                     # serve Go profiling at /debug/pprof (requires api_secret via X-Poracle-Secret); leave off unless diagnosing
 
