@@ -292,7 +292,14 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(api.CORSMiddleware())
 	r.Use(api.RequestLogger())
-	r.Use(api.IPFilter(cfg.Processor.IPWhitelist, cfg.Processor.IPBlacklist))
+	if err := api.ConfigureTrustedProxies(r, cfg.Processor.TrustedProxies); err != nil {
+		log.Fatalf("%v", err)
+	}
+	ipFilter, err := api.IPFilter(cfg.Processor.IPWhitelist, cfg.Processor.IPBlacklist)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	r.Use(ipFilter)
 
 	// Webhook receiver
 	var webhookLogger io.Writer

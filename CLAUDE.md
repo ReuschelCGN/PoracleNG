@@ -347,6 +347,10 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 - `GET /openapi.json` — OpenAPI 3.1 spec
 - `GET /docs` — interactive API docs
 
+**IP filtering and trusted proxies** (`[processor] ip_whitelist` / `ip_blacklist` / `trusted_proxies`):
+- `IPFilter` (`api/middleware.go`) applies to every route (including the webhook receiver). Entries are exact IPs or CIDR ranges (IPv4/IPv6), parsed once at startup; an invalid entry is a fatal startup error. Blacklist is checked first, then a non-empty whitelist must match. IPv4-mapped IPv6 peers match IPv4 rules.
+- The client IP is gin's `ClientIP()`. `api.ConfigureTrustedProxies` calls `r.SetTrustedProxies(trusted_proxies)`; the default (empty) trusts **no** proxy, so `X-Forwarded-For` / `X-Real-IP` are ignored and the TCP peer is used — a client can't spoof its way past the lists (#264). Operators behind a reverse proxy who rely on the whitelist/blacklist must list the proxy's IP/CIDR in `trusted_proxies`, otherwise every request is seen as coming from the proxy.
+
 `/debug/pprof` is not mounted unless `[processor] enable_pprof = true`, and then sits behind the same `api_secret` (`cmd/processor/pprof.go`).
 
 **huma surface (`/api/*` reads + features, and `/api/v2/*`)**: The `/api/*` read/reload/feature endpoints listed below and the entire `/api/v2/*` surface are served by [huma](https://github.com/danielgtaylor/huma) (mounted on gin via humagin, one instance), and appear in the OpenAPI 3.1 spec at `/openapi.json` / `/docs`. Error bodies on this surface are RFC 9457 `application/problem+json` (`status`, `title`, `detail`, `errors[]`) — replacing the old `{status:"error",message}` / `gin.H{"error":...}` bodies (status codes unchanged; a few manual-400s became validation-422s). `/health`, `/metrics`, pprof, and the webhook receiver `POST /` stay on plain gin by design.

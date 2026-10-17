@@ -260,7 +260,11 @@ type ProcessorConfig struct {
 	Port        int      `toml:"port"`
 	IPWhitelist []string `toml:"ip_whitelist"`
 	IPBlacklist []string `toml:"ip_blacklist"`
-	APISecret   string   `toml:"api_secret"` // API secret for X-Poracle-Secret header authentication
+	// TrustedProxies lists reverse-proxy IPs/CIDRs whose X-Forwarded-For /
+	// X-Real-IP headers are honoured when determining the client IP for
+	// ip_whitelist / ip_blacklist. Empty = trust none (use the TCP peer).
+	TrustedProxies []string `toml:"trusted_proxies"`
+	APISecret      string   `toml:"api_secret"` // API secret for X-Poracle-Secret header authentication
 	// EnablePprof serves /debug/pprof (Go profiling) behind the API secret.
 	// Off by default: the endpoints leak process details and can be used to
 	// trigger expensive CPU profiles.
