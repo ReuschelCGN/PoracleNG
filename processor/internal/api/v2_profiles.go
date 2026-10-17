@@ -115,15 +115,13 @@ func marshalV2ActiveHours(entries []v2ActiveHourEntry) (string, error) {
 // ARRAY of v2ActiveHourEntry — symmetric with the strict v2 active_hours INPUT
 // on PATCH/add. An absent / empty schedule serialises to [] (never a string,
 // never null).
-//
-// area is kept as the JSON-encoded string the store persists, matching the
-// existing v2 wire shape; only active_hours changes from string → array here.
+// area is likewise a proper array, not the legacy JSON-encoded string.
 type v2ProfileResponse struct {
 	UID         int                 `json:"uid" doc:"Database row id of the profile."`
 	ID          string              `json:"id" doc:"Owning human id."`
 	ProfileNo   int                 `json:"profile_no" doc:"Profile number within the human (1 = default profile); referenced by tracking rules and profile switch."`
 	Name        string              `json:"name" doc:"Profile display name."`
-	Area        string              `json:"area" doc:"Profile geofence-area override as a JSON-encoded string array (legacy encoding retained on this field) — \"[]\" when the profile has no area override."`
+	Area        []string            `json:"area" doc:"Profile geofence-area override. [] when the profile has no area override."`
 	Latitude    float64             `json:"latitude" doc:"Profile location-override latitude. 0 when the profile has no location override."`
 	Longitude   float64             `json:"longitude" doc:"Profile location-override longitude. 0 when the profile has no location override."`
 	ActiveHours []v2ActiveHourEntry `json:"active_hours" doc:"Auto-switch schedule as a typed array. Always [] when unscheduled (never null, never a string)."`
@@ -147,7 +145,7 @@ func profileToV2Response(p store.Profile) v2ProfileResponse {
 		ID:          p.ID,
 		ProfileNo:   p.ProfileNo,
 		Name:        p.Name,
-		Area:        stringSliceToJSON(p.Area),
+		Area:        nonNilStrings(p.Area),
 		Latitude:    p.Latitude,
 		Longitude:   p.Longitude,
 		ActiveHours: parseV2ActiveHours(p.ActiveHours),

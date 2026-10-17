@@ -58,6 +58,19 @@ func DeleteByUID(db *sqlx.DB, table, id string, uid int64) error {
 	return nil
 }
 
+// ReassignUID moves a tracking row from uid `from` to uid `to` (which must
+// be free). Used to keep a rule's uid stable across a full replace, which is
+// implemented as delete + insert.
+func ReassignUID(db *sqlx.DB, table, id string, from, to int64) error {
+	_, err := db.Exec(
+		fmt.Sprintf("UPDATE `%s` SET uid = ? WHERE id = ? AND uid = ?", table),
+		to, id, from)
+	if err != nil {
+		return fmt.Errorf("reassign %s uid %d -> %d: %w", table, from, to, err)
+	}
+	return nil
+}
+
 // DeleteByUIDs deletes multiple rows from a tracking table by id and uid list.
 func DeleteByUIDs(db *sqlx.DB, table, id string, uids []int64) error {
 	if len(uids) == 0 {

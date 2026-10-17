@@ -14,10 +14,11 @@ import (
 
 // v2_humans.go is the strict /api/v2 humans surface. Each op is a thin wrapper
 // around the exact business logic, validation, and reload behaviour of the
-// frozen v1 handlers in humans.go — reusing store.HumanStore, the humanToResponse
-// DTO, community.FilterAreas, and reloadState. The only differences are strict
-// typed huma inputs (additionalProperties:false, required enforcement, unknown
-// query rejection) and problem+json errors.
+// frozen v1 handlers in humans.go — reusing store.HumanStore,
+// community.FilterAreas, and reloadState. The differences are strict typed huma
+// inputs (additionalProperties:false, required enforcement, unknown query
+// rejection), problem+json errors, and the v2 human shape (v2Human) in place of
+// v1's legacy HumanResponse.
 //
 // Success-shape convention:
 //   - GET endpoints return the resource (human / areas / check-location result).
@@ -35,12 +36,12 @@ type v2HumanIDInput struct {
 // Pure-action mutations on this surface return the shared statusOKOutput
 // ({"status":"ok"}); see okStatus in huma_system.go.
 
-// v2HumanResource is the GET /v2/humans/{id} response: the legacy human resource
-// (humanToResponse). blocked_alerts is a read-only derived field on this
-// resource — it is never settable through any v2 humans endpoint.
+// v2HumanResource is the GET /v2/humans/{id} (and create) response.
+// blocked_alerts is a read-only derived field on this resource — it is never
+// settable through any v2 humans endpoint.
 type v2HumanResource struct {
 	Body struct {
-		Human *HumanResponse `json:"human"`
+		Human *v2Human `json:"human"`
 	}
 }
 
@@ -68,7 +69,7 @@ type v2CreateHumanBody struct {
 	Name         string   `json:"name" required:"true" doc:"Display name (required)"`
 	Type         string   `json:"type,omitempty" doc:"Human type, e.g. discord:user (default discord:user)"`
 	Enabled      *bool    `json:"enabled,omitempty" doc:"Initial enabled state (default true)"`
-	Area         string   `json:"area,omitempty" doc:"JSON-array string of initial area names (default empty)"`
+	Area         []string `json:"area,omitempty" doc:"Initial selected area names (default none)"`
 	Latitude     float64  `json:"latitude,omitempty" doc:"Default latitude (default 0)"`
 	Longitude    float64  `json:"longitude,omitempty" doc:"Default longitude (default 0)"`
 	AdminDisable *bool    `json:"admin_disable,omitempty" doc:"Set the admin_disable flag (default false)"`
@@ -110,7 +111,7 @@ func registerV2HumanCreate(api huma.API, deps *TrackingDeps, tag []string, sec [
 			Name:             b.Name,
 			Type:             b.Type,
 			Enabled:          true,
-			Area:             parseMembership(b.Area),
+			Area:             b.Area,
 			Latitude:         b.Latitude,
 			Longitude:        b.Longitude,
 			CurrentProfileNo: 1,
@@ -159,7 +160,7 @@ func registerV2HumanCreate(api huma.API, deps *TrackingDeps, tag []string, sec [
 
 		reloadState(deps)
 		out := &v2HumanResource{}
-		out.Body.Human = humanToResponse(human)
+		out.Body.Human = humanToV2(human)
 		return out, nil
 	})
 }
@@ -178,7 +179,7 @@ func registerV2HumanGet(api huma.API, deps *TrackingDeps, tag []string, sec []ma
 			return nil, err
 		}
 		out := &v2HumanResource{}
-		out.Body.Human = humanToResponse(human)
+		out.Body.Human = humanToV2(human)
 		return out, nil
 	})
 }
@@ -400,8 +401,8 @@ func registerV2HumanLanguage(api huma.API, deps *TrackingDeps, tag []string, sec
 // --- location --------------------------------------------------------------
 
 type v2LocationBody struct {
-	Lat float64 `json:"lat" required:"true" doc:"Latitude"`
-	Lon float64 `json:"lon" required:"true" doc:"Longitude"`
+	Lat float64 `json:"latitude" required:"true" doc:"Latitude"`
+	Lon float64 `json:"longitude" required:"true" doc:"Longitude"`
 }
 
 type v2SetLocationInput struct {
@@ -414,7 +415,7 @@ func registerV2HumanSetLocation(api huma.API, deps *TrackingDeps, tag []string, 
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-set-human-location", Method: "POST", Path: "/v2/humans/{id}/location",
 		Summary: "Set a human's location",
-		Description: "lat/lon are taken from the BODY (v1 took them from the path). When area_security is enabled and the human has an " +
+		Description: "latitude/longitude are taken from the BODY (v1 took them from the path). When area_security is enabled and the human has an " +
 			"area restriction, the location must fall inside an allowed fence (403 otherwise). Triggers a state reload. 404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2SetLocationInput) (*statusOKOutput, error) {
@@ -463,7 +464,7 @@ type v2ClearLocationInput struct {
 
 // registerV2HumanClearLocation registers DELETE /v2/humans/{id}/location.
 //
-// POST {lat:0,lon:0} stores the same thing, but a human with an area
+// POST {latitude:0,longitude:0} stores the same thing, but a human with an area
 // restriction gets a 403 because 0,0 is inside none of their fences — and
 // clearing a location should never need a fence.
 func registerV2HumanClearLocation(api huma.API, deps *TrackingDeps, tag []string, sec []map[string][]string) {
@@ -498,8 +499,8 @@ func registerV2HumanClearLocation(api huma.API, deps *TrackingDeps, tag []string
 
 type v2CheckLocationInput struct {
 	ID  string  `path:"id" doc:"Human id (the owning user)"`
-	Lat float64 `query:"lat" required:"true" doc:"Latitude to check"`
-	Lon float64 `query:"lon" required:"true" doc:"Longitude to check"`
+	Lat float64 `query:"latitude" required:"true" doc:"Latitude to check"`
+	Lon float64 `query:"longitude" required:"true" doc:"Longitude to check"`
 }
 
 // v2CheckLocationOutput mirrors v1's {locationOk:bool} result shape.

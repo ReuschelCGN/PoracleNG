@@ -38,13 +38,14 @@ type v2SnapshotInput struct {
 // v2SnapshotBody is the response document. tracking is keyed by tracking-type
 // name; each value is the same strict rule envelopes the per-type list returns
 // (raw JSON so the flattened-envelope marshalling is preserved verbatim). The
-// human/profiles/locations/summaries sub-objects reuse the existing v1 read DTOs.
+// human, profiles, locations and summaries use the same v2 shapes as their own
+// v2 endpoints.
 type v2SnapshotBody struct {
-	Human     *HumanResponse               `json:"human"`
+	Human     *v2Human                     `json:"human"`
 	Tracking  map[string][]json.RawMessage `json:"tracking"`
-	Profiles  []ProfileResponse            `json:"profiles"`
-	Locations locationsPayload             `json:"locations"`
-	Summaries []summaryScheduleResponse    `json:"summaries"`
+	Profiles  []v2ProfileResponse          `json:"profiles"`
+	Locations v2Locations                  `json:"locations"`
+	Summaries []v2SummarySchedule          `json:"summaries"`
 	Mutes     []v2MuteItem                 `json:"mutes" doc:"Active (non-expired) alert mutes — same items as GET …/mutes. Mutes are held in memory only and are cleared by a processor restart."`
 }
 
@@ -99,9 +100,12 @@ func RegisterV2TrackingSnapshot(api huma.API, deps *TrackingDeps) {
 		}
 
 		out := &v2SnapshotOutput{}
-		out.Body.Human = humanToResponse(humanFull)
+		out.Body.Human = humanToV2(humanFull)
 		out.Body.Tracking = tracking
-		out.Body.Profiles = profilesToResponse(profiles)
+		out.Body.Profiles = make([]v2ProfileResponse, len(profiles))
+		for i, p := range profiles {
+			out.Body.Profiles[i] = profileToV2Response(p)
+		}
 		out.Body.Locations = snapshotLocations(deps, human.ID, humanFull)
 		out.Body.Summaries = snapshotSummaries(deps, human.ID)
 		out.Body.Mutes = snapshotMutes(deps, human.ID)
@@ -111,14 +115,14 @@ func RegisterV2TrackingSnapshot(api huma.API, deps *TrackingDeps) {
 
 // snapshotLocations builds the {default, named} locations payload, mirroring
 // HandleListLocations. humanFull supplies the default lat/lon.
-func snapshotLocations(deps *TrackingDeps, id string, humanFull *store.Human) locationsPayload {
-	out := locationsPayload{Named: []locationRow{}}
+func snapshotLocations(deps *TrackingDeps, id string, humanFull *store.Human) v2Locations {
+	out := v2Locations{Named: []v2LocationItem{}}
 	locs, err := deps.Humans.ListLocations(id)
 	if err != nil {
 		log.Warnf("v2 snapshot: list locations %s: %s", id, err)
 	} else {
 		for _, l := range locs {
-			out.Named = append(out.Named, locationRow{
+			out.Named = append(out.Named, v2LocationItem{
 				Label:     l.Label,
 				Latitude:  l.Latitude,
 				Longitude: l.Longitude,
@@ -126,7 +130,7 @@ func snapshotLocations(deps *TrackingDeps, id string, humanFull *store.Human) lo
 		}
 	}
 	if humanFull != nil && (humanFull.Latitude != 0 || humanFull.Longitude != 0) {
-		out.Default = &defaultLocation{
+		out.Default = &v2DefaultLocation{
 			Latitude:  humanFull.Latitude,
 			Longitude: humanFull.Longitude,
 		}
@@ -148,10 +152,18 @@ func snapshotMutes(deps *TrackingDeps, id string) []v2MuteItem {
 	return out
 }
 
+// v2SummarySchedule is one summary schedule in the snapshot. Its active_hours
+// uses the same typed entries (ISO weekday 1=Monday … 7=Sunday) as profile
+// schedules.
+type v2SummarySchedule struct {
+	AlertType   string              `json:"alert_type" doc:"Alert type the schedule applies to (currently quest)."`
+	ActiveHours []v2ActiveHourEntry `json:"active_hours" doc:"When the buffered summary is sent. [] when unscheduled."`
+}
+
 // snapshotSummaries returns the human's summary schedules across the known
 // summary alert types, mirroring HandleSummaryListForUser. nil store ⇒ empty.
-func snapshotSummaries(deps *TrackingDeps, id string) []summaryScheduleResponse {
-	out := []summaryScheduleResponse{}
+func snapshotSummaries(deps *TrackingDeps, id string) []v2SummarySchedule {
+	out := []v2SummarySchedule{}
 	if deps.Summaries == nil {
 		return out
 	}
@@ -164,7 +176,10 @@ func snapshotSummaries(deps *TrackingDeps, id string) []summaryScheduleResponse 
 		if s == nil {
 			continue
 		}
-		out = append(out, toSummaryResponse(s))
+		out = append(out, v2SummarySchedule{
+			AlertType:   s.AlertType,
+			ActiveHours: parseV2ActiveHours(s.ActiveHours),
+		})
 	}
 	return out
 }

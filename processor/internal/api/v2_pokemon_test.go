@@ -516,7 +516,7 @@ func TestV2Pokemon_BulkDelete_MissingUID(t *testing.T) {
 
 // --- PUT full-replace -------------------------------------------------------
 
-func TestV2Pokemon_PutFullReplace_NewUID(t *testing.T) {
+func TestV2Pokemon_PutFullReplace_KeepsUID(t *testing.T) {
 	r, ms, _, restore := newV2PokemonTestAPI(t)
 	defer restore()
 	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/pokemon", `[{"pokemon_id":25,"min_iv":90,"max_cp":1500}]`)
@@ -532,8 +532,8 @@ func TestV2Pokemon_PutFullReplace_NewUID(t *testing.T) {
 		t.Fatalf("expected 1 updated, got %d", len(updated))
 	}
 	newUID := int64(updated[0]["uid"].(float64))
-	if newUID == oldUID {
-		t.Fatalf("PUT must yield a NEW uid; got same %d", newUID)
+	if newUID != oldUID {
+		t.Fatalf("PUT must keep the rule uid: was %d, now %d", oldUID, newUID)
 	}
 	rows := ms.AllRows()
 	if len(rows) != 1 {
@@ -549,8 +549,8 @@ func TestV2Pokemon_PutFullReplace_NewUID(t *testing.T) {
 // (PUT is full-replace: null/omitted → documented default), and GETs again. The
 // returned rule object must be byte-identical after the round-trip — proving null
 // in the response ⇔ omit in the request ⇔ engine wildcard. uid lives in the path,
-// not the body, so it is stripped before the PUT and excluded from the compare
-// (PUT mints a new uid by design).
+// not the body, so it is stripped before the PUT; PUT keeps the uid, so the
+// rule must come back under the same one.
 // It returns the rule object as GET first reported it (wildcards as null), so
 // callers can additionally assert the response shape.
 func roundTripRule(t *testing.T, r http.Handler, basePath, createBody string) map[string]any {
@@ -574,6 +574,9 @@ func roundTripRule(t *testing.T, r http.Handler, basePath, createBody string) ma
 		t.Fatalf("put: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "updated")[0]["uid"].(float64))
+	if newUID != uid {
+		t.Fatalf("put changed the rule uid: %d -> %d", uid, newUID)
+	}
 
 	// GET again and compare (minus uid).
 	got2 := getOneRule(t, r, basePath, newUID)

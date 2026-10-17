@@ -40,7 +40,7 @@
         "additionalProperties": false,
         "properties": {
           "day": {
-            "description": "Day of week (0=Sunday … 6=Saturday)",
+            "description": "ISO day of week (1=Monday … 7=Sunday), as the scheduler reads it",
             "format": "int64",
             "type": "integer"
           },
@@ -708,24 +708,6 @@
         "required": [
           "id",
           "label"
-        ],
-        "type": "object"
-      },
-      "DefaultLocation": {
-        "additionalProperties": false,
-        "properties": {
-          "latitude": {
-            "format": "double",
-            "type": "number"
-          },
-          "longitude": {
-            "format": "double",
-            "type": "number"
-          }
-        },
-        "required": [
-          "latitude",
-          "longitude"
         ],
         "type": "object"
       },
@@ -1558,169 +1540,6 @@
         ],
         "type": "object"
       },
-      "HumanResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "admin_disable": {
-            "description": "Legacy int flag: 1 = administratively disabled (user cannot re-enable themselves), 0 = not.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "area": {
-            "description": "Selected geofence areas as a JSON-encoded string array, e.g. \"[\\\"downtown\\\"]\" — clients must parse the string. \"[]\" when none.",
-            "type": "string"
-          },
-          "area_restriction": {
-            "description": "Area-security allowed-area names as a JSON-encoded string array. Null when unrestricted.",
-            "type": "string"
-          },
-          "blocked_alerts": {
-            "description": "Alert types this destination has blocked, as a JSON-encoded string array (e.g. \"[\\\"raid\\\"]\"). Null when none.",
-            "type": "string"
-          },
-          "community_membership": {
-            "description": "Area-security community names as a JSON-encoded string array. \"[]\" when area security is off or the user has no communities.",
-            "type": "string"
-          },
-          "current_profile_no": {
-            "description": "Active profile number (matches profiles[].profile_no). 1 is the default profile.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "disabled_date": {
-            "description": "When the destination was disabled. Null while enabled.",
-            "type": "string"
-          },
-          "enabled": {
-            "description": "Legacy int flag: 1 = alerts enabled, 0 = stopped. (Kept numeric for legacy clients; v2 mutations use the enable/disable endpoints.)",
-            "format": "int64",
-            "type": "integer"
-          },
-          "fails": {
-            "description": "Consecutive delivery-failure count; the user is auto-disabled past the configured threshold.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "id": {
-            "description": "Destination id: Discord user/channel/webhook id or Telegram chat id.",
-            "type": "string"
-          },
-          "language": {
-            "description": "User locale code (e.g. \"de\"). Null when unset (falls back to the configured default locale).",
-            "type": "string"
-          },
-          "last_checked": {
-            "description": "When reconciliation last verified this destination. Null if never checked.",
-            "type": "string"
-          },
-          "latitude": {
-            "description": "Default location latitude. 0 when no location is set.",
-            "format": "double",
-            "type": "number"
-          },
-          "longitude": {
-            "description": "Default location longitude. 0 when no location is set.",
-            "format": "double",
-            "type": "number"
-          },
-          "name": {
-            "description": "Display name (Discord username, channel name, webhook name, ...).",
-            "type": "string"
-          },
-          "notes": {
-            "description": "Free-form operator notes.",
-            "type": "string"
-          },
-          "type": {
-            "description": "Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:channel, telegram:group.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "name",
-          "enabled",
-          "area",
-          "latitude",
-          "longitude",
-          "fails",
-          "last_checked",
-          "language",
-          "admin_disable",
-          "disabled_date",
-          "current_profile_no",
-          "community_membership",
-          "area_restriction",
-          "notes",
-          "blocked_alerts"
-        ],
-        "type": "object"
-      },
-      "LocationRow": {
-        "additionalProperties": false,
-        "properties": {
-          "label": {
-            "type": "string"
-          },
-          "latitude": {
-            "format": "double",
-            "type": "number"
-          },
-          "longitude": {
-            "format": "double",
-            "type": "number"
-          }
-        },
-        "required": [
-          "label",
-          "latitude",
-          "longitude"
-        ],
-        "type": "object"
-      },
-      "LocationsPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "default": {
-            "$ref": "#/components/schemas/DefaultLocation"
-          },
-          "named": {
-            "items": {
-              "$ref": "#/components/schemas/LocationRow"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "named"
-        ],
-        "type": "object"
-      },
-      "LocationsStruct": {
-        "additionalProperties": false,
-        "properties": {
-          "default": {
-            "$ref": "#/components/schemas/V2DefaultLocation"
-          },
-          "named": {
-            "items": {
-              "$ref": "#/components/schemas/V2LocationItem"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "named"
-        ],
-        "type": "object"
-      },
       "OverviewMapInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -2047,58 +1866,6 @@
           "staticKey",
           "status",
           "version"
-        ],
-        "type": "object"
-      },
-      "ProfileResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "active_hours": {
-            "description": "Auto-switch schedule as a raw JSON string (legacy encoding; the typed shape is the v2 profiles endpoint's active_hours array). \"[]\" or \"\" when unscheduled.",
-            "type": "string"
-          },
-          "area": {
-            "description": "Profile geofence-area override as a JSON-encoded string array — clients must parse the string. \"[]\" when the profile has no area override.",
-            "type": "string"
-          },
-          "id": {
-            "description": "Owning destination id (humans.id).",
-            "type": "string"
-          },
-          "latitude": {
-            "description": "Profile location-override latitude. 0 when the profile has no location override.",
-            "format": "double",
-            "type": "number"
-          },
-          "longitude": {
-            "description": "Profile location-override longitude. 0 when the profile has no location override.",
-            "format": "double",
-            "type": "number"
-          },
-          "name": {
-            "description": "Profile display name.",
-            "type": "string"
-          },
-          "profile_no": {
-            "description": "Profile number within the user (1 = default profile).",
-            "format": "int64",
-            "type": "integer"
-          },
-          "uid": {
-            "description": "Database row id of the profile.",
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "uid",
-          "id",
-          "profile_no",
-          "name",
-          "area",
-          "latitude",
-          "longitude",
-          "active_hours"
         ],
         "type": "object"
       },
@@ -2762,12 +2529,12 @@
             "description": "Unique saved-location label",
             "type": "string"
           },
-          "lat": {
+          "latitude": {
             "description": "Latitude",
             "format": "double",
             "type": "number"
           },
-          "lon": {
+          "longitude": {
             "description": "Longitude",
             "format": "double",
             "type": "number"
@@ -2775,8 +2542,8 @@
         },
         "required": [
           "label",
-          "lat",
-          "lon"
+          "latitude",
+          "longitude"
         ],
         "type": "object"
       },
@@ -2923,8 +2690,14 @@
             "type": "boolean"
           },
           "area": {
-            "description": "JSON-array string of initial area names (default empty)",
-            "type": "string"
+            "description": "Initial selected area names (default none)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "community": {
             "description": "Community membership names (drives area restriction)",
@@ -10006,11 +9779,132 @@
         ],
         "type": "object"
       },
+      "V2Human": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_disable": {
+            "description": "Whether an admin has disabled this destination; a disabled user cannot re-enable themselves.",
+            "type": "boolean"
+          },
+          "area": {
+            "description": "Selected geofence area names. [] when none.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "area_restriction": {
+            "description": "Area-security allowed area names. null = unrestricted; [] = no areas allowed.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "blocked_alerts": {
+            "description": "Alert types this destination has blocked (read-only; derived from command_security). [] when none.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "community_membership": {
+            "description": "Area-security community names. [] when area security is off or the destination has no communities.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "current_profile_no": {
+            "description": "Active profile number. 1 is the default profile.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "disabled_date": {
+            "description": "When the destination was disabled. Null while enabled.",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether alerts are switched on (the !start/!stop flag).",
+            "type": "boolean"
+          },
+          "fails": {
+            "description": "Consecutive delivery-failure count; the destination is auto-disabled past the configured threshold.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "description": "Destination id: Discord user/channel/webhook id or Telegram chat id.",
+            "type": "string"
+          },
+          "language": {
+            "description": "Locale code (e.g. \"de\"). Empty when unset — the configured default locale applies.",
+            "type": "string"
+          },
+          "last_checked": {
+            "description": "When reconciliation last verified this destination. Null if never checked.",
+            "type": "string"
+          },
+          "latitude": {
+            "description": "Default location latitude. 0 when no location is set.",
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Default location longitude. 0 when no location is set.",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "Display name (Discord username, channel name, webhook name, ...).",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Free-form operator notes.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Destination type, e.g. discord:user, discord:channel, discord:thread, webhook, telegram:user, telegram:channel, telegram:group.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "enabled",
+          "admin_disable",
+          "area",
+          "latitude",
+          "longitude",
+          "language",
+          "current_profile_no",
+          "community_membership",
+          "area_restriction",
+          "blocked_alerts",
+          "fails",
+          "last_checked",
+          "disabled_date",
+          "notes"
+        ],
+        "type": "object"
+      },
       "V2HumanResourceBody": {
         "additionalProperties": false,
         "properties": {
           "human": {
-            "$ref": "#/components/schemas/HumanResponse"
+            "$ref": "#/components/schemas/V2Human"
           }
         },
         "required": [
@@ -11999,20 +11893,20 @@
       "V2LocationBody": {
         "additionalProperties": false,
         "properties": {
-          "lat": {
+          "latitude": {
             "description": "Latitude",
             "format": "double",
             "type": "number"
           },
-          "lon": {
+          "longitude": {
             "description": "Longitude",
             "format": "double",
             "type": "number"
           }
         },
         "required": [
-          "lat",
-          "lon"
+          "latitude",
+          "longitude"
         ],
         "type": "object"
       },
@@ -12053,11 +11947,34 @@
         ],
         "type": "object"
       },
+      "V2Locations": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "$ref": "#/components/schemas/V2DefaultLocation",
+            "description": "The human's default location; omitted when none is set."
+          },
+          "named": {
+            "description": "Saved named locations. [] when none.",
+            "items": {
+              "$ref": "#/components/schemas/V2LocationItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "named"
+        ],
+        "type": "object"
+      },
       "V2LocationsOutputBody": {
         "additionalProperties": false,
         "properties": {
           "locations": {
-            "$ref": "#/components/schemas/LocationsStruct"
+            "$ref": "#/components/schemas/V2Locations"
           }
         },
         "required": [
@@ -12826,8 +12743,14 @@
             ]
           },
           "area": {
-            "description": "Profile geofence-area override as a JSON-encoded string array (legacy encoding retained on this field) — \"[]\" when the profile has no area override.",
-            "type": "string"
+            "description": "Profile geofence-area override. [] when the profile has no area override.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "id": {
             "description": "Owning human id.",
@@ -13253,10 +13176,10 @@
         "additionalProperties": false,
         "properties": {
           "human": {
-            "$ref": "#/components/schemas/HumanResponse"
+            "$ref": "#/components/schemas/V2Human"
           },
           "locations": {
-            "$ref": "#/components/schemas/LocationsPayload"
+            "$ref": "#/components/schemas/V2Locations"
           },
           "mutes": {
             "description": "Active (non-expired) alert mutes — same items as GET …/mutes. Mutes are held in memory only and are cleared by a processor restart.",
@@ -13270,7 +13193,7 @@
           },
           "profiles": {
             "items": {
-              "$ref": "#/components/schemas/ProfileResponse"
+              "$ref": "#/components/schemas/V2ProfileResponse"
             },
             "type": [
               "array",
@@ -13279,7 +13202,7 @@
           },
           "summaries": {
             "items": {
-              "$ref": "#/components/schemas/SummaryScheduleResponse"
+              "$ref": "#/components/schemas/V2SummarySchedule"
             },
             "type": [
               "array",
@@ -13307,6 +13230,30 @@
         ],
         "type": "object"
       },
+      "V2SummarySchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "active_hours": {
+            "description": "When the buffered summary is sent. [] when unscheduled.",
+            "items": {
+              "$ref": "#/components/schemas/V2ActiveHourEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "alert_type": {
+            "description": "Alert type the schedule applies to (currently quest).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alert_type",
+          "active_hours"
+        ],
+        "type": "object"
+      },
       "V2SwitchProfileBody": {
         "additionalProperties": false,
         "properties": {
@@ -13324,20 +13271,20 @@
       "V2UpdateLocationBody": {
         "additionalProperties": false,
         "properties": {
-          "lat": {
+          "latitude": {
             "description": "New latitude",
             "format": "double",
             "type": "number"
           },
-          "lon": {
+          "longitude": {
             "description": "New longitude",
             "format": "double",
             "type": "number"
           }
         },
         "required": [
-          "lat",
-          "lon"
+          "latitude",
+          "longitude"
         ],
         "type": "object"
       },
@@ -16607,7 +16554,7 @@
             "description": "Latitude to check",
             "explode": false,
             "in": "query",
-            "name": "lat",
+            "name": "latitude",
             "required": true,
             "schema": {
               "description": "Latitude to check",
@@ -16619,7 +16566,7 @@
             "description": "Longitude to check",
             "explode": false,
             "in": "query",
-            "name": "lon",
+            "name": "longitude",
             "required": true,
             "schema": {
               "description": "Longitude to check",
@@ -16879,7 +16826,7 @@
         ]
       },
       "post": {
-        "description": "lat/lon are taken from the BODY (v1 took them from the path). When area_security is enabled and the human has an area restriction, the location must fall inside an allowed fence (403 otherwise). Triggers a state reload. 404 if the human does not exist.",
+        "description": "latitude/longitude are taken from the BODY (v1 took them from the path). When area_security is enabled and the human has an area restriction, the location must fall inside an allowed fence (403 otherwise). Triggers a state reload. 404 if the human does not exist.",
         "operationId": "v2-set-human-location",
         "parameters": [
           {
@@ -16950,7 +16897,7 @@
     },
     "/v2/humans/{id}/locations": {
       "get": {
-        "description": "Returns every named saved location plus the human's default (humans-table) lat/lon when set.",
+        "description": "Returns every named saved location plus the human's default (humans-table) latitude/longitude when set.",
         "operationId": "v2-list-human-locations",
         "parameters": [
           {
@@ -17170,7 +17117,7 @@
         ]
       },
       "put": {
-        "description": "Overwrites the lat/lon of an existing saved location (matched case-insensitively by label). 404 if the label does not exist. Triggers a state reload. This capability is new in v2 (v1 had add/delete only).",
+        "description": "Overwrites the latitude/longitude of an existing saved location (matched case-insensitively by label). 404 if the label does not exist. Triggers a state reload. This capability is new in v2 (v1 had add/delete only).",
         "operationId": "v2-update-human-location",
         "parameters": [
           {
@@ -18486,7 +18433,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-egg",
         "parameters": [
           {
@@ -19054,7 +19001,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-fort",
         "parameters": [
           {
@@ -19622,7 +19569,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-gym",
         "parameters": [
           {
@@ -20190,7 +20137,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-incident",
         "parameters": [
           {
@@ -20758,7 +20705,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-invasion",
         "parameters": [
           {
@@ -21326,7 +21273,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-lure",
         "parameters": [
           {
@@ -21894,7 +21841,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-maxbattle",
         "parameters": [
           {
@@ -22462,7 +22409,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-nest",
         "parameters": [
           {
@@ -23030,7 +22977,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-pokemon",
         "parameters": [
           {
@@ -23598,7 +23545,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-quest",
         "parameters": [
           {
@@ -24166,7 +24113,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-raid",
         "parameters": [
           {

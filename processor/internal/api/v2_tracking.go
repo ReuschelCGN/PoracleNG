@@ -289,12 +289,12 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		return out, nil
 	})
 
-	// PUT full-replace → {updated:[<new uid>]}
+	// PUT full-replace → {updated:[<same uid>]}
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-put-" + typ.Name, Method: "PUT", Path: base + "/{uid}",
 		Summary: "Full-replace one " + typ.Name + " tracking rule",
 		Description: "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. " +
-			"The engine is delete+insert, so the replacement rule receives a NEW uid (returned in {updated}). " +
+			"The rule keeps its uid (returned in {updated}). " +
 			"Scoped by (human, uid); 404 if the uid is not owned by this human.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2PutInput[Req]) (*v2CreateOutput[Req], error) {
@@ -488,15 +488,27 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 		}
 	}
 
-	// Full replace = delete the old uid, insert the fully-specified body (new uid).
-	if err := typ.Store(deps).DeleteByUID(human.ID, in.UID); err != nil {
+	// Full replace = delete the old row and insert the fully-specified body,
+	// then move the new row back onto the old uid so the rule keeps its id
+	// (mutes, `id:N` commands and clients all hold on to it).
+	st := typ.Store(deps)
+	if err := st.DeleteByUID(human.ID, in.UID); err != nil {
 		log.Errorf("v2 tracking %s put delete: %s", typ.Name, err)
 		return nil, huma.Error500InternalServerError("database error")
 	}
-	newUID, err := typ.Store(deps).Insert(&row)
+	newUID, err := st.Insert(&row)
 	if err != nil {
 		log.Errorf("v2 tracking %s put insert: %s", typ.Name, err)
 		return nil, huma.Error500InternalServerError("database error")
+	}
+	if r, ok := st.(store.UIDReassigner); ok {
+		if err := r.ReassignUID(human.ID, newUID, in.UID); err != nil {
+			// The replacement is stored under newUID; report that rather
+			// than fail the request.
+			log.Errorf("v2 tracking %s put keep uid %d: %s", typ.Name, in.UID, err)
+		} else {
+			newUID = in.UID
+		}
 	}
 	typ.SetUID(&row, newUID)
 
