@@ -347,6 +347,8 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 - `GET /openapi.json` — OpenAPI 3.1 spec
 - `GET /docs` — interactive API docs
 
+`/debug/pprof` is not mounted unless `[processor] enable_pprof = true`, and then sits behind the same `api_secret` (`cmd/processor/pprof.go`).
+
 **huma surface (`/api/*` reads + features, and `/api/v2/*`)**: The `/api/*` read/reload/feature endpoints listed below and the entire `/api/v2/*` surface are served by [huma](https://github.com/danielgtaylor/huma) (mounted on gin via humagin, one instance), and appear in the OpenAPI 3.1 spec at `/openapi.json` / `/docs`. Error bodies on this surface are RFC 9457 `application/problem+json` (`status`, `title`, `detail`, `errors[]`) — replacing the old `{status:"error",message}` / `gin.H{"error":...}` bodies (status codes unchanged; a few manual-400s became validation-422s). `/health`, `/metrics`, pprof, and the webhook receiver `POST /` stay on plain gin by design.
 
 ## Command System
