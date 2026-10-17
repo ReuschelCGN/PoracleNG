@@ -680,7 +680,7 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		roles := fetchRoles()
 		ctx.UserRoles = roles
 		ctx.Permissions.ChannelTracking = bot.CalculateChannelPermissions(
-			b.Cfg, m.Author.ID, roles, channelID, guildID, "")
+			b.Cfg, m.Author.ID, roles, channelID, guildID, channelAncestors(s, channelID)...)
 		ctx.Permissions.UserTracking = bot.CanTrackUsers(b.Cfg, "discord", m.Author.ID, roles)
 
 		// Set language hint from available_languages (e.g. !dasporacle → "de")

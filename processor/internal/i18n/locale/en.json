@@ -640,6 +640,8 @@
   "msg.enable.specify": "Please specify user IDs",
   "msg.enable.success": "Enabled: {0}",
   "msg.disable.success": "Disabled: {0}",
+  "msg.user.not_registered": "Not registered: {0}",
+  "msg.move.unknown": "Unknown move: {0}",
   "msg.no_permission": "You do not have permission to execute this command",
   "msg.no_permission.pokemon": "You do not have permission to track monsters",
   "msg.no_permission.gym": "You do not have permission to track gyms",

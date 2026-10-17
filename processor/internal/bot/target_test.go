@@ -174,3 +174,31 @@ func TestBuildTarget_NonAdminInUnregisteredChannelRejected(t *testing.T) {
 		t.Errorf("error should mention unregistered; got %q", err.Error())
 	}
 }
+
+// A `user` override must be followed by a numeric ID, as in PoracleJS
+// (`user:?(-?\d{1,20})`). Any token starting with "user" used to be taken
+// as an override, swallowing words like an area named "Userton" (#282).
+func TestBuildTarget_UserPrefixRequiresDigits(t *testing.T) {
+	ctx := newTargetCtx(t, true, true)
+	ctx.Humans.(*store.MockHumanStore).AddHuman(&store.Human{
+		ID: "123456", Type: TypeDiscordUser, Name: "Bob", Enabled: true,
+	})
+
+	target, remaining, err := BuildTarget(ctx, []string{"userton", "usernames"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target.ID != "user1" || strings.Join(remaining, " ") != "userton usernames" {
+		t.Errorf("target=%s remaining=%v, want sender and both words kept", target.ID, remaining)
+	}
+
+	for _, arg := range []string{"user:123456", "user123456"} {
+		target, remaining, err = BuildTarget(ctx, []string{arg, "pikachu"})
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", arg, err)
+		}
+		if target.ID != "123456" || strings.Join(remaining, " ") != "pikachu" {
+			t.Errorf("%s: target=%s remaining=%v, want 123456 / [pikachu]", arg, target.ID, remaining)
+		}
+	}
+}

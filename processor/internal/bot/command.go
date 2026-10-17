@@ -312,6 +312,9 @@ type CommandContext struct {
 	// Permissions (resolved before command runs)
 	IsAdmin          bool
 	IsCommunityAdmin bool
+	// CommunityAdminOf lists the communities a Telegram community admin
+	// administers (lowercase); !userlist limits its output to them.
+	CommunityAdminOf []string
 	IsRegistered     bool
 	Permissions      Permissions
 

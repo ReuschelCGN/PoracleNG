@@ -3,6 +3,7 @@ package bot
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/pokemon/poracleng/processor/internal/i18n"
@@ -56,6 +57,8 @@ type Target struct {
 	ExecutionMessage string // shown to user when target is overridden (admin feature)
 }
 
+var userIDOverrideRe = regexp.MustCompile(`^:?-?\d{1,20}$`)
+
 // BuildTarget resolves who a command operates on from the args.
 // Admin users can override the target using name<webhookName> or user<userID>.
 // Non-admin commands target the sender.
@@ -74,12 +77,11 @@ func BuildTarget(ctx *CommandContext, args []string) (*Target, []string, error) 
 			nameOverride = arg[4:]
 			continue
 		}
-		if strings.HasPrefix(arg, "user:") && len(arg) > 5 {
-			userOverride = arg[5:]
-			continue
-		}
-		if strings.HasPrefix(arg, "user") && len(arg) > 4 {
-			userOverride = arg[4:]
+		// user<ID> / user:<ID> — the ID must be numeric (Telegram group IDs
+		// are negative), as in PoracleJS, so ordinary words that start with
+		// "user" aren't taken as a target override.
+		if id, ok := strings.CutPrefix(arg, "user"); ok && userIDOverrideRe.MatchString(id) {
+			userOverride = strings.TrimPrefix(id, ":")
 			continue
 		}
 		remaining = append(remaining, arg)

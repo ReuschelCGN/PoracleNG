@@ -292,3 +292,26 @@ func TestRaid_Costume(t *testing.T) {
 		t.Fatalf("bare !raid genesect should store Costume=9000, got %+v", rows2)
 	}
 }
+
+// Arguments that are parsed but would have no effect must be rejected, not
+// silently dropped (#277): an unknown move used to become "any move", and
+// gen/type filters were accepted by !raid and ignored.
+func TestRaid_RejectsArgsWithNoEffect(t *testing.T) {
+	ctx := raidCtx(t)
+	ctx.GameData.Moves[85] = &gamedata.Move{}
+	ctx.Translations.AddTranslator(i18n.NewTranslator("en", map[string]string{"move_85": "Thunderbolt"}))
+
+	for _, input := range []string{"level5 move:thundrbolt", "level5 gen3"} {
+		replies := runRaid(t, ctx, input)
+		require.NotEmpty(t, replies)
+		assert.Equal(t, "🙅", replies[0].React, "%s: reply %s", input, replies[0].Text)
+	}
+	rows, _ := ctx.Tracking.Raids.SelectByIDProfile("user1", 1)
+	assert.Empty(t, rows)
+
+	replies := runRaid(t, ctx, "level5 move:thunderbolt")
+	assert.Equal(t, "✅", replies[0].React, "known move: %s", replies[0].Text)
+	rows, _ = ctx.Tracking.Raids.SelectByIDProfile("user1", 1)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 85, rows[0].Move)
+}

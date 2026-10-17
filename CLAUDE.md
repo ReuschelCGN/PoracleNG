@@ -404,15 +404,15 @@ These rules govern who can execute commands, what they target, and where they ca
 | Level | Who | Can do |
 |-------|-----|--------|
 | **Admin** | Users in `discord.admins` / `telegram.admins` | All commands, target override (`user:`, `name:`), manage channels/webhooks, enable/disable users, broadcast, apply |
-| **Delegated channel admin** | Users/roles in `delegated_administration.channel_tracking` | Manage tracking for specific channels (without full admin) |
+| **Delegated channel admin** | Discord: users/roles in `delegated_administration.channel_tracking`, keyed by channel, guild or category (a thread also matches its parent channel). Telegram: users in `[[telegram.delegated_admins]]`, keyed by chat ID | Manage tracking for specific channels (without full admin) |
 | **Delegated webhook admin** | Users in `delegated_administration.webhook_tracking` | Manage specific webhooks by name |
-| **Community admin (Telegram)** | Users in `area_security.communities.*.telegram.admins` | Manage community channels via `/channel add` |
+| **Community admin (Telegram)** | Users in `area_security.communities.*.telegram.admins` | Manage community channels via `/channel add`; manage tracking in groups belonging to their communities; `/userlist` limited to their communities |
 | **Regular user** | Registered via `!poracle` | Track/untrack, area, location, profile, language, start/stop, script, help, info, ask |
 | **Unregistered user** | Not in humans table | Can only run `!poracle` (registration) and `!version` |
 
 #### Command security (`command_security` config)
 
-Maps Discord role IDs to allowed command sets. Users without the required role for a command get 🙅. Checked via `CommandAllowed()` after registration check, before BuildTarget.
+Maps Discord role IDs to allowed command sets. Users without the required role for a command get 🙅. Admins always pass. Checked via `CommandAllowed()` (text, slash and `/api/command` alike) after registration check, before BuildTarget.
 
 #### Area security (`area_security.enabled`)
 

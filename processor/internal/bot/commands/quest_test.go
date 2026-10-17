@@ -531,3 +531,52 @@ func TestQuest_AcceptsAreaOverride(t *testing.T) {
 	require.Len(t, rules, 1)
 	assert.Len(t, rules[0].OverrideAreas, 1, "override not stored: %+v", rules[0])
 }
+
+func questRewardTypes(t *testing.T, ctx *bot.CommandContext) map[int][]int {
+	t.Helper()
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	out := map[int][]int{}
+	for _, r := range rows {
+		out[r.RewardType] = append(out[r.RewardType], r.Reward)
+	}
+	return out
+}
+
+// Every reward named in one command becomes a rule, as in PoracleJS. The
+// branches used to be an if/else-if chain, so `!quest stardust 25` kept
+// only the stardust rule and dropped pikachu without a word (#277).
+func TestQuest_MultipleRewards(t *testing.T) {
+	ctx := questCtx(t)
+	replies := runQuest(t, ctx, "stardust 25 pokecoins")
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+
+	got := questRewardTypes(t, ctx)
+	assert.Equal(t, []int{0}, got[3], "stardust rule")
+	assert.Equal(t, []int{25}, got[7], "pikachu rule")
+	assert.Equal(t, []int{0}, got[8], "pokecoin rule")
+}
+
+// A bare energy/candy keyword takes the named pokemon as its target; that
+// pokemon must not also become a pokemon reward.
+func TestQuest_BareEnergyAndCandyConsumePokemon(t *testing.T) {
+	ctx := questCtx(t)
+	runQuest(t, ctx, "energy candy 25")
+	got := questRewardTypes(t, ctx)
+	assert.Equal(t, []int{25}, got[12], "energy pikachu")
+	assert.Equal(t, []int{25}, got[4], "candy pikachu")
+	assert.Empty(t, got[7], "no plain pikachu reward")
+}
+
+// amount:N still errors when pokemon is the only reward, but applies to
+// the other rewards when there are some.
+func TestQuest_AmountWithPokemonAndStardust(t *testing.T) {
+	ctx := questCtx(t)
+	replies := runQuest(t, ctx, "25 amount:5")
+	assert.Equal(t, "🙅", replies[0].React, "pokemon-only with amount")
+
+	runQuest(t, ctx, "25 stardust amount:500")
+	got := questRewardTypes(t, ctx)
+	assert.Equal(t, []int{500}, got[3], "stardust min 500")
+	assert.Equal(t, []int{25}, got[7], "pikachu rule")
+}

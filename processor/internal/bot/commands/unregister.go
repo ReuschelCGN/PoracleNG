@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"strings"
-
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
@@ -50,8 +48,12 @@ func (c *UnregisterCommand) Run(ctx *bot.CommandContext, args []string) []bot.Re
 		targets = []string{ctx.TargetID}
 	}
 
-	var unregistered []string
+	var unregistered, unknown []string
 	for _, id := range targets {
+		if !humanRegistered(ctx, id) {
+			unknown = append(unknown, id)
+			continue
+		}
 		if err := ctx.Humans.Delete(id); err != nil {
 			log.Errorf("unregister: delete %s: %v", id, err)
 			continue
@@ -60,16 +62,17 @@ func (c *UnregisterCommand) Run(ctx *bot.CommandContext, args []string) []bot.Re
 		unregistered = append(unregistered, id)
 	}
 
-	if len(unregistered) == 0 {
-		return []bot.Reply{{React: "👌"}}
+	if len(unregistered) > 0 {
+		ctx.TriggerReload()
 	}
 
-	ctx.TriggerReload()
-
 	if !ctx.IsAdmin {
+		if len(unregistered) == 0 {
+			return []bot.Reply{{React: "👌"}}
+		}
 		// Self-unregister: friendly goodbye
 		return []bot.Reply{{React: "✅", Text: tr.T("msg.unregister.goodbye")}}
 	}
 	// Admin unregistering others: show IDs
-	return []bot.Reply{{React: "✅", Text: tr.Tf("msg.unregister.success", strings.Join(unregistered, ", "))}}
+	return adminTargetsReply(tr, "msg.unregister.success", unregistered, unknown)
 }
