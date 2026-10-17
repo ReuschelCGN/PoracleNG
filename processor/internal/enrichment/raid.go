@@ -176,6 +176,14 @@ func (e *Enricher) Raid(raid *webhook.RaidWebhook, firstNotification bool, tileM
 				m["boostingWeatherIds"] = boostingWeathers
 				m["boostingWeatherEmojiKeys"] = gd.GetWeatherEmojiKeys(boostingWeathers)
 
+				// Weather change forecast: the boss is boosted now only if the
+				// cell's weather boosts one of its types.
+				boostWeather := 0
+				if cellWeather, _ := m["gameWeatherId"].(int); gd.IsBoostedByWeather(monster.Types, cellWeather) {
+					boostWeather = cellWeather
+				}
+				e.addWeatherChangeForecast(m, monster.Types, boostWeather, raid.End, raid.Latitude, raid.Longitude)
+
 				// Evolution chain
 				m["hasEvolutions"] = len(monster.Evolutions) > 0
 				m["hasMegaEvolutions"] = len(monster.TempEvolutions) > 0

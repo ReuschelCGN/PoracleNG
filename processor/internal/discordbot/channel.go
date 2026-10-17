@@ -74,6 +74,14 @@ func (b *Bot) handleChannel(s *discordgo.Session, m *discordgo.MessageCreate, ar
 // spaces restored to underscores (the parser converts unquoted underscores to
 // spaces) — is stored as that fence's lowercased name; an unknown area is kept
 // as typed.
+//
+// The webhook name is deliberately stored as it arrives, so `name:my_hook`
+// is stored as "my hook" (unlike areas, there is no canonical list to map
+// back to). This is intentional and consistent: every later reference goes
+// through the same parser — `name:my_hook` overrides in BuildTarget,
+// `!channel remove name:my_hook`, `!enable`/`!disable` — and so also looks
+// up "my hook". Keeping the underscore here would make the stored name
+// unreachable from commands.
 func parseChannelArgs(args []string, fences []geofence.Fence) (webhookName, areaName, language string) {
 	for _, arg := range args {
 		if match := nameRe.FindStringSubmatch(arg); match != nil {

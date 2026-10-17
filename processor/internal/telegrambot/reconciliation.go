@@ -389,13 +389,8 @@ func (r *TelegramReconciliation) sendGreetings(id string) {
 		return
 	}
 
-	tmpl := r.dtsStore.Get("greeting", "telegram", "", "")
-	if tmpl == nil {
-		tmpl = r.dtsStore.Get("greeting", "telegram", "1", "")
-	}
-	if tmpl == nil {
-		tmpl = r.dtsStore.Get("greeting", "telegram", "default", "")
-	}
+	// Select in [general] locale — the same language the greeting renders in.
+	tmpl := r.dtsStore.Greeting("telegram", r.cfg.General.Locale)
 	if tmpl == nil {
 		r.log.Debug("No greeting template found")
 		return

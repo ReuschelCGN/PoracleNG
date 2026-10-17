@@ -340,6 +340,29 @@ func TestListProfiles(t *testing.T) {
 	}
 }
 
+// /profile copyto rejects the current profile as a target, so the copyto
+// autocomplete must not offer it (#315).
+func TestListProfiles_CopytoOmitsCurrentProfile(t *testing.T) {
+	deps, humans, _, _ := testDeps(t)
+	humans.AddHuman(&store.Human{ID: "discord:user:42", CurrentProfileNo: 1})
+	humans.SeedProfile(store.Profile{ID: "discord:user:42", ProfileNo: 1, Name: "default"})
+	humans.SeedProfile(store.Profile{ID: "discord:user:42", ProfileNo: 2, Name: "work"})
+
+	out, err := ListProfiles(context.Background(), deps, "discord:user:42", autocomplete.UserStateHint{Subtype: "copyto"})
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	if len(out) != 1 || out[0].Value != "2" {
+		t.Errorf("copyto choices = %v, want only profile 2", out)
+	}
+
+	// Other sub-commands (e.g. /profile set name) still list every profile.
+	out, _ = ListProfiles(context.Background(), deps, "discord:user:42", autocomplete.UserStateHint{})
+	if len(out) != 2 {
+		t.Errorf("non-copyto choices = %v, want both profiles", out)
+	}
+}
+
 // itoa avoids pulling strconv into the test for a tiny helper.
 func itoa(n int64) string {
 	if n == 0 {

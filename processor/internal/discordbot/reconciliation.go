@@ -505,13 +505,8 @@ func (r *Reconciliation) SendGreetings(id string) {
 		"prefix": prefix,
 	}
 
-	tmpl := r.dtsStore.Get("greeting", platform, "", "")
-	if tmpl == nil {
-		tmpl = r.dtsStore.Get("greeting", platform, "1", "")
-	}
-	if tmpl == nil {
-		tmpl = r.dtsStore.Get("greeting", platform, "default", "")
-	}
+	// Select in [general] locale — the same language the greeting renders in.
+	tmpl := r.dtsStore.Greeting(platform, r.cfg.General.Locale)
 	if tmpl == nil {
 		r.log.Debug("No greeting template found")
 		return

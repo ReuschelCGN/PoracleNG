@@ -1449,3 +1449,15 @@ func resolveIncludes(s string, configDir string) string {
 		s = s[:idx] + string(data) + s[end:]
 	}
 }
+
+// Greeting returns the greeting template for platform in language, trying
+// the default template id ("") and then the conventional ids "1" and
+// "default". Returns nil when none is installed.
+func (ts *TemplateStore) Greeting(platform, language string) *raymond.Template {
+	for _, id := range []string{"", "1", "default"} {
+		if tmpl := ts.Get("greeting", platform, id, language); tmpl != nil {
+			return tmpl
+		}
+	}
+	return nil
+}

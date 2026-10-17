@@ -244,6 +244,9 @@ var raidFields = []FieldDef{
 	{Name: "boostWeatherEmoji", Type: "string", Description: "Boost weather emoji", Category: "weather"},
 	{Name: "boostWeatherName", Type: "string", Description: "Translated boost weather", Category: "weather"},
 	{Name: "boostingWeathersEmoji", Type: "string", Description: "Concatenated emoji string for every weather that boosts the raid boss's types", Category: "weather"},
+	{Name: "weatherChange", Type: "string", Description: "Weather forecast text — set only when the next-hour forecast may change the boss's boost before the raid ends", Category: "weather"},
+	{Name: "weatherCurrentName", Type: "string", Description: "Current weather name (with weatherChange)", Category: "weather"},
+	{Name: "weatherNextName", Type: "string", Description: "Next hour weather name (with weatherChange)", Category: "weather"},
 	// Other
 	{Name: "shinyPossible", Type: "bool", Description: "Can be shiny", Category: "other"},
 	{Name: "evolutions", Type: "array", Description: "Evolution entries", Category: "other"},

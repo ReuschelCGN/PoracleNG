@@ -241,57 +241,16 @@ func (e *Enricher) enrichPokemonGameData(m map[string]any, pokemon *webhook.Poke
 	if weather == 0 {
 		weather = pokemon.Weather
 	}
-	m["boostingWeatherIds"] = gd.GetBoostingWeathers(monster.Types)
+	boostingWeathers := gd.GetBoostingWeathers(monster.Types)
+	m["boostingWeatherIds"] = boostingWeathers
+	m["boostingWeatherEmojiKeys"] = gd.GetWeatherEmojiKeys(boostingWeathers)
 	m["alteringWeathers"] = gd.GetAlteringWeathers(monster.Types, weather)
 
 	// Weakness calculation
 	m["weaknessList"] = gamedata.CalculateWeaknesses(monster.Types, gd.Types)
 
 	// Weather forecast impact
-	if pokemon.DisappearTime > 0 {
-		nextHourTS, _ := m["nextHourTimestamp"].(int64)
-		if nextHourTS > 0 && pokemon.DisappearTime > nextHourTS {
-			forecastCurrent, _ := m["weatherForecastCurrent"].(int)
-			forecastNext, _ := m["weatherForecastNext"].(int)
-			weather := pokemon.BoostedWeather
-			if weather == 0 {
-				weather = pokemon.Weather
-			}
-
-			if forecastNext > 0 {
-				pokemonShouldBeBoosted := forecastCurrent > 0 && gd.IsBoostedByWeather(monster.Types, forecastCurrent)
-
-				boostMayChange := (weather > 0 && forecastNext != weather) ||
-					(forecastCurrent > 0 && forecastNext != forecastCurrent) ||
-					(pokemonShouldBeBoosted && weather == 0)
-
-				if boostMayChange {
-					pokemonWillBeBoosted := gd.IsBoostedByWeather(monster.Types, forecastNext)
-
-					if (weather > 0 && !pokemonWillBeBoosted) || (weather == 0 && pokemonWillBeBoosted) {
-						if pokemonShouldBeBoosted && weather == 0 {
-							m["weatherCurrent"] = 0
-						} else if weather > 0 {
-							m["weatherCurrent"] = weather
-						} else {
-							m["weatherCurrent"] = forecastCurrent
-						}
-						m["weatherNext"] = forecastNext
-						// Format weatherChangeTime only when change matters (matching JS)
-						// Strip seconds — JS uses .slice(0, -3) to remove ":SS"
-						if ts, ok := m["weatherChangeTS"].(int64); ok {
-							tz := geo.GetTimezone(pokemon.Latitude, pokemon.Longitude)
-							formatted := geo.FormatTime(ts, tz, e.TimeLayout)
-							if len(formatted) >= 3 {
-								formatted = formatted[:len(formatted)-3]
-							}
-							m["weatherChangeTime"] = formatted
-						}
-					}
-				}
-			}
-		}
-	}
+	e.addWeatherChangeForecast(m, monster.Types, weather, pokemon.DisappearTime, pokemon.Latitude, pokemon.Longitude)
 
 	// Map URLs
 	e.addMapURLs(m, pokemon.Latitude, pokemon.Longitude, "pokemon", pokemon.EncounterID)

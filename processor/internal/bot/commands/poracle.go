@@ -205,13 +205,7 @@ func (c *PoracleCommand) renderGreeting(ctx *bot.CommandContext) *bot.Reply {
 	}
 
 	// Look up the greeting template
-	tmpl := ctx.DTS.Get("greeting", platform, "", ctx.Language)
-	if tmpl == nil {
-		tmpl = ctx.DTS.Get("greeting", platform, "1", ctx.Language)
-	}
-	if tmpl == nil {
-		tmpl = ctx.DTS.Get("greeting", platform, "default", ctx.Language)
-	}
+	tmpl := ctx.DTS.Greeting(platform, ctx.Language)
 	if tmpl == nil {
 		return nil
 	}

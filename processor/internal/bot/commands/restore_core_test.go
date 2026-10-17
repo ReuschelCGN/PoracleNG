@@ -173,9 +173,34 @@ func TestRestore_RollsBackOnInsertFailure(t *testing.T) {
 }
 
 func TestBackupTablesCoverEveryTrackingTable(t *testing.T) {
-	for _, tbl := range []string{"monsters", "raid", "egg", "quest", "invasion", "weather", "lures", "gym", "nests", "maxbattle", "forts"} {
+	for _, tbl := range []string{"monsters", "raid", "egg", "quest", "invasion", "lures", "gym", "nests", "maxbattle", "forts"} {
 		if !slices.Contains(backupTables, tbl) {
 			t.Errorf("backupTables missing %s", tbl)
+		}
+	}
+	// !weather was removed; nothing can create weather rules (#315).
+	if slices.Contains(backupTables, "weather") {
+		t.Error("backupTables should no longer include weather")
+	}
+}
+
+// Backups written before weather was dropped carry a "weather" key; restore
+// must accept them, ignoring that key, and never touch the weather table.
+func TestRestore_IgnoresLegacyWeatherKey(t *testing.T) {
+	db := newFakeRestoreDB()
+	backup := map[string][]map[string]any{
+		"monsters": {{"pokemon_id": 25}},
+		"weather":  {{"condition": 3, "cell": "123"}},
+	}
+	if err := restoreBackup(db, backup, "u1", 1); err != nil {
+		t.Fatalf("restore with legacy weather key: %v", err)
+	}
+	if !db.committed {
+		t.Fatal("want commit")
+	}
+	for _, q := range db.execs {
+		if strings.Contains(q, "`weather`") {
+			t.Errorf("weather table must not be touched: %s", q)
 		}
 	}
 }

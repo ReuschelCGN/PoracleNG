@@ -1032,3 +1032,21 @@ func TestLayeredView_MaxbattleIDIsPokemon(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "fort-1", v)
 }
+
+// #314: raid enrichment now produces weatherNext/weatherChangeTime, so the
+// composed {{weatherChange}} must render for the raid template type.
+func TestLayeredView_RaidWeatherChangeComposed(t *testing.T) {
+	lv := newTestView(t, func(o *testViewOpts) {
+		o.templateType = "raid"
+		o.base = map[string]any{"weatherCurrent": 1, "weatherNext": 2, "weatherChangeTime": "14:00"}
+		o.perLang = map[string]any{
+			"weatherCurrentName":      "Clear",
+			"weatherNextName":         "Rain",
+			"weatherChangePossibleAt": "Possible weather change at",
+		}
+	})
+	v, ok := lv.GetField("weatherChange")
+	require.True(t, ok)
+	assert.Contains(t, v, "Possible weather change at 14:00 : Clear")
+	assert.Contains(t, v, "Rain")
+}

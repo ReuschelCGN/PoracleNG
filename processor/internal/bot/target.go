@@ -60,7 +60,8 @@ type Target struct {
 var userIDOverrideRe = regexp.MustCompile(`^:?-?\d{1,20}$`)
 
 // BuildTarget resolves who a command operates on from the args.
-// Admin users can override the target using name<webhookName> or user<userID>.
+// Admin users can override the target using name:<targetName> (or bare
+// name<targetName> when it names an existing target) or user<userID>.
 // Non-admin commands target the sender.
 // Returns the target, remaining args (with consumed target args removed), and any error.
 func BuildTarget(ctx *CommandContext, args []string) (*Target, []string, error) {
@@ -73,9 +74,15 @@ func BuildTarget(ctx *CommandContext, args []string) (*Target, []string, error) 
 			nameOverride = arg[5:]
 			continue
 		}
-		if strings.HasPrefix(arg, "name") && len(arg) > 4 {
-			nameOverride = arg[4:]
-			continue
+		// Bare name<X> (PoracleJS form, no colon) is only an override when X
+		// resolves to an existing named target; otherwise ordinary words
+		// starting with "name" (e.g. a gym "Namco Arcade") stay in the
+		// args (#313). The explicit name:<X> form above always overrides.
+		if rest, ok := strings.CutPrefix(arg, "name"); ok && rest != "" {
+			if id, err := ctx.Humans.LookupWebhookByName(rest); err == nil && id != "" {
+				nameOverride = rest
+				continue
+			}
 		}
 		// user<ID> / user:<ID> — the ID must be numeric (Telegram group IDs
 		// are negative), as in PoracleJS, so ordinary words that start with
