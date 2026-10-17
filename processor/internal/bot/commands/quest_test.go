@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -579,4 +580,61 @@ func TestQuest_AmountWithPokemonAndStardust(t *testing.T) {
 	got := questRewardTypes(t, ctx)
 	assert.Equal(t, []int{500}, got[3], "stardust min 500")
 	assert.Equal(t, []int{25}, got[7], "pikachu rule")
+}
+
+// questKinds returns "rewardType:reward" for each remaining rule.
+func questKinds(t *testing.T, ctx *bot.CommandContext) []string {
+	t.Helper()
+	rows, _ := ctx.Tracking.Quests.SelectByIDProfile("user1", 1)
+	var out []string
+	for _, r := range rows {
+		out = append(out, strconv.Itoa(r.RewardType)+":"+strconv.Itoa(r.Reward))
+	}
+	return out
+}
+
+// #312: remove mirrors add — every reward kind named is removed.
+func TestQuest_Remove_EveryRewardKindNamed(t *testing.T) {
+	ctx := questCtx(t)
+	runQuest(t, ctx, "stardust 25")
+	runQuest(t, ctx, "candy:649")
+	require.ElementsMatch(t, []string{"3:0", "7:25", "4:649"}, questKinds(t, ctx))
+
+	replies := runQuest(t, ctx, "remove stardust 25")
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "✅", replies[0].React, "reply: %s", replies[0].Text)
+	assert.ElementsMatch(t, []string{"4:649"}, questKinds(t, ctx))
+}
+
+func TestQuest_Remove_MixedKinds(t *testing.T) {
+	ctx := questCtx(t)
+	runQuest(t, ctx, "stardust")
+	runQuest(t, ctx, "pokecoins")
+	runQuest(t, ctx, "energy:25")
+	runQuest(t, ctx, "649")
+	require.ElementsMatch(t, []string{"3:0", "8:0", "12:25", "7:649"}, questKinds(t, ctx))
+
+	runQuest(t, ctx, "remove energy:25 pokecoins 649")
+	assert.ElementsMatch(t, []string{"3:0"}, questKinds(t, ctx))
+}
+
+// A bare candy/energy keyword consumes the named pokemon, as on add, so the
+// pokemon-encounter rule for that species is left alone.
+func TestQuest_Remove_BareCandyConsumesPokemon(t *testing.T) {
+	ctx := questCtx(t)
+	runQuest(t, ctx, "candy 25")
+	runQuest(t, ctx, "25")
+	require.ElementsMatch(t, []string{"4:25", "7:25"}, questKinds(t, ctx))
+
+	runQuest(t, ctx, "remove candy 25")
+	assert.ElementsMatch(t, []string{"7:25"}, questKinds(t, ctx))
+}
+
+func TestQuest_Remove_BareRemovesAll(t *testing.T) {
+	ctx := questCtx(t)
+	runQuest(t, ctx, "stardust 25")
+	runQuest(t, ctx, "candy:649")
+
+	runQuest(t, ctx, "remove")
+	assert.Empty(t, questKinds(t, ctx))
 }
