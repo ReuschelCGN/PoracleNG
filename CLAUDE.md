@@ -199,7 +199,7 @@ Enrichment is computed in three layers:
 
 **Per-user enrichment** (computed per matched user):
 - PVP display lists filtered by user's tracking criteria
-- Distance and bearing from user's location
+- Distance and bearing from user's location (pokemon only — other types render per group, see step 4 of Template Rendering)
 
 The enrichment is structured as `enrichment` (base), `perLanguageEnrichment` (keyed by language code), and `perUserEnrichment` (keyed by user ID). The DTS `LayeredView` merges these layers at render time without copying.
 
@@ -214,7 +214,7 @@ The processor renders DTS templates using `jfberry/raymond` (a fork of `mailgun/
 1. Webhook handler enqueues a `RenderJob` to the render channel (buffered, configurable pool size)
 2. Render worker picks up the job, resolves pending static map tile (blocking wait with deadline)
 3. For each matched user: build `LayeredView` (8-layer priority lookup), select DTS template, render with raymond, URL-shorten `<S< ... >S>` markers, parse JSON result, append ping
-4. **Group rendering optimization**: for non-pokemon types, users with the same (template, platform, language) share a single render — only per-user fields (distance, bearing) are patched afterward
+4. **Group rendering optimization**: for non-pokemon types, users with the same (template, platform, language, distance-vs-area rule) share a single render; nothing is patched per user afterward (only the ping is appended). So non-pokemon views have no per-user fields — `distance`/`bearing` exist only for pokemon (per-user enrichment); `userDistanceTrack` works everywhere because it is part of the group key
 5. Rendered delivery jobs dispatched directly to the `delivery.Dispatcher`
 
 **Queue pressure**: When the render channel is >80% full, tile generation is skipped to reduce backpressure.

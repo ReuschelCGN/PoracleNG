@@ -408,9 +408,15 @@ func resolveWeaknessEmojis(emojiLookup *EmojiLookup, perLang map[string]any, pla
 func buildComputedFields(templateType string, base, perLang map[string]any, emoji map[string]string, areas []webhook.MatchedArea) map[string]any {
 	m := make(map[string]any, 16)
 
-	// id = pokemon_id
+	// id = pokemon_id. Max battles carry the boss as pokemonId only, and their
+	// raw webhook `id` is the station — the pre-Go maxbattle view set
+	// id: data.pokemonId, so keep {{id}} meaning the pokemon there too.
 	if v, ok := base["pokemon_id"]; ok {
 		m["id"] = v
+	} else if templateType == "maxbattle" {
+		if v, ok := base["pokemonId"]; ok {
+			m["id"] = v
+		}
 	}
 
 	// time: for eggs = hatchTime (when egg hatches), for everything else = disappearTime
