@@ -3,7 +3,9 @@ package bot
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
+	"github.com/pokemon/poracleng/processor/internal/community"
 	"github.com/pokemon/poracleng/processor/internal/config"
 )
 
@@ -66,15 +68,15 @@ func CommandAllowed(cfg *config.Config, platform, cmdKey string, userID string, 
 
 // CalculateChannelPermissions checks delegated_administration.channel_tracking.
 // Returns true if the user (by ID or role) is allowed to manage tracking
-// in the given channel, guild, or category.
-func CalculateChannelPermissions(cfg *config.Config, userID string, userRoles []string, channelID, guildID, categoryID string) bool {
+// in the given channel, its guild, or any of its ancestors — the category
+// for a text channel; the parent channel and its category for a thread.
+func CalculateChannelPermissions(cfg *config.Config, userID string, userRoles []string, channelID, guildID string, ancestorIDs ...string) bool {
 	ct := cfg.Discord.DelegatedAdministration.ChannelTracking
 	if len(ct) == 0 {
 		return false
 	}
 
-	// Check each of: channelID, guildID, categoryID
-	for _, targetID := range []string{channelID, guildID, categoryID} {
+	for _, targetID := range append([]string{channelID, guildID}, ancestorIDs...) {
 		if targetID == "" {
 			continue
 		}
@@ -92,6 +94,30 @@ func CalculateChannelPermissions(cfg *config.Config, userID string, userRoles []
 		}
 	}
 
+	return false
+}
+
+// CalculateTelegramChannelPermissions reports whether a Telegram user may
+// manage tracking for the chat a command was sent in, mirroring PoracleJS
+// canAdminChannel. chatIDs are the IDs the chat is known by, most specific
+// first (a forum topic's composite chat:topic ID, then the chat ID), and
+// chatCommunities is the chat's community_membership. Access is granted to
+// users listed for the chat in [[telegram.delegated_admins]], and — with
+// area security on — to community admins of any community the chat
+// belongs to.
+func CalculateTelegramChannelPermissions(cfg *config.Config, userID string, chatIDs []string, chatCommunities []string) bool {
+	for _, id := range chatIDs {
+		if containsStr(cfg.Telegram.DelegatedAdministration.ChannelTracking[id], userID) {
+			return true
+		}
+	}
+	if cfg.Area.Enabled {
+		for _, c := range community.IsTelegramCommunityAdmin(cfg.Area.Communities, userID) {
+			if slices.ContainsFunc(chatCommunities, func(m string) bool { return strings.EqualFold(m, c) }) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
