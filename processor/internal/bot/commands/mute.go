@@ -54,12 +54,8 @@ func routeMuteOrUnmute(ctx *bot.CommandContext, cmdKey, typeName string, rest []
 // rest of the command vocabulary (`!raid gym:"X"` style is for filters
 // inside a tracking command, not the scope of a !mute call).
 //
-// Tracking-UID mutes (`!mute id:N`, `!mute raid id:N`) are documented in
-// the design but not accepted by this command in v1 — they require
-// MatchedUser to carry the rule UID for the matcher to enforce them,
-// which is deferred to a follow-up (Phase 2.5). Accepting commands we
-// can't enforce would be a worse UX than the current "not yet supported"
-// message.
+// Tracking-UID mutes (`!mute id:N`, `!mute raid id:N`) mute a single
+// rule; the matcher compares them against mute.Event.MatchedRuleUID.
 type MuteCommand struct{}
 
 func (c *MuteCommand) Name() string      { return "cmd.mute" }
@@ -105,21 +101,16 @@ func (c *MuteCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{{React: "🙅", Text: inlineUsage(ctx, "msg.mute.usage")}}
 	}
 
+	positional = stripMuteTypePrefix(positional)
 	scopeNoun := strings.ToLower(positional[0])
 
-	// `!mute id:N` and `!mute <type> id:N` route through the tracking-UID
-	// scope. Both forms come through here: `id:N` directly, or with a
-	// tracking-type prefix that we strip before recursing into the UID
-	// parse. The tracking type itself is informational — the UID is
-	// unique across the user's tracking, so we don't need to scope to a
-	// type at the mute level. (The render-side filter still gates by
-	// MatchedRuleUID, so muting UID 12 only suppresses alerts from that
-	// specific rule.)
+	// `!mute id:N` (and `!mute <type> id:N`, whose type prefix was just
+	// stripped) route through the tracking-UID scope. The UID is unique
+	// across the user's tracking, so the type is informational; the
+	// matcher gates by MatchedRuleUID, so muting UID 12 only suppresses
+	// alerts from that specific rule.
 	if strings.HasPrefix(scopeNoun, "id:") {
 		return runMuteTrackingUID(ctx, scopeNoun[len("id:"):], duration)
-	}
-	if isTrackingTypeToken(scopeNoun) && len(positional) >= 2 && strings.HasPrefix(strings.ToLower(positional[1]), "id:") {
-		return runMuteTrackingUID(ctx, positional[1][len("id:"):], duration)
 	}
 
 	scopeType, knownScope := muteScopeNouns[scopeNoun]
@@ -187,15 +178,39 @@ func parseDurationFlex(raw string) (time.Duration, error) {
 	return time.ParseDuration(raw)
 }
 
-// isTrackingTypeToken — set used to reject !mute <type> id:N (deferred).
-// Mirror of validUntrackTypes in untrack.go.
+// isTrackingTypeToken reports whether s is a tracking type a per-type
+// alias can prepend: validUntrackTypes in untrack.go, plus "pokemon",
+// which !track routes as.
 func isTrackingTypeToken(s string) bool {
 	switch s {
-	case "raid", "egg", "quest", "invasion", "incident",
+	case "pokemon", "raid", "egg", "quest", "invasion", "incident",
 		"lure", "nest", "gym", "fort", "maxbattle":
 		return true
 	}
 	return false
+}
+
+// stripMuteTypePrefix drops the tracking-type token that the per-type
+// aliases prepend (`!raid mute gym X` runs `!mute raid gym X`), so the
+// rest parses exactly like a direct !mute / !unmute. The type is kept
+// when it is itself the scope: `!mute gym X` and `!mute pokemon pikachu`
+// (also what `!gym mute X` and `!track mute pikachu` become).
+func stripMuteTypePrefix(positional []string) []string {
+	if len(positional) < 2 || !isTrackingTypeToken(strings.ToLower(positional[0])) {
+		return positional
+	}
+	second := strings.ToLower(positional[1])
+	if strings.HasPrefix(second, "id:") {
+		return positional[1:]
+	}
+	if _, ok := muteScopeNouns[second]; ok {
+		return positional[1:]
+	}
+	if _, ok := muteScopeNouns[strings.ToLower(positional[0])]; ok {
+		return positional
+	}
+	// `!raid mute pikachu` — positional pokemon shorthand after the type.
+	return positional[1:]
 }
 
 // runMuteTrackingUID: !mute id:N. Mutes a single tracking rule by UID.
@@ -428,6 +443,8 @@ func (c *UnmuteCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply 
 		return []bot.Reply{{React: "🙅", Text: inlineUsage(ctx, "msg.unmute.usage")}}
 	}
 
+	args = stripMuteTypePrefix(args)
+
 	// Special tokens that drop everything for this user.
 	first := strings.ToLower(args[0])
 	if first == "all" {
@@ -455,9 +472,6 @@ func (c *UnmuteCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply 
 	// `!unmute id:N` / `!unmute <type> id:N`: remove the tracking-UID mute.
 	if strings.HasPrefix(scopeNoun, "id:") {
 		return runUnmuteTrackingUID(ctx, scopeNoun[len("id:"):])
-	}
-	if isTrackingTypeToken(scopeNoun) && len(args) >= 2 && strings.HasPrefix(strings.ToLower(args[1]), "id:") {
-		return runUnmuteTrackingUID(ctx, args[1][len("id:"):])
 	}
 
 	scopeType, knownScope := muteScopeNouns[scopeNoun]

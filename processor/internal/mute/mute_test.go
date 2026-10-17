@@ -264,3 +264,29 @@ func TestListActive(t *testing.T) {
 		t.Fatalf("u2: expected nil, got %v", got)
 	}
 }
+
+// !mute area stores the display-cased name; !unmute area arrives lowercased
+// from the tokenizer. Area removal must be case-insensitive, like matching
+// (#280).
+func TestRemoveAreaIsCaseInsensitive(t *testing.T) {
+	s := NewStore()
+	s.Add(Entry{HumanID: "u", ScopeType: ScopeArea, ScopeValue: "Downtown"})
+	if !s.Remove("u", ScopeArea, "downtown") {
+		t.Fatal("Remove(downtown) did not remove the Downtown area mute")
+	}
+	if n := len(s.List("u")); n != 0 {
+		t.Errorf("entries left = %d, want 0", n)
+	}
+}
+
+// Re-muting an area in a different case replaces the existing entry.
+func TestAddAreaReplacesCaseInsensitively(t *testing.T) {
+	s := NewStore()
+	s.Add(Entry{HumanID: "u", ScopeType: ScopeArea, ScopeValue: "Downtown"})
+	if !s.Add(Entry{HumanID: "u", ScopeType: ScopeArea, ScopeValue: "downtown"}) {
+		t.Error("second Add should replace the first")
+	}
+	if n := len(s.List("u")); n != 1 {
+		t.Errorf("entries = %d, want 1", n)
+	}
+}
