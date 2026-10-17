@@ -261,6 +261,10 @@ type ProcessorConfig struct {
 	IPWhitelist []string `toml:"ip_whitelist"`
 	IPBlacklist []string `toml:"ip_blacklist"`
 	APISecret   string   `toml:"api_secret"` // API secret for X-Poracle-Secret header authentication
+	// EnablePprof serves /debug/pprof (Go profiling) behind the API secret.
+	// Off by default: the endpoints leak process details and can be used to
+	// trigger expensive CPU profiles.
+	EnablePprof bool `toml:"enable_pprof"`
 }
 
 // AlerterConfig reads the [alerter] section for backward-compatible api_secret configuration.

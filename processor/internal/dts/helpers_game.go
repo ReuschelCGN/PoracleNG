@@ -91,9 +91,16 @@ func registerPokemonHelpers(gd *gamedata.GameData, bundle *i18n.Bundle, emoji *E
 
 	// pokemon — block helper providing rich pokemon context.
 	// Usage: {{#pokemon id}}...{{/pokemon}} or {{#pokemon id formId}}...{{/pokemon}}
-	raymond.RegisterHelper("pokemon", func(id, form any, options *raymond.Options) any {
-		pid := int(toFloat(id))
-		formID := int(toFloat(form))
+	// Options-only so the form is optional: a fixed (id, form, options)
+	// signature makes raymond panic when the form is omitted.
+	raymond.RegisterHelper("pokemon", func(options *raymond.Options) any {
+		var pid, formID int
+		if params := options.Params(); len(params) > 0 {
+			pid = int(toFloat(params[0]))
+			if len(params) > 1 {
+				formID = int(toFloat(params[1]))
+			}
+		}
 
 		lang := getLang(options)
 		platform := getPlatform(options)

@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/dts"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
@@ -215,7 +216,7 @@ func (c *PoracleCommand) renderGreeting(ctx *bot.CommandContext) *bot.Reply {
 		return nil
 	}
 
-	result, err := tmpl.Exec(view)
+	result, err := dts.ExecTemplate(tmpl, view, helpEffectiveLanguage(ctx), platform)
 	if err != nil {
 		log.Warnf("poracle: render greeting: %v", err)
 		return nil

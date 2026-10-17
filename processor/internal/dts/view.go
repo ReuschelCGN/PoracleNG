@@ -40,7 +40,10 @@ var singleEmojiKeys = []struct {
 	{"lureEmojiKey", "lureTypeEmoji"},
 	// Gym
 	{"teamEmojiKey", "teamEmoji"},
-	{"oldTeamEmojiKey", "previousControlTeamEmoji"},
+	{"oldTeamEmojiKey", "oldTeamEmoji"},
+	{"previousControlTeamEmojiKey", "previousControlTeamEmoji"},
+	// Showcase
+	{"showcaseFocusEmojiKey", "showcaseFocusEmoji"},
 	// Weather
 	{"weatherEmojiKey", "weatherEmoji"},
 	{"oldWeatherEmojiKey", "oldWeatherEmoji"},
@@ -146,7 +149,6 @@ var typeAliases = map[string][]aliasPair{
 		{"gymId", "gym_id"},
 		{"teamId", "team_id"},
 		{"hatchtime", "hatchTime"},
-		{"ex", "is_ex_raid_eligible"},
 		{"move1", "quickMoveName"},
 		{"move2", "chargeMoveName"},
 		{"formname", "formName"},
@@ -163,7 +165,6 @@ var typeAliases = map[string][]aliasPair{
 		{"gymId", "gym_id"},
 		{"teamId", "team_id"},
 		{"hatchtime", "hatchTime"},
-		{"ex", "is_ex_raid_eligible"},
 	},
 	// rsvpChanges is a single template type used for both raid and egg RSVP
 	// updates (the raid-rsvp branch's compact card). The source webhook is
@@ -179,7 +180,6 @@ var typeAliases = map[string][]aliasPair{
 		{"gymId", "gym_id"},
 		{"teamId", "team_id"},
 		{"hatchtime", "hatchTime"},
-		{"ex", "is_ex_raid_eligible"},
 		{"move1", "quickMoveName"},
 		{"move2", "chargeMoveName"},
 		{"formname", "formName"},

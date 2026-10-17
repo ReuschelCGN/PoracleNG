@@ -326,12 +326,7 @@ func main() {
 	r.GET("/health", api.HandleHealth())
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// pprof endpoints
-	pprofGroup := r.Group("/debug/pprof")
-	{
-		pprofGroup.GET("/", gin.WrapF(http.DefaultServeMux.ServeHTTP))
-		pprofGroup.GET("/:name", gin.WrapF(http.DefaultServeMux.ServeHTTP))
-	}
+	mountPprof(r, cfg.Processor)
 
 	// Authenticated API group
 	apiGroup := r.Group("/api")

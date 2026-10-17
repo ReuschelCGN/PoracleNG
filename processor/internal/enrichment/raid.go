@@ -17,6 +17,9 @@ func (e *Enricher) Raid(raid *webhook.RaidWebhook, firstNotification bool, tileM
 	m["pokemon_id"] = raid.PokemonID
 	m["gym_id"] = raid.GymID
 	m["firstNotification"] = firstNotification
+	// Golbat sends ex_raid_eligible; is_ex_raid_eligible is the older
+	// spelling. Either one makes the gym EX-eligible, as in matching.
+	m["ex"] = bool(raid.ExRaidEligible) || bool(raid.IsExRaidEligible)
 
 	tz := geo.GetTimezone(raid.Latitude, raid.Longitude)
 

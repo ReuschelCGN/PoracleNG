@@ -840,6 +840,18 @@ func fallbackMessageRaw(templateType, platform, templateID, language string) jso
 	return b
 }
 
+// ExecTemplate renders a template outside the alert pipeline (help,
+// greetings) the way alerts are rendered: with the language and platform
+// data frame that language-aware helpers read, and with panic recovery so
+// a malformed operator template returns an error instead of crashing the
+// process.
+func ExecTemplate(tmpl *raymond.Template, view any, language, platform string) (string, error) {
+	df := raymond.NewDataFrame()
+	df.Set("language", language)
+	df.Set("platform", platform)
+	return safeExecWith(tmpl, view, df)
+}
+
 // renderedMessageIsEmpty reports whether a rendered (valid-JSON) message
 // carries no deliverable content on any platform. Discord rejects such
 // messages with 50006 ("Cannot send an empty message"), and enough of those

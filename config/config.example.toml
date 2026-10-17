@@ -8,6 +8,7 @@ port = 3030                              # processor takes the original Poracle 
 ip_whitelist = []
 ip_blacklist = []
 api_secret = ""
+enable_pprof = false                     # serve Go profiling at /debug/pprof (requires api_secret via X-Poracle-Secret); leave off unless diagnosing
 
 # ---- Databases ----
 

@@ -347,6 +347,8 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 - `GET /openapi.json` — OpenAPI 3.1 spec
 - `GET /docs` — interactive API docs
 
+`/debug/pprof` is not mounted unless `[processor] enable_pprof = true`, and then sits behind the same `api_secret` (`cmd/processor/pprof.go`).
+
 **huma surface (`/api/*` reads + features, and `/api/v2/*`)**: The `/api/*` read/reload/feature endpoints listed below and the entire `/api/v2/*` surface are served by [huma](https://github.com/danielgtaylor/huma) (mounted on gin via humagin, one instance), and appear in the OpenAPI 3.1 spec at `/openapi.json` / `/docs`. Error bodies on this surface are RFC 9457 `application/problem+json` (`status`, `title`, `detail`, `errors[]`) — replacing the old `{status:"error",message}` / `gin.H{"error":...}` bodies (status codes unchanged; a few manual-400s became validation-422s). `/health`, `/metrics`, pprof, and the webhook receiver `POST /` stay on plain gin by design.
 
 ## Command System
@@ -641,7 +643,7 @@ Template selection uses a two-pass mechanism. The first pass considers only user
 5. Default + configured locale: type + default template + platform + `[general] locale` (only when the user's language differs from the configured locale)
 6. Default + any language: type + default template + platform (last resort, any language)
 
-Within each level, the **last match wins** so that `config/dts/` overrides `config/dts.json` (later-loaded files are appended). Levels 3 and 4 share a return check: a level 4 match supersedes a level 3 match.
+Within each level, the **last match wins** so that `config/dts/` overrides `config/dts.json` (later-loaded files are appended). The first level with a match returns it, so a default in the user's language (level 3) beats a language-less default (level 4).
 
 Step 5 protects against a real-world failure mode: a user with a legacy language setting (e.g. `language="nl"`) that no longer ships templates would otherwise drop to step 6, where "last match wins" picks whichever default entry was loaded last — often a language unrelated to the operator's chosen `[general] locale`. Preferring the configured locale before step 6 keeps these users on the operator's default language rather than an arbitrary one.
 

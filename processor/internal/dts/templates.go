@@ -631,6 +631,9 @@ func selectEntryPassForPlatform(entries []DTSEntry, templateType, platform, idLo
 			match = e
 		}
 	}
+	if match != nil {
+		return match
+	}
 
 	// 4. default + type + platform (entry has empty language)
 	for i := range entries {

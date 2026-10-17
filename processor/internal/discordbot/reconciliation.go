@@ -517,7 +517,7 @@ func (r *Reconciliation) SendGreetings(id string) {
 		return
 	}
 
-	result, err := tmpl.Exec(view)
+	result, err := dts.ExecTemplate(tmpl, view, r.cfg.General.Locale, platform)
 	if err != nil {
 		r.log.Errorf("Cannot render greeting for %s: %v", id, err)
 		return
