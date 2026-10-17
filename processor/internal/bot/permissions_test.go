@@ -157,3 +157,14 @@ func TestBlockedAlerts(t *testing.T) {
 		t.Errorf("expected nil blocked, got %v", *blocked)
 	}
 }
+
+// Admins bypass command_security on every surface. The slash dispatcher
+// already did this; text commands and /api/command didn't, so an admin not
+// in the allow list was refused the text form of a command they could run
+// as a slash command (#287).
+func TestCommandAllowed_AdminBypasses(t *testing.T) {
+	cfg := testConfig()
+	if !CommandAllowed(cfg, "discord", "cmd.raid", "admin1", []string{"role_other"}) {
+		t.Error("admin1 should bypass command_security for raid")
+	}
+}

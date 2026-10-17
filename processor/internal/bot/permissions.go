@@ -21,6 +21,7 @@ func IsAdmin(cfg *config.Config, platform, userID string) bool {
 
 // CommandAllowed checks [discord] command_security for a command.
 // Returns true if:
+//   - The user is a configured admin
 //   - No command_security entry exists for this command (unrestricted)
 //   - User ID is in the allowed list
 //   - Any of the user's roles is in the allowed list
@@ -29,6 +30,11 @@ func IsAdmin(cfg *config.Config, platform, userID string) bool {
 func CommandAllowed(cfg *config.Config, platform, cmdKey string, userID string, userRoles []string) bool {
 	if platform != "discord" {
 		return true // Telegram has no role-based security
+	}
+
+	// Admins bypass command_security on every surface (text, slash, API).
+	if IsAdmin(cfg, platform, userID) {
+		return true
 	}
 
 	// Map identifier keys to the command_security config keys

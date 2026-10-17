@@ -410,7 +410,7 @@ These rules govern who can execute commands, what they target, and where they ca
 
 #### Command security (`command_security` config)
 
-Maps Discord role IDs to allowed command sets. Users without the required role for a command get 🙅. Checked via `CommandAllowed()` after registration check, before BuildTarget.
+Maps Discord role IDs to allowed command sets. Users without the required role for a command get 🙅. Admins always pass. Checked via `CommandAllowed()` (text, slash and `/api/command` alike) after registration check, before BuildTarget.
 
 #### Area security (`area_security.enabled`)
 
