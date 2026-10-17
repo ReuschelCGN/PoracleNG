@@ -136,7 +136,8 @@ func (d sqlxRestoreDB) Begin() (restoreTx, error) { return d.db.Beginx() }
 // restoreBackup REPLACES the target's tracking rules for profileNo with the
 // contents of backup. Every table and column name in the file is validated
 // against backupTables and the table's real columns before anything is
-// changed; any unknown name rejects the whole restore. Then, in a single
+// changed; any unknown name rejects the whole restore (legacyBackupTables
+// keys from older files are ignored). Then, in a single
 // transaction, every table in backupTables (whether present, empty or absent
 // in the file) has the target's rows for the profile deleted and the
 // backup's rows inserted with id/profile_no overwritten to the target.
@@ -144,7 +145,7 @@ func restoreBackup(db restoreDB, backup map[string][]map[string]any, targetID st
 	// Validate first — nothing is touched if anything is wrong.
 	var unknown []string
 	for table := range backup {
-		if !slices.Contains(backupTables, table) {
+		if !slices.Contains(backupTables, table) && !slices.Contains(legacyBackupTables, table) {
 			unknown = append(unknown, table)
 		}
 	}

@@ -711,7 +711,8 @@ suggest_on_dm = false                    # when true, DMs that don't match a com
 
 # ---- Logging ----
 # Log levels (most to least verbose): trace, debug, info, warn
-# Suggestion: start at info; debug adds hot-path detail; trace is everything.
+# Suggestion: start at info; debug adds hot-path detail. Nothing currently
+# logs at trace, so "trace" behaves the same as "debug".
 # Legacy names are still accepted: "verbose" maps to info, "silly" to trace.
 
 [logging]

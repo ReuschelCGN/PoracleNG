@@ -550,7 +550,7 @@ var configSchema = []ConfigSection{
 		Title: "Logging",
 		Fields: []ConfigFieldDef{
 			{Name: "level", Type: "select", Default: "info", Description: "Log verbosity level. (Legacy 'verbose' maps to info, 'silly' to trace.)", Options: []ConfigSelectOption{
-				{Value: "trace", Label: "Trace", Description: "Most verbose — every internal step, very noisy"},
+				{Value: "trace", Label: "Trace", Description: "Currently the same as debug — nothing logs at trace level yet"},
 				{Value: "debug", Label: "Debug", Description: "Detailed debug output, including hot-path details"},
 				{Value: "info", Label: "Info", Description: "Recommended — standard operational messages"},
 				{Value: "warn", Label: "Warn", Description: "Warnings and errors only"},
