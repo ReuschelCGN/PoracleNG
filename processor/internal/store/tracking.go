@@ -1,6 +1,8 @@
 package store
 
 import (
+	log "github.com/sirupsen/logrus"
+
 	"github.com/pokemon/poracleng/processor/internal/db"
 )
 
@@ -81,6 +83,7 @@ func DiffAndClassify[T any](
 }
 
 // ApplyDiff performs the full diff+delete+insert cycle for tracking mutations.
+// Updated rules keep their uid when the store implements UIDReassigner.
 // Returns the diff result and any error. On success, the caller should trigger
 // a state reload.
 func ApplyDiff[T any](
@@ -116,10 +119,25 @@ func ApplyDiff[T any](
 		}
 		setUID(&diff.Inserts[i], uid)
 	}
+	// An update replaces the row (delete + insert); where the store can, the
+	// replacement is moved back onto the old uid so the rule keeps its id —
+	// tracking mutes, alert buttons and remembered `id:N` references stay
+	// valid. Stores without UIDReassigner keep the freshly inserted uid.
+	reassigner, canReassign := store.(UIDReassigner)
 	for i := range diff.Updates {
+		oldUID := getUID(&diff.Updates[i])
 		uid, err := store.Insert(&diff.Updates[i])
 		if err != nil {
 			return diff, err
+		}
+		if canReassign && oldUID > 0 {
+			// The rule is already replaced at this point; if moving it back
+			// fails it simply keeps the new uid, so log rather than fail.
+			if err := reassigner.ReassignUID(id, uid, oldUID); err != nil {
+				log.Errorf("tracking update: keep uid %d for %s: %v", oldUID, id, err)
+			} else {
+				uid = oldUID
+			}
 		}
 		setUID(&diff.Updates[i], uid)
 	}

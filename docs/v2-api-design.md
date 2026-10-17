@@ -17,7 +17,7 @@
 - **Coordinates are `latitude` / `longitude` everywhere.** Request bodies of `POST …/location`, `POST …/locations` and `PUT …/locations/{label}`, and the `check-location` query parameters, change from `lat` / `lon`.
 - **`POST /v2/humans`**: `area` is an array of area names (was a JSON-encoded string).
 - **Snapshot `summaries`**: each entry is `{alert_type, active_hours}` with typed ISO-weekday entries; the redundant `id` is gone.
-- **`PUT …/tracking/{type}/{uid}` keeps the rule's `uid`** (it used to return a new one).
+- **Edited rules keep their `uid`** — both `PUT …/tracking/{type}/{uid}` and a `POST` that updates an existing rule (it used to return a new one).
 
 ## 1. Why v2 (and why freeze v1)
 
@@ -88,7 +88,7 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 - `{id}` (the human) is **always in the path** — required, and the ownership scope for every op. `profile` is a query param (`?profile={n}`, defaults to the human's active profile).
 - **Create** body is an **array** of rule objects (a single rule is a one-element array); the owner is the path `{id}`, not repeated per rule.
 - **List one type** returns `{ "rules": [ <rule>, … ] }`. **Full snapshot** (`…/tracking`, no `{type}`) returns `{ "human": {…}, "tracking": { "pokemon": [...], "raid": [...], … }, "profiles": [...], "locations": { "default": {…}, "named": [...] }, "summaries": [...], "mutes": [...] }`. Each sub-object has the same shape as its own v2 endpoint (`human` as `GET /v2/humans/{id}`, `profiles` as `GET …/profiles`, `locations` as `GET …/locations`) — replaces v1's `all/{id}`; `?all_profiles=true` spans every profile (v1's `allProfiles/{id}`).
-- **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour). Delete returns `{ "deleted": [<rule>] }`.
+- **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour; a rule in `updated` keeps its `uid`). Delete returns `{ "deleted": [<rule>] }`.
 - **PUT** (full replace) returns `{ "updated": [<rule>] }`. The rule **keeps its `uid`**, so ids held by clients, tracking mutes and `id:N` bot commands stay valid.
 - **`?include_descriptions=true`** works uniformly on **every** tracking endpoint — reads **and** mutations. When set, each rule object in the response (in `rules`, or `created`/`updated`/`unchanged`/`deleted`) carries a `description` (its human-readable rowtext, in the human's language). The status (added/updated/removed) is conveyed by which array the rule is in, so there is **no** separate assembled `message` field. (The prefixed, assembled confirmation message remains purely the Discord/Telegram push, gated by `?silent`.)
 - **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. (No `PATCH`/partial-update in v2.)
