@@ -154,20 +154,31 @@ func toInt(v any) int {
 // This is a cheap pre-filter to skip render/enrichment work for destinations
 // we already know are paused.
 func (ps *ProcessorService) filterBlocked(matched []webhook.MatchedUser) []webhook.MatchedUser {
+	matched = ps.filterPlatformEnabled(matched)
 	allowed := matched[:0]
 	for _, m := range matched {
-		// [discord] / [telegram] enabled = false stops all delivery to that
-		// platform's humans (Discord webhooks included), as in PoracleJS —
-		// not just its gateway.
-		if !ps.platformEnabled(m.Type) {
-			continue
-		}
 		if ps.rateLimiter != nil && ps.rateLimiter.IsBlocked(m.ID, m.Type) {
 			metrics.RateLimitDropped.Inc()
 			log.Debugf("Rate limit pre-filter: skipping render for %s %s %s", m.Type, m.ID, m.Name)
 			continue
 		}
 		allowed = append(allowed, m)
+	}
+	return allowed
+}
+
+// filterPlatformEnabled drops destinations whose platform is disabled.
+// [discord] / [telegram] enabled = false stops all delivery to that
+// platform's humans (Discord webhooks included), as in PoracleJS — not
+// just its gateway. Split out of filterBlocked so the quest summary path
+// can apply it without the alert-bucket rate-limit pre-filter (summaries
+// are counted against their own bucket at dispatch).
+func (ps *ProcessorService) filterPlatformEnabled(matched []webhook.MatchedUser) []webhook.MatchedUser {
+	allowed := matched[:0]
+	for _, m := range matched {
+		if ps.platformEnabled(m.Type) {
+			allowed = append(allowed, m)
+		}
 	}
 	return allowed
 }
