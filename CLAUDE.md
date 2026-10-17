@@ -317,10 +317,10 @@ Reconciliation syncs Discord role membership with Poracle user registration. Run
 
 By default a single Discord bot token (the first entry in `[discord] token`) drives both halves of the system: outbound message delivery (REST) AND the gateway side (commands, reconciliation, role management). Setting `[discord] command_token = "..."` splits these onto separate bots — `token` handles delivery, `command_token` handles the gateway.
 
-Token selection lives in `DiscordConfig.DiscordGatewayToken()` (`internal/config/config.go`): returns `command_token` when set, otherwise falls back to `token[0]`. The REST delivery side (`internal/delivery/discord.go`) keeps using the `token` array — it doesn't know about `command_token`.
+Token selection lives in `DiscordConfig.DiscordGatewayToken()` (`internal/config/config.go`): returns `command_token` when set, otherwise falls back to `token[0]`. The REST delivery side (`internal/delivery/discord.go`) uses only `token[0]` (`cmd/processor/main.go`) — further entries in the `token` array are ignored, and delivery doesn't know about `command_token`.
 
 Startup failures are asymmetric on purpose:
-- Single-bot mode (`command_token` empty): bad delivery token → log-and-continue (existing behaviour; alerts side may still work via a later token in the array, commands may recover at next reload).
+- Single-bot mode (`command_token` empty): bad delivery token → log-and-continue (existing behaviour; commands may recover at next reload — there is no fallback to a later token in the array).
 - Split-bot mode (`command_token` non-empty): bad gateway bot → `log.Fatalf`. The operator explicitly asked for a split, so silently falling back to single-bot mode would hide the misconfiguration (typo, revoked token, missing intents).
 
 The `onMessageCreate` filter in `internal/discordbot/bot.go` ignores any message whose author is a bot, which keeps the command parser from re-processing the alerts bot's own outbound messages. Operators should NOT add the alerts bot's user ID to `[discord] admins` — the bot-author filter has an "unless admin" carve-out that would let it through.
@@ -424,8 +424,8 @@ When enabled, users belong to communities (determined by Discord roles or Telegr
 #### `everything` flag permissions (`tracking.everything_flag_permissions`)
 
 Controls whether non-admin users can use the `everything` keyword in `!track`:
-- `deny` (default) — `everything` keyword not available to non-admins
-- `allow-any` — `everything` and `individually` both available
+- `deny` — `everything` keyword not available to non-admins
+- `allow-any` (example config; an empty/omitted value behaves the same) — `everything` and `individually` both available
 - `allow-and-always-individually` — `everything` expands to all pokemon individually
 - `allow-and-ignore-individually` — `everything` available but `individually` keyword hidden
 
@@ -707,7 +707,7 @@ The store is a separate pogreb instance from the geocoder cache — different wo
 
 ## Mute Infrastructure
 
-`internal/mute/` is the in-memory mute store (no DB persistence; mutes are typically short-lived). Each `mute.Entry` is `(HumanID, ScopeType, ScopeValue, ExpiresAt)`. Scopes: `gym`, `pokemon`, `pokestop`, `station`, `area`, `everything`, `tracking` (Phase 2.5 — accepted by validator but matcher enforcement deferred).
+`internal/mute/` is the in-memory mute store (no DB persistence; mutes are typically short-lived). Each `mute.Entry` is `(HumanID, ScopeType, ScopeValue, ExpiresAt)`. Scopes: `gym`, `pokemon`, `pokestop`, `station`, `area`, `everything`, `tracking` (matches the rule UID that produced the alert — see the last paragraph of this section).
 
 **Matcher integration**: every per-type matcher (`internal/matching/*.go`) calls `filterMuted(matched, store, ev)` after `ValidateHumansGeneric`. Each handler constructs a `mute.Event` carrying the scope-specific identifiers it has (e.g. `GymID` for raid, `PokemonID` for monster, `Area` shared across the whole batch); `Store.Match` returns true if any active entry for that user matches. The check is O(active mutes per user) — typical usage is single-digit; a future index can land if production telemetry shows otherwise.
 

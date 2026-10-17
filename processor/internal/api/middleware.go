@@ -33,8 +33,9 @@ func RequireSecretGin(apiSecret string) gin.HandlerFunc {
 // IPFilter returns a Gin middleware that enforces IP whitelist and blacklist.
 // If whitelist is non-empty, only listed IPs are allowed.
 // If blacklist is non-empty, listed IPs are rejected.
-// Both lists are checked against the client IP (from Gin's ClientIP which
-// respects trusted proxies / X-Forwarded-For).
+// Both lists are checked against Gin's ClientIP. No trusted proxies are
+// configured, so gin's default applies and X-Forwarded-For is honoured from
+// any client — a client can spoof its address (see #264).
 func IPFilter(whitelist, blacklist []string) gin.HandlerFunc {
 	if len(whitelist) == 0 && len(blacklist) == 0 {
 		return func(c *gin.Context) { c.Next() }

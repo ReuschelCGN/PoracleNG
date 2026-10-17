@@ -8,8 +8,7 @@ import (
 // NOTE: The weather tracking table exists in the DB (weather: id, ping, template,
 // clean, condition, cell, uid, profile_no) but there are no Go tracking API
 // functions (SelectWeather, InsertWeather) yet. This is a stub that informs users
-// the command is not yet available in the processor. Weather tracking is handled
-// by the alerter for now.
+// the command is not yet available; weather-change tracking is not implemented.
 type WeatherCommand struct{}
 
 func (c *WeatherCommand) Name() string      { return "cmd.weather" }

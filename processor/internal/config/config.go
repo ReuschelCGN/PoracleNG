@@ -164,9 +164,9 @@ func (t TrackingConfig) PokemonEditMaxAge() time.Duration {
 type SummariserConfig struct {
 	// MaxPerMessage chunks any reward group with more than N entries
 	// into ceil(total/N) consecutive messages so they fit Discord's
-	// 4096-char embed-description cap. Each chunk references the same
-	// shared static map (the tileserver caches by URL → one render,
-	// served N times). Default 25 — comfortably under the ~40-stop
+	// 4096-char embed-description cap. Each chunk gets its own static
+	// map autopositioned over just that chunk's stops, so the list and
+	// the pins match. Default 25 — comfortably under the ~40-stop
 	// limit when shlink is not configured. Set 0 to disable splitting
 	// (oversize groups will fail at the Discord API).
 	MaxPerMessage int `toml:"max_per_message"`
@@ -602,7 +602,7 @@ type TuningConfig struct {
 	TileserverFailureThreshold int `toml:"tileserver_failure_threshold"` // circuit breaker threshold (default 5)
 	TileserverCooldownMs       int `toml:"tileserver_cooldown_ms"`       // circuit breaker cooldown ms (default 30000)
 	TileserverQueueSize        int `toml:"tileserver_queue_size"`        // async tile queue depth (default 100)
-	TileserverDeadlineMs       int `toml:"tileserver_deadline"`          // max wait for tile before fallback ms (default 5000)
+	TileserverDeadlineMs       int `toml:"tileserver_deadline"`          // max wait for tile before fallback ms (default 10000)
 	TileserverPregenTTL        int `toml:"tileserver_pregen_ttl"`        // seconds for pregenerated tile TTL (default 86400 = 1 day, -1 = no TTL)
 	GeocodingConcurrency       int `toml:"geocoding_concurrency"`
 	GeocodingTimeout           int `toml:"geocoding_timeout"` // ms
