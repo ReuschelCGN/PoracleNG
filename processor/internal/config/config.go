@@ -593,10 +593,10 @@ type StatsConfig struct {
 
 type TuningConfig struct {
 	ReloadIntervalSecs         int `toml:"reload_interval_secs"`
-	EncounterCacheTTL          int `toml:"encounter_cache_ttl"`
+	EncounterCacheTTL          int `toml:"encounter_cache_ttl"` // unused: never read, has no effect
 	WorkerPoolSize             int `toml:"worker_pool_size"`
-	BatchSize                  int `toml:"batch_size"`
-	FlushIntervalMillis        int `toml:"flush_interval_millis"`
+	BatchSize                  int `toml:"batch_size"`                   // unused: never read, has no effect
+	FlushIntervalMillis        int `toml:"flush_interval_millis"`        // unused: never read, has no effect
 	TileserverConcurrency      int `toml:"tileserver_concurrency"`       // tile worker goroutines (default 2)
 	TileserverTimeout          int `toml:"tileserver_timeout"`           // HTTP POST timeout ms (default 10000)
 	TileserverFailureThreshold int `toml:"tileserver_failure_threshold"` // circuit breaker threshold (default 5)
