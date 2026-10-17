@@ -153,12 +153,15 @@ func toInt(v any) int {
 // This is a cheap pre-filter to skip render/enrichment work for destinations
 // we already know are paused.
 func (ps *ProcessorService) filterBlocked(matched []webhook.MatchedUser) []webhook.MatchedUser {
-	if ps.rateLimiter == nil {
-		return matched
-	}
 	allowed := matched[:0]
 	for _, m := range matched {
-		if ps.rateLimiter.IsBlocked(m.ID, m.Type) {
+		// [discord] / [telegram] enabled = false stops all delivery to that
+		// platform's humans (Discord webhooks included), as in PoracleJS —
+		// not just its gateway.
+		if !ps.platformEnabled(m.Type) {
+			continue
+		}
+		if ps.rateLimiter != nil && ps.rateLimiter.IsBlocked(m.ID, m.Type) {
 			metrics.RateLimitDropped.Inc()
 			log.Debugf("Rate limit pre-filter: skipping render for %s %s %s", m.Type, m.ID, m.Name)
 			continue
@@ -166,6 +169,21 @@ func (ps *ProcessorService) filterBlocked(matched []webhook.MatchedUser) []webho
 		allowed = append(allowed, m)
 	}
 	return allowed
+}
+
+// platformEnabled reports whether the platform a destination type belongs
+// to is enabled in config.
+func (ps *ProcessorService) platformEnabled(destType string) bool {
+	if ps.cfg == nil {
+		return true
+	}
+	switch delivery.PlatformFromType(destType) {
+	case "discord":
+		return ps.cfg.Discord.Enabled
+	case "telegram":
+		return ps.cfg.Telegram.Enabled
+	}
+	return true
 }
 
 // applyDefaultEdit sets the edit bit on every matched user when alertType is
