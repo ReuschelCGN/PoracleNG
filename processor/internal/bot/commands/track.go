@@ -622,13 +622,7 @@ func (c *TrackCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.Pars
 
 		if forceIndividual && ctx.GameData != nil {
 			// Expand to all base forms
-			var monsters []bot.ResolvedPokemon
-			for key := range ctx.GameData.Monsters {
-				if key.Form == 0 {
-					monsters = append(monsters, bot.ResolvedPokemon{PokemonID: key.ID, Form: 0})
-				}
-			}
-			monsters, reply := applyFormFilter(ctx, monsters, parsed)
+			monsters, reply := applyFormFilter(ctx, allBaseForms(ctx), parsed)
 			if reply != nil {
 				return nil, reply
 			}

@@ -225,3 +225,18 @@ func TestMaxbattle_RemoveByLevel(t *testing.T) {
 		assert.NotEqual(t, 3, r.Level, "level 3 rule should be gone")
 	}
 }
+
+// TestMaxbattle_EverythingWithGenRejected — gen/type filters only narrow
+// named pokemon for max battles; `!maxbattle everything gen1` used to
+// silently track every level. It must now be rejected (#277).
+func TestMaxbattle_EverythingWithGenRejected(t *testing.T) {
+	ctx := maxbattleCtx(t)
+	ctx.GameData.Util = &gamedata.UtilData{GenData: map[int]gamedata.GenInfo{1: {Min: 1, Max: 151}}}
+	replies := runMaxbattle(t, ctx, "everything gen1")
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "🙅", replies[0].React, "reply: %s", replies[0].Text)
+	assert.NotEqual(t, "msg.maxbattle.gen_type_needs_pokemon", replies[0].Text, "key must be translated")
+
+	rows, _ := ctx.Tracking.Maxbattles.SelectByIDProfile("user1", 1)
+	assert.Empty(t, rows)
+}
