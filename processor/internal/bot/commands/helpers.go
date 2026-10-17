@@ -500,6 +500,27 @@ func filterByTypes(ctx *bot.CommandContext, monsters []bot.ResolvedPokemon, type
 	return filtered
 }
 
+// hasGenOrTypeFilter reports whether a gen:/type filter was supplied.
+func hasGenOrTypeFilter(parsed *bot.ParsedArgs) bool {
+	return parsed.Singles["gen"] > 0 || len(parsed.Types) > 0
+}
+
+// allBaseForms returns every species (form 0) in the game data, for
+// expanding `everything` into individual rows when a gen/type/form filter
+// must narrow it.
+func allBaseForms(ctx *bot.CommandContext) []bot.ResolvedPokemon {
+	var monsters []bot.ResolvedPokemon
+	if ctx.GameData == nil {
+		return monsters
+	}
+	for key := range ctx.GameData.Monsters {
+		if key.Form == 0 {
+			monsters = append(monsters, bot.ResolvedPokemon{PokemonID: key.ID, Form: 0})
+		}
+	}
+	return monsters
+}
+
 // filterByGenAndType applies generation and type filters from parsed args.
 func filterByGenAndType(ctx *bot.CommandContext, monsters []bot.ResolvedPokemon, parsed *bot.ParsedArgs) []bot.ResolvedPokemon {
 	if gen, ok := parsed.Singles["gen"]; ok {

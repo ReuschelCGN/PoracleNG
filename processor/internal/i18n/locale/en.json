@@ -206,7 +206,6 @@
   "cmd.profile": "profile",
   "cmd.language": "language",
   "cmd.location": "location",
-  "cmd.weather": "weather",
   "cmd.fort": "fort",
   "cmd.help": "help",
   "cmd.info": "info",
@@ -465,6 +464,7 @@
   "msg.gym_lookup.multiple": "Multiple gyms match `{0}` ({1}). Re-run with the gym ID directly:",
   "msg.invasion.usage": "Valid commands are e.g. `{0}invasion everything`, `{0}invasion dragon`, `{0}invasion remove everything`",
   "msg.nest.usage": "Valid commands are e.g. `{0}nest pikachu`, `{0}nest everything`, `{0}nest remove pikachu`",
+  "msg.maxbattle.gen_type_needs_pokemon": "Generation and type filters only narrow named pokemon for max battles — name the pokemon to track (e.g. `pikachu gen1`), or track by level without a gen/type filter",
   "msg.maxbattle.usage": "Valid commands are e.g. `{0}maxbattle pikachu`, `{0}maxbattle level:3`, `{0}maxbattle remove everything`",
   "msg.fort.usage": "Valid commands are e.g. `{0}fort pokestop`, `{0}fort everything`, `{0}fort remove pokestop`",
 
@@ -540,7 +540,6 @@
   "msg.language.unknown": "Unknown language. Available: {0}",
 
   "msg.gym.battle_disabled": "Battle changes tracking is not enabled",
-  "msg.weather.unavailable": "Weather tracking is not yet available via this command",
 
   "msg.help.unknown_topic": "No help available for '{0}'. Use `{1}help` for general help.",
   "msg.help.no_greeting": "No help template configured. Use `{0}help <command>` for command-specific help.",

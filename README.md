@@ -26,7 +26,7 @@ The processor receives raw webhooks from Golbat, matches them against all user t
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.27+ (see `processor/go.mod`)
 - MySQL 8.0+
 - A Golbat instance sending webhooks
 
@@ -336,8 +336,6 @@ A new strict **`/api/v2`** API (tracking + humans/profiles) is the recommended s
 | Snapshots | `GET /api/snapshots/{messageID}?target={id}` | Inspect a delivered alert's enriched view (opt-in) |
 | Test | `POST /api/test` | Test webhook simulation |
 | Health | `GET /health`, `GET /metrics` | Health check and Prometheus metrics |
-
-**API delivery (third-party receivers):** In addition to the standard `/api/*` tracking and config endpoints above, PoracleNG can deliver alerts directly to third-party HTTP endpoints. Third-party implementers should refer to [docs/api-delivery-receiver-spec.md](docs/api-delivery-receiver-spec.md) — the complete behavioural contract for an HTTP endpoint that receives Poracle alerts (send, edit, delete operations with stable envelope format).
 
 ## Monitoring
 

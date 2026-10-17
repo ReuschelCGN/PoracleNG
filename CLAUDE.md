@@ -520,7 +520,7 @@ All API endpoints are accessed via the processor (port 3030). The processor hand
 | POST | `/api/deliverMessages` | Deliver confirmation/notification messages |
 | POST | `/api/postMessage` | Legacy alias for /api/deliverMessages |
 | POST | `/api/resolve` | Batch resolve Discord/Telegram IDs to names |
-| POST | `/api/command` | Execute a bot command via API |
+| POST | `/api/command` | Execute a bot command via API (command prefix optional) |
 | GET | `/api/masterdata/monsters` | All pokemon with names, forms, types (built from raw masterfile) |
 | GET | `/api/masterdata/grunts` | Grunt types (built from classic.json) |
 | GET | `/api/tracking/all/{id}` | All tracking for a user (all types) |

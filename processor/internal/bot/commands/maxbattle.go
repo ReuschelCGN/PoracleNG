@@ -117,6 +117,13 @@ func (c *MaxbattleCommand) Run(ctx *bot.CommandContext, args []string) []bot.Rep
 			})
 		}
 	} else {
+		// gen/type filters narrow a list of named pokemon; by-level rules
+		// have none to narrow, so `everything gen1` / `fire level5` would
+		// silently track every boss. Reject instead.
+		if hasGenOrTypeFilter(parsed) {
+			return []bot.Reply{{React: "🙅", Text: tr.T("msg.maxbattle.gen_type_needs_pokemon")}}
+		}
+
 		// Track by level
 		levelSet := make(map[int]bool)
 

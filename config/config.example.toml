@@ -77,6 +77,11 @@ filter_max_rank = 100
 filter_great_min_cp = 1400
 filter_ultra_min_cp = 2350
 filter_little_min_cp = 450
+# force_min_cp - client hint only: reported to web clients (PoracleWeb) as
+#   pvpRequiresMinCp in /api/config/poracleWeb so they ask for a min CP on PVP
+#   rules. It does NOT switch enforcement: the filter_*_min_cp floors above are
+#   always applied by the track command whatever this is set to.
+#force_min_cp = false
 # display_* - variables passed into DTS to allow filtering calculations
 display_max_rank = 10
 display_great_min_cp = 1400

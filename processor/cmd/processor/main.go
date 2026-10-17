@@ -761,7 +761,6 @@ func main() {
 	cmdRegistry.Register(&commands.MaxbattleCommand{})
 	cmdRegistry.Register(&commands.QuestCommand{})
 	cmdRegistry.Register(&commands.LureCommand{})
-	cmdRegistry.Register(&commands.WeatherCommand{})
 	cmdRegistry.Register(&commands.LanguageCommand{})
 	cmdRegistry.Register(&commands.ProfileCommand{})
 	cmdRegistry.Register(&commands.SummaryCommand{})

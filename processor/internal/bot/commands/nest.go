@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"sort"
+
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
@@ -162,7 +164,15 @@ func (c *NestCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 
 func (c *NestCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.ParsedArgs) ([]bot.ResolvedPokemon, *bot.Reply) {
 	if parsed.HasKeyword("arg.everything") {
-		return []bot.ResolvedPokemon{{PokemonID: 0, Form: 0}}, nil
+		if !hasGenOrTypeFilter(parsed) || ctx.GameData == nil {
+			return []bot.ResolvedPokemon{{PokemonID: 0, Form: 0}}, nil
+		}
+		// `everything gen1` / `everything fire`: expand to every species and
+		// narrow, as !track does, instead of silently ignoring the filter.
+		// Sorted so rows are inserted (and listed) in dex order.
+		monsters := filterByGenAndType(ctx, allBaseForms(ctx), parsed)
+		sort.Slice(monsters, func(i, j int) bool { return monsters[i].PokemonID < monsters[j].PokemonID })
+		return monsters, nil
 	}
 
 	monsters, reply := applyFormFilter(ctx, parsed.Pokemon, parsed)

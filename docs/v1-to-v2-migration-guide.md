@@ -144,7 +144,7 @@ is **not** a sentinel to avoid.
   A stored rule above a since-lowered limit is reported as `updated` (rewritten at the limit) when posted back.
 - **fort** — `include_empty` now defaults to **`true`** when omitted (v1 defaulted false).
 - **quest** — `reward_type` (proto int: `2`=item, `3`=stardust, `4`=candy, `7`=pokemon,
-  `12`=mega_energy) is required; `reward`, `amount`, `form`, `shiny` optional.
+  `8`=pokecoins, `12`=mega_energy) is required; `reward`, `amount`, `form`, `shiny` optional.
 - **pokemon** — `pvp_ranking_evolution` (int mega/temp-evolution discriminator: `0` base, `1` Mega,
   `2` Mega X, `3` Mega Y) is new on v2.
 - **`active_hours`** (profile PATCH and `POST /api/summaries/{id}/{alertType}`) — now a validated

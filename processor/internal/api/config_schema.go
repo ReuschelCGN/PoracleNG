@@ -248,7 +248,7 @@ var configSchema = []ConfigSection{
 			{Name: "include_mega_evolution", Type: "bool", Default: false, Description: "Server default for PVP rules that don't specify a mega keyword: false matches base forms only, true also matches mega/temporary-evolution ranks. Per-rule mega keywords always override this"},
 			{Name: "evolution_direct_tracking", Type: "bool", Default: false, Description: "Allow users to track PVP evolutions directly (e.g., tracking Vaporeon matches an Eevee)"},
 			{Name: "filter_by_track", Type: "bool", Default: false, Description: "Auto-filter PVP display listings by the user's tracking requirements"},
-			{Name: "force_min_cp", Type: "bool", Default: false, Description: "Enforce minimum CP filters even when not explicitly set by the user"},
+			{Name: "force_min_cp", Type: "bool", Default: false, Description: "Client hint only: exposed to web clients as pvpRequiresMinCp in /api/config/poracleWeb (when data_source is webhook) so they prompt for a min CP on PVP rules. Does not change enforcement — the filter_*_min_cp floors are always applied by !track."},
 			{Name: "filter_max_rank", Type: "int", Default: 100, Description: "Maximum PVP rank users can track — prevents unexpectedly broad tracking"},
 			{Name: "filter_great_min_cp", Type: "int", Default: 1400, Description: "Minimum CP floor for Great League PVP tracking commands"},
 			{Name: "filter_ultra_min_cp", Type: "int", Default: 2350, Description: "Minimum CP floor for Ultra League PVP tracking commands"},
