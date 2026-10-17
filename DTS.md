@@ -658,7 +658,7 @@ Unhatched raid egg.
 | `teamEmoji` | string | Team emoji |
 | `teamColor` | string | Team color hex |
 | `gymColor` | string | Gym color hex (alias for `gym_color`) |
-| `ex` | bool | EX raid eligible (alias for `is_ex_raid_eligible`) |
+| `ex` | bool | EX raid eligible (`ex_raid_eligible`, or the older `is_ex_raid_eligible`) |
 | `hatchTime` | string | Hatch time (formatted) |
 | `time` | string | Alias for `disappearTime` (raid end time) |
 | `disappearTime` | string | Raid end time (formatted) |
@@ -901,7 +901,7 @@ Always guard the leaderboard with `{{#if showcasePresent}}` and the focus line w
 | `showcaseFocusType` | string | Raw focus class: `pokemon`, `type`, `alignment`, `class`, `family`, `buddy`, `generation`, `hatched`, `mega`, `shiny`. |
 | `showcaseFocusCategory` | string | Translated focus category label, e.g. `Type`, `Buddy`. |
 | `showcaseFocusName` | string | Translated featured value, e.g. `Steel` (type focus) or `3+` (buddy focus). Empty for flag focuses (`hatched`/`shiny`/`mega`) — the category conveys it. |
-| `showcaseFocusEmoji` | string | Optional emoji key for the focus category (from `util.json` `showcaseFocus`). |
+| `showcaseFocusEmoji` | string | Emoji for the focus category. Keys are `showcase-focus-<type>` (e.g. `showcase-focus-type`), default 🏆, overridable in `emoji.json`. |
 
 The focus tells you *what the contest is featuring* (e.g. "Type: Steel"), separate from the `showcase` leaderboard of *who is winning*. Example: `{{#if showcaseFocusPresent}}Featuring {{showcaseFocusCategory}}: {{showcaseFocusName}}{{/if}}`.
 
@@ -1043,7 +1043,8 @@ Raw webhook fields (`pokestop_id`, `pokestop_name`, `pokestop_url`, `lure_id`) a
 | `gymColor` | string | New team color hex |
 | `color` | string | Same as gymColor (*deprecated*) |
 | `teamEmoji` | string | New team emoji |
-| `previousControlTeamEmoji` | string | Previous team emoji |
+| `oldTeamEmoji` | string | Old team emoji (from `old_team_id`) |
+| `previousControlTeamEmoji` | string | Previous controller's team emoji (from `last_owner_id`) |
 | `slotsAvailable` | int | Available defender slots |
 | `oldSlotsAvailable` | int | Previous available slots |
 | `trainerCount` | int | Current defenders (6 - slots) |

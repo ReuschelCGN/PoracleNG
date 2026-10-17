@@ -317,7 +317,7 @@ var showcaseFields = []FieldDef{
 	{Name: "showcaseFocusType", Type: "string", Description: "Raw focus class: pokemon, type, alignment, class, family, buddy, generation, hatched, mega, shiny.", Category: "showcase"},
 	{Name: "showcaseFocusCategory", Type: "string", Description: "Translated focus category label (e.g. \"Type\", \"Buddy\").", Category: "showcase", Preferred: true},
 	{Name: "showcaseFocusName", Type: "string", Description: "Translated featured value (e.g. \"Steel\" for a type focus, \"3+\" for a buddy focus). Empty for flag focuses (hatched/shiny/mega).", Category: "showcase", Preferred: true},
-	{Name: "showcaseFocusEmoji", Type: "string", Description: "Optional emoji key for the focus category (from util.json showcaseFocus).", Category: "showcase"},
+	{Name: "showcaseFocusEmoji", Type: "string", Description: "Emoji for the focus category (emoji key showcase-focus-<type>, overridable in emoji.json).", Category: "showcase"},
 }
 
 var incidentSnippets = []Snippet{
@@ -372,7 +372,8 @@ var gymFields = []FieldDef{
 	{Name: "teamEmoji", Type: "string", Description: "Team emoji", Category: "gym"},
 	{Name: "gymColor", Type: "string", Description: "Team color hex", Category: "gym"},
 	{Name: "oldTeamName", Type: "string", Description: "Previous team name", Category: "gym"},
-	{Name: "oldTeamEmoji", Type: "string", Description: "Previous team emoji", Category: "gym"},
+	{Name: "oldTeamEmoji", Type: "string", Description: "Old team emoji (old_team_id)", Category: "gym"},
+	{Name: "previousControlTeamEmoji", Type: "string", Description: "Previous controller's team emoji (last_owner_id)", Category: "gym"},
 	{Name: "slotsAvailable", Type: "int", Description: "Available gym slots", Category: "gym"},
 	{Name: "oldSlotsAvailable", Type: "int", Description: "Previous slot count", Category: "gym"},
 	{Name: "inBattle", Type: "bool", Description: "Is gym in battle", Category: "gym"},
