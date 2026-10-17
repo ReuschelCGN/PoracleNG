@@ -403,82 +403,90 @@ func (c *QuestCommand) handleRemove(ctx *bot.CommandContext, parsed *bot.ParsedA
 	var targets []db.QuestTrackingAPI
 
 	noOverride := Override{}
-	if parsed.HasKeyword("arg.everything") {
-		// remove everything — match all reward types
+	target := func(rewardType, reward, form int) {
+		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rewardType, reward, form, 0))
+	}
+	allTypes := func() {
 		for _, rt := range []int{7, 3, 8, 12, 4, 2} {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rt, 0, 0, 0))
+			target(rt, 0, 0)
 		}
-	} else if parsed.HasKeyword("arg.all_pokemon") || parsed.HasKeyword("arg.all_items") {
-		// remove the "all pokemon" / "all items" wildcard rows (reward=0)
-		if parsed.HasKeyword("arg.all_pokemon") {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 7, 0, 0, 0))
-		}
-		if parsed.HasKeyword("arg.all_items") {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 2, 0, 0, 0))
-		}
-	} else if stardustVal, ok := parsed.Strings["stardust"]; ok {
-		amount := questParseInt(stardustVal)
-		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 3, amount, 0, 0))
+	}
+
+	// Mirrors the add path: every reward kind named in the command has its
+	// matching rules removed (`!quest remove stardust pikachu` removes
+	// both). `everything` already covers every reward type, so it stands
+	// alone.
+	if parsed.HasKeyword("arg.everything") {
+		allTypes()
+		return c.removeQuests(ctx, targets)
+	}
+
+	// "all pokemon" / "all items" — wildcard rows (reward=0), which match
+	// every rule of that reward type.
+	if parsed.HasKeyword("arg.all_pokemon") {
+		target(7, 0, 0)
+	}
+	if parsed.HasKeyword("arg.all_items") {
+		target(2, 0, 0)
+	}
+
+	if stardustVal, ok := parsed.Strings["stardust"]; ok {
+		target(3, questParseInt(stardustVal), 0)
 	} else if parsed.HasKeyword("arg.stardust") {
-		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 3, 0, 0, 0))
-	} else if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
-		amount := questParseInt(pokecoinVal)
-		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 8, amount, 0, 0))
+		target(3, 0, 0)
+	}
+
+	if pokecoinVal, ok := parsed.Strings["pokecoin"]; ok {
+		target(8, questParseInt(pokecoinVal), 0)
 	} else if parsed.HasKeyword("arg.pokecoin") {
-		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 8, 0, 0, 0))
-	} else if energyVal, ok := parsed.Strings["energy"]; ok {
-		resolved := ctx.Resolver.Resolve(energyVal, ctx.Language)
-		if len(resolved) > 0 {
-			for _, mon := range resolved {
-				targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 12, mon.PokemonID, mon.Form, 0))
-			}
+		target(8, 0, 0)
+	}
+
+	// energy (12) and candy (4): kind:pokemon names the pokemon; a bare
+	// keyword uses the pokemon named elsewhere in the command (which are
+	// then not pokemon rewards themselves), or any pokemon when none is.
+	pokemonConsumed := false
+	for _, kind := range []struct {
+		rewardType int
+		key        string
+	}{{12, "energy"}, {4, "candy"}} {
+		var mons []bot.ResolvedPokemon
+		if val, ok := parsed.Strings[kind.key]; ok {
+			mons = ctx.Resolver.Resolve(val, ctx.Language)
+		} else if parsed.HasKeyword("arg." + kind.key) {
+			mons = parsed.Pokemon
+			pokemonConsumed = pokemonConsumed || len(mons) > 0
 		} else {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 12, 0, 0, 0))
+			continue
 		}
-	} else if parsed.HasKeyword("arg.energy") {
-		if len(parsed.Pokemon) > 0 {
-			for _, mon := range parsed.Pokemon {
-				targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 12, mon.PokemonID, mon.Form, 0))
-			}
-		} else {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 12, 0, 0, 0))
+		if len(mons) == 0 {
+			target(kind.rewardType, 0, 0)
 		}
-	} else if candyVal, ok := parsed.Strings["candy"]; ok {
-		resolved := ctx.Resolver.Resolve(candyVal, ctx.Language)
-		if len(resolved) > 0 {
-			for _, mon := range resolved {
-				targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 4, mon.PokemonID, mon.Form, 0))
-			}
-		} else {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 4, 0, 0, 0))
+		for _, mon := range mons {
+			target(kind.rewardType, mon.PokemonID, mon.Form)
 		}
-	} else if parsed.HasKeyword("arg.candy") {
-		if len(parsed.Pokemon) > 0 {
-			for _, mon := range parsed.Pokemon {
-				targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 4, mon.PokemonID, mon.Form, 0))
-			}
-		} else {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 4, 0, 0, 0))
-		}
-	} else if len(parsed.Pokemon) > 0 {
+	}
+
+	if len(parsed.Pokemon) > 0 && !pokemonConsumed {
 		monsterList, formReply := c.resolveMonsters(ctx, parsed)
 		if formReply != nil {
 			return []bot.Reply{*formReply}
 		}
 		for _, mon := range monsterList {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 7, mon.PokemonID, mon.Form, 0))
+			target(7, mon.PokemonID, mon.Form)
 		}
-	} else if itemID := c.matchItemName(ctx, parsed); itemID > 0 {
-		// Item reward (e.g. !quest remove pinap) — match a single item.
-		// Consume matched tokens so the unrecognized-arg checker doesn't
-		// also flag them downstream.
+	}
+
+	if itemID := c.matchItemName(ctx, parsed); itemID > 0 {
+		// Item reward (e.g. !quest remove pinap). Consume matched tokens
+		// so the unrecognized-arg checker doesn't also flag them.
 		parsed.Unrecognized = nil
-		targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, 2, itemID, 0, 0))
-	} else {
+		target(2, itemID, 0)
+	}
+
+	if len(targets) == 0 {
 		// No specific type — remove everything
-		for _, rt := range []int{7, 3, 8, 12, 4, 2} {
-			targets = append(targets, c.makeQuest(ctx, common, noOverride, shiny, pings, rt, 0, 0, 0))
-		}
+		allTypes()
 	}
 
 	return c.removeQuests(ctx, targets)
