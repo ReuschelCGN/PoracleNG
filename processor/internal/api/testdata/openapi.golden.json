@@ -13342,7 +13342,7 @@
   "paths": {
     "/command": {
       "post": {
-        "description": "Runs a bot command line (e.g. \"track pikachu iv90\") through the same parser the Discord/Telegram bots use, on behalf of the user/channel described by the body. Returns {status, replies} with the messages the bot would have sent instead of delivering them.",
+        "description": "Runs a bot command line (e.g. \"track pikachu iv90\" or \"!track pikachu iv90\") through the same parser the Discord/Telegram bots use; the configured command prefix is optional and is prepended to any line that lacks it. Multiple commands may be separated by newlines. Runs on behalf of the user/channel described by the body. Returns {status, replies} with the messages the bot would have sent instead of delivering them.",
         "operationId": "post-command",
         "requestBody": {
           "content": {
@@ -14350,7 +14350,7 @@
         ]
       },
       "post": {
-        "description": "Saves an array of DTS entries. Request body is open: []DTSEntry where each entry's `template` field is polymorphic (string, object, or array). Readonly (bundled) entries are rejected.",
+        "description": "Saves an array of DTS entries. Request body is open: []DTSEntry where each entry's `template` field is polymorphic (string, object, or array). Saving an entry whose key matches a readonly (bundled fallback) entry creates a writable override under config/dts/ that takes precedence; the bundled entry is left untouched. Store errors yield 403.",
         "operationId": "post-dts-templates",
         "requestBody": {
           "content": {
@@ -15838,7 +15838,7 @@
         ]
       },
       "post": {
-        "description": "Upsert the active-hours schedule for (id, alertType). The `active_hours` field is an array of entries `{day 0-6, hours 0-23, mins 0-59, optional step, end_hours, end_mins}`. For backward compatibility with existing clients this in-place endpoint also accepts the legacy lenient forms: `active_hours` may be a JSON-string-encoded array, and integer fields may be zero-padded strings (e.g. \"00\"). An empty array (or \"\"/\"[]\"/\"{}\") clears the schedule.",
+        "description": "Upsert the active-hours schedule for (id, alertType). The `active_hours` field is an array of entries `{day 1-7 (ISO: 1=Monday … 7=Sunday), hours 0-23, mins 0-59, optional step, end_hours, end_mins}`. For backward compatibility with existing clients this in-place endpoint also accepts the legacy lenient forms: `active_hours` may be a JSON-string-encoded array, and integer fields may be zero-padded strings (e.g. \"00\"). An empty array (or \"\"/\"[]\"/\"{}\") clears the schedule.",
         "operationId": "set-summary",
         "parameters": [
           {
@@ -15869,7 +15869,7 @@
                       {
                         "items": {
                           "additionalProperties": true,
-                          "description": "Active-hours entry: {day 0-6, hours 0-23, mins 0-59, optional step, end_hours, end_mins}. Integer fields also accept zero-padded strings (e.g. \"00\").",
+                          "description": "Active-hours entry: {day 1-7 (ISO: 1=Monday … 7=Sunday), hours 0-23, mins 0-59, optional step, end_hours, end_mins}. Integer fields also accept zero-padded strings (e.g. \"00\").",
                           "type": "object"
                         },
                         "type": "array"
