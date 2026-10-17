@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -184,6 +185,21 @@ func (ps *ProcessorService) platformEnabled(destType string) bool {
 		return ps.cfg.Telegram.Enabled
 	}
 	return true
+}
+
+// disabledPlatformWarnings returns a startup warning for each platform that
+// has a token configured but enabled = false. Disabling a platform stops
+// its commands and all alerts to its humans, so a token left in place
+// usually means the operator expects it to be working.
+func disabledPlatformWarnings(cfg *config.Config) []string {
+	var out []string
+	if !cfg.Discord.Enabled && slices.ContainsFunc(cfg.Discord.DiscordTokens(), func(t string) bool { return t != "" }) {
+		out = append(out, "[discord] has a token but enabled = false: no Discord commands or alerts (including webhooks) will be sent")
+	}
+	if !cfg.Telegram.Enabled && slices.ContainsFunc(cfg.Telegram.TelegramTokens(), func(t string) bool { return t != "" }) {
+		out = append(out, "[telegram] has a token but enabled = false: no Telegram commands or alerts will be sent")
+	}
+	return out
 }
 
 // applyDefaultEdit sets the edit bit on every matched user when alertType is

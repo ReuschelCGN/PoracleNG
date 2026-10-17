@@ -187,6 +187,9 @@ func main() {
 	if tokens := cfg.Telegram.TelegramTokens(); len(tokens) > 0 {
 		telegramToken = tokens[0]
 	}
+	for _, w := range disabledPlatformWarnings(cfg) {
+		log.Warn(w)
+	}
 
 	if discordToken != "" || telegramToken != "" {
 		var err error

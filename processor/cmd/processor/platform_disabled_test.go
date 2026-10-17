@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pokemon/poracleng/processor/internal/config"
@@ -44,5 +45,20 @@ func TestFilterBlockedDropsDisabledPlatforms(t *testing.T) {
 	cfg.Discord.Enabled, cfg.Telegram.Enabled = true, true
 	if got := ids(ps.filterBlocked(matched())); got != "12345" {
 		t.Errorf("both enabled: kept %q, want all", got)
+	}
+}
+
+// A token with enabled = false now means no alerts for that platform, so
+// startup warns about it.
+func TestDisabledPlatformWarnings(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Discord.Enabled, cfg.Telegram.Enabled = true, false
+	cfg.Telegram.Token = "tg-token"
+	if w := disabledPlatformWarnings(cfg); len(w) != 1 || !strings.Contains(w[0], "[telegram]") {
+		t.Errorf("telegram token + disabled: warnings %v", w)
+	}
+	cfg.Telegram.Token = ""
+	if w := disabledPlatformWarnings(cfg); len(w) != 0 {
+		t.Errorf("no token: warnings %v, want none", w)
 	}
 }
