@@ -405,7 +405,7 @@ func (r *TelegramReconciliation) sendGreetings(id string) {
 		"prefix": "/",
 	}
 
-	result, err := tmpl.Exec(view)
+	result, err := dts.ExecTemplate(tmpl, view, r.cfg.General.Locale, "telegram")
 	if err != nil {
 		r.log.Errorf("Cannot render greeting for %s: %v", id, err)
 		return

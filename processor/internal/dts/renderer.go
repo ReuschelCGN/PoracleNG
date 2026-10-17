@@ -824,6 +824,18 @@ func fallbackMessageRaw(templateType, platform, templateID, language string) jso
 	return b
 }
 
+// ExecTemplate renders a template outside the alert pipeline (help,
+// greetings) the way alerts are rendered: with the language and platform
+// data frame that language-aware helpers read, and with panic recovery so
+// a malformed operator template returns an error instead of crashing the
+// process.
+func ExecTemplate(tmpl *raymond.Template, view any, language, platform string) (string, error) {
+	df := raymond.NewDataFrame()
+	df.Set("language", language)
+	df.Set("platform", platform)
+	return safeExecWith(tmpl, view, df)
+}
+
 // safeExecWith wraps raymond Template.ExecWith with panic recovery.
 // Malformed templates can cause panics in raymond (e.g. nil Options in helpers).
 // This converts those panics into errors so a bad template doesn't crash the process.
