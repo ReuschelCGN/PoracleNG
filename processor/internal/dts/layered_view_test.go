@@ -1006,3 +1006,29 @@ func TestLayeredView_FormIdAlias(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 1487, v)
 }
+
+// TestLayeredView_MaxbattleIDIsPokemon: {{id}} on a max battle is the boss
+// pokemon (as in the pre-Go maxbattle view), not the raw webhook's station
+// id (#275). Other types without pokemon_id still fall through to the raw id.
+func TestLayeredView_MaxbattleIDIsPokemon(t *testing.T) {
+	lv := newTestView(t, func(o *testViewOpts) {
+		o.templateType = "maxbattle"
+		o.base = map[string]any{"pokemonId": 150, "station_id": "station-1"}
+		o.webhook = map[string]any{"id": "station-1"}
+	})
+	v, ok := lv.GetField("id")
+	require.True(t, ok)
+	assert.Equal(t, 150, v)
+	v, ok = lv.GetField("stationId")
+	require.True(t, ok)
+	assert.Equal(t, "station-1", v)
+
+	fort := newTestView(t, func(o *testViewOpts) {
+		o.templateType = "fort-update"
+		o.base = map[string]any{"pokemonId": 150}
+		o.webhook = map[string]any{"id": "fort-1"}
+	})
+	v, ok = fort.GetField("id")
+	require.True(t, ok)
+	assert.Equal(t, "fort-1", v)
+}

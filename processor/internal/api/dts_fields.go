@@ -444,6 +444,7 @@ var maxbattleFields = []FieldDef{
 	{Name: "megaName", Type: "string", Description: "Full display name incl. form + costume (equals fullName)", Category: "identity", Preferred: true},
 	{Name: "costumeName", Type: "string", Description: "Translated costume name (empty when none); fullName/megaName already include it parenthesised", Category: "identity"},
 	{Name: "pokemonId", Type: "int", Description: "Pokemon ID", Category: "identity"},
+	{Name: "id", Type: "int", Description: "Pokemon ID (same as pokemonId; for the station use stationId)", Category: "identity"},
 	{Name: "level", Type: "int", Description: "Battle level", Category: "identity", Preferred: true},
 	{Name: "stationName", Type: "string", Description: "Station name", Category: "location", Preferred: true},
 	{Name: "stationId", Type: "string", Description: "Station ID", Category: "location"},
