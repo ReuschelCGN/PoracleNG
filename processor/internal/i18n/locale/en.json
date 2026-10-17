@@ -206,7 +206,6 @@
   "cmd.profile": "profile",
   "cmd.language": "language",
   "cmd.location": "location",
-  "cmd.weather": "weather",
   "cmd.fort": "fort",
   "cmd.help": "help",
   "cmd.info": "info",
@@ -541,7 +540,6 @@
   "msg.language.unknown": "Unknown language. Available: {0}",
 
   "msg.gym.battle_disabled": "Battle changes tracking is not enabled",
-  "msg.weather.unavailable": "Weather tracking is not yet available via this command",
 
   "msg.help.unknown_topic": "No help available for '{0}'. Use `{1}help` for general help.",
   "msg.help.no_greeting": "No help template configured. Use `{0}help <command>` for command-specific help.",
