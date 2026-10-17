@@ -774,3 +774,16 @@ func TestCustomMapStoreSnapshot(t *testing.T) {
 		t.Errorf("nil store snapshot: got %v, want empty map", got)
 	}
 }
+
+// {{#pokemon id}} without a form is the documented short form, but the
+// helper's signature required both, and raymond panicked with "too few
+// input arguments" (#269).
+func TestPokemonBlockHelperWithoutForm(t *testing.T) {
+	ctx := map[string]any{"id": 25}
+	data := map[string]any{"language": "en", "platform": "discord"}
+
+	got := renderWithData(t, `{{#pokemon id}}{{name}}{{/pokemon}}`, ctx, data)
+	if got != "Pikachu" {
+		t.Errorf("pokemon without form: got %q, want %q", got, "Pikachu")
+	}
+}
