@@ -330,7 +330,7 @@ Weather boost fields (`boosted`, `boostWeatherId`, `boostWeatherName`, `boostWea
 | Field | Type | Description |
 |-------|------|-------------|
 | `weather` | int | Boosted weather ID (from webhook) |
-| `weatherChangeTime` | string | Time of next hour boundary (potential weather change) |
+| `weatherChangeTime` | string | Hour boundary (HH:MM) at which the weather may change — set only when the next-hour forecast may change this pokemon's boost before it despawns |
 | `weatherForecastCurrent` | int | Forecast current weather ID (if AccuWeather configured) |
 | `weatherForecastNext` | int | Forecast next-hour weather ID (if AccuWeather configured) |
 | `nextHourTimestamp` | int | Unix timestamp of next hour boundary |
@@ -642,12 +642,12 @@ Weather and boost fields (`gameWeatherId`, `gameWeatherName`, `gameWeatherEmoji`
 | Field | Type | Description |
 |-------|------|-------------|
 | `boostingWeatherIds` | array | All weather IDs that boost this pokemon's types |
-| `weatherChangeTime` | string | Time of next hour boundary (potential weather change) |
+| `weatherChangeTime` | string | Hour boundary (HH:MM) at which the weather may change — set only for hatched raids when the next-hour forecast may change the boss's boost before the raid ends (never for eggs) |
 | `weatherForecastCurrent` | int | Forecast current weather ID (if AccuWeather configured) |
 | `weatherForecastNext` | int | Forecast next-hour weather ID (if AccuWeather configured) |
 | `nextHourTimestamp` | int | Unix timestamp of next hour boundary |
 | `boostingWeathersEmoji` | string | All boosting weather emojis concatenated |
-| `weatherChange` | string | Composed weather forecast text (e.g. "Warning Possible weather change at 14:00 : Clear -> Rain") |
+| `weatherChange` | string | Composed weather forecast text (e.g. "Warning Possible weather change at 14:00 : Clear -> Rain"); hatched raids only, set together with `weatherChangeTime` |
 | `weatherCurrentName` | string | Translated current forecast weather name |
 | `weatherCurrentEmoji` | string | Current forecast weather emoji |
 | `weatherNextName` | string | Translated next forecast weather name |
