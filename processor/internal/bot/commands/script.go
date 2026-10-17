@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -100,6 +101,26 @@ func (c *ScriptCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply 
 	}
 	for _, q := range quests {
 		sb.WriteString(c.questToScript(ctx, prefix, &q))
+		sb.WriteByte('\n')
+	}
+
+	// Max battle tracking
+	maxbattles, err := ctx.Tracking.Maxbattles.SelectByIDProfile(ctx.TargetID, ctx.ProfileNo)
+	if err != nil {
+		log.Errorf("script: select maxbattles: %v", err)
+	}
+	for _, mb := range maxbattles {
+		sb.WriteString(c.maxbattleToScript(ctx, prefix, &mb))
+		sb.WriteByte('\n')
+	}
+
+	// Fort update tracking
+	forts, err := ctx.Tracking.Forts.SelectByIDProfile(ctx.TargetID, ctx.ProfileNo)
+	if err != nil {
+		log.Errorf("script: select forts: %v", err)
+	}
+	for _, f := range forts {
+		sb.WriteString(c.fortToScript(ctx, prefix, &f))
 		sb.WriteByte('\n')
 	}
 
@@ -377,6 +398,90 @@ func (c *ScriptCommand) questToScript(ctx *bot.CommandContext, prefix string, q 
 
 	if q.Distance > 0 {
 		parts = append(parts, fmt.Sprintf("d:%d", q.Distance))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (c *ScriptCommand) maxbattleToScript(ctx *bot.CommandContext, prefix string, mb *db.MaxbattleTrackingAPI) string {
+	var parts []string
+	parts = append(parts, prefix+"maxbattle")
+
+	switch {
+	case mb.PokemonID != bot.WildcardID:
+		parts = append(parts, c.pokemonName(ctx, mb.PokemonID))
+		if mb.Form != 0 {
+			if formName := c.formName(ctx, mb.Form); formName != "" {
+				parts = append(parts, "form:"+formName)
+			}
+		}
+	case mb.Level == 90: // 90 = all levels
+		parts = append(parts, "everything")
+	default:
+		parts = append(parts, fmt.Sprintf("level:%d", mb.Level))
+	}
+
+	if mb.Move != bot.WildcardID {
+		if moveName := c.moveName(ctx, mb.Move); moveName != "" {
+			parts = append(parts, "move:"+moveName)
+		}
+	}
+	if mb.Gmax != 0 {
+		parts = append(parts, "gmax")
+	}
+	if mb.Distance > 0 {
+		parts = append(parts, fmt.Sprintf("d:%d", mb.Distance))
+	}
+	if mb.Template != ctx.DefaultTemplate() {
+		parts = append(parts, "template:"+mb.Template)
+	}
+	// !maxbattle accepts clean but not edit (maxbattle alerts carry no edit key).
+	if mb.Clean&1 != 0 {
+		parts = append(parts, "clean")
+	}
+	return strings.Join(parts, " ")
+}
+
+// fortChangeTypeKeywords maps stored change_types values back to the
+// !fort keyword that produces them (photo is stored as Golbat's image_url).
+var fortChangeTypeKeywords = map[string]string{
+	"location":    "location",
+	"new":         "new",
+	"removal":     "removal",
+	"image_url":   "photo",
+	"name":        "name",
+	"description": "description",
+}
+
+func (c *ScriptCommand) fortToScript(ctx *bot.CommandContext, prefix string, f *db.FortTrackingAPI) string {
+	var parts []string
+	parts = append(parts, prefix+"fort")
+
+	switch f.FortType {
+	case "pokestop", "gym", "station":
+		parts = append(parts, f.FortType)
+	default:
+		parts = append(parts, "everything")
+	}
+
+	var changeTypes []string
+	if f.ChangeTypes != "" {
+		if err := json.Unmarshal([]byte(f.ChangeTypes), &changeTypes); err != nil {
+			log.Warnf("script: fort rule %d has unparseable change_types %q: %v", f.UID, f.ChangeTypes, err)
+		}
+	}
+	for _, ct := range changeTypes {
+		if kw, ok := fortChangeTypeKeywords[ct]; ok {
+			parts = append(parts, kw)
+		}
+	}
+	if bool(f.IncludeEmpty) {
+		parts = append(parts, "include_empty")
+	}
+	if f.Distance > 0 {
+		parts = append(parts, fmt.Sprintf("d:%d", f.Distance))
+	}
+	if f.Template != ctx.DefaultTemplate() {
+		parts = append(parts, "template:"+f.Template)
 	}
 	return strings.Join(parts, " ")
 }
