@@ -697,3 +697,26 @@ func TestBannedFiresOnlyOnce(t *testing.T) {
 		t.Fatalf("Banned fired %d times across 5 breaches past the threshold, want exactly 1", bans)
 	}
 }
+
+// The ban latches for the 24h violation window, so a user re-enabled
+// after a ban (!start / !enable) was never banned again inside that window
+// however much they flooded (#285). ClearViolations restarts the history so
+// they are re-banned after another MaxLimitsBeforeStop breaches.
+func TestClearViolationsRearmsBan(t *testing.T) {
+	l := New(Config{TimingPeriod: 1, DMLimit: 1, ChannelLimit: 5, MaxLimitsBeforeStop: 1})
+	defer l.Close()
+
+	breach := func() RateResult {
+		l.Check("user1", "discord:user")
+		return l.Check("user1", "discord:user")
+	}
+
+	if r := breach(); !r.Banned {
+		t.Fatal("first breach should ban")
+	}
+	l.ClearViolations("user1")
+	time.Sleep(1100 * time.Millisecond)
+	if r := breach(); !r.Banned {
+		t.Fatal("after ClearViolations the next breach should ban again")
+	}
+}

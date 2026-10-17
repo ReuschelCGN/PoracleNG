@@ -130,6 +130,11 @@ func (m *MockHumanStore) SetAdminDisable(id string, disable bool) error {
 	defer m.mu.Unlock()
 	if h, ok := m.humans[id]; ok {
 		h.AdminDisable = disable
+		// Mirror the SQL store: re-enabling also sets enabled = 1, fails = 0.
+		if !disable {
+			h.Enabled = true
+			h.Fails = 0
+		}
 	}
 	return nil
 }
