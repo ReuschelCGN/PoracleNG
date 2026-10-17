@@ -5,8 +5,21 @@
 [processor]
 host = "127.0.0.1"                      # 127.0.0.1 = localhost only; 0.0.0.0 = all interfaces. Defaults to 127.0.0.1 if unset, or the PORACLE_HOST env var if set (Dockerfile exports this as 0.0.0.0)
 port = 3030                              # processor takes the original Poracle port
+# ip_whitelist / ip_blacklist accept exact IPs ("192.0.2.10", "2001:db8::1") and
+# CIDR ranges ("10.0.0.0/8", "2001:db8::/32"). Blacklist is checked first; a
+# non-empty whitelist then allows only matching addresses. Invalid entries stop startup.
 ip_whitelist = []
 ip_blacklist = []
+# trusted_proxies: reverse proxies (IPs or CIDRs) whose X-Forwarded-For / X-Real-IP
+# headers are believed when working out the client IP. Default empty = trust none, so
+# the client IP is always the TCP peer and forwarded headers cannot be spoofed.
+# If you run behind a reverse proxy (nginx, Traefik, Docker network, ...) and rely on
+# ip_whitelist/ip_blacklist, you MUST list the proxy here, e.g. ["172.16.0.0/12"] —
+# otherwise every request appears to come from the proxy's address.
+trusted_proxies = []
+# api_secret: value required in the X-Poracle-Secret header on /api/*. Blank disables
+# API authentication entirely; a startup warning is logged if it is blank and host is
+# not loopback (e.g. Docker's 0.0.0.0).
 api_secret = ""
 enable_pprof = false                     # serve Go profiling at /debug/pprof (requires api_secret via X-Poracle-Secret); leave off unless diagnosing
 

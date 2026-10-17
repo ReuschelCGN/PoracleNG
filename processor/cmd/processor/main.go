@@ -292,7 +292,14 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(api.CORSMiddleware())
 	r.Use(api.RequestLogger())
-	r.Use(api.IPFilter(cfg.Processor.IPWhitelist, cfg.Processor.IPBlacklist))
+	if err := api.ConfigureTrustedProxies(r, cfg.Processor.TrustedProxies); err != nil {
+		log.Fatalf("%v", err)
+	}
+	ipFilter, err := api.IPFilter(cfg.Processor.IPWhitelist, cfg.Processor.IPBlacklist)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	r.Use(ipFilter)
 
 	// Webhook receiver
 	var webhookLogger io.Writer
@@ -334,6 +341,9 @@ func main() {
 	// Authenticated API group
 	apiGroup := r.Group("/api")
 	apiGroup.Use(api.RequireSecretGin(cfg.Processor.APISecret))
+	if cfg.Processor.BlankAPISecretExposed() {
+		log.Warnf("[processor] api_secret is empty and the API listens on %q (not loopback): every /api endpoint, including writes (users, tracking, config, DTS, commands), is open to anyone who can reach port %d. Set api_secret or bind host to 127.0.0.1.", cfg.Processor.Host, cfg.Processor.Port)
+	}
 
 	// Wire the huma API: serves /openapi.json and /docs publicly, and now serves
 	// the migrated in-place endpoints (reloads, with more to come) on the shared

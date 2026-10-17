@@ -337,7 +337,7 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 
 **Shared secret** (`x-poracle-secret`):
 - All `/api/*` endpoints are protected by the `X-Poracle-Secret` header matching `[processor] api_secret` (with legacy `[alerter] api_secret` as a backward-compatible fallback — if the processor key is empty, the alerter key is copied over at config load)
-- If `api_secret` is empty/unset, auth is disabled (all requests allowed)
+- If `api_secret` is empty/unset, auth is disabled (all requests allowed). By design — but startup logs a WARN when the secret is blank and the effective bind host (after the `PORACLE_HOST` default, e.g. Docker's `0.0.0.0`) is not loopback (`ProcessorConfig.BlankAPISecretExposed`, #266)
 - The `RequireSecretGin` middleware in `api/middleware.go` is applied to the `/api/*` route group in `cmd/processor/main.go`
 
 **Unprotected endpoints**:
@@ -346,6 +346,10 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 - `POST /` — webhook receiver from Golbat (no auth, Golbat doesn't authenticate)
 - `GET /openapi.json` — OpenAPI 3.1 spec
 - `GET /docs` — interactive API docs
+
+**IP filtering and trusted proxies** (`[processor] ip_whitelist` / `ip_blacklist` / `trusted_proxies`):
+- `IPFilter` (`api/middleware.go`) applies to every route (including the webhook receiver). Entries are exact IPs or CIDR ranges (IPv4/IPv6), parsed once at startup; an invalid entry is a fatal startup error. Blacklist is checked first, then a non-empty whitelist must match. IPv4-mapped IPv6 peers match IPv4 rules.
+- The client IP is gin's `ClientIP()`. `api.ConfigureTrustedProxies` calls `r.SetTrustedProxies(trusted_proxies)`; the default (empty) trusts **no** proxy, so `X-Forwarded-For` / `X-Real-IP` are ignored and the TCP peer is used — a client can't spoof its way past the lists (#264). Operators behind a reverse proxy who rely on the whitelist/blacklist must list the proxy's IP/CIDR in `trusted_proxies`, otherwise every request is seen as coming from the proxy.
 
 `/debug/pprof` is not mounted unless `[processor] enable_pprof = true`, and then sits behind the same `api_secret` (`cmd/processor/pprof.go`).
 
@@ -444,6 +448,7 @@ Bare `!track everything` with no meaningful filters (IV, CP, level, PVP, type, g
 - `!untrack <type> [args]` — reroute to per-type remove handler (e.g. `!untrack raid id:12`, `!untrack egg level:5`, `!untrack invasion grunt:bug`); mirrors the `/untrack <subtype>` slash form. First token is matched against the canonical English type list (`raid`, `egg`, `quest`, `invasion`, `incident`, `lure`, `nest`, `gym`, `fort`, `maxbattle`); other tokens fall through to the existing pokemon-untrack path.
 - `!mute <scope> <value> [duration:1h]` / `!unmute <scope> <value>` — silence alerts for a gym, pokemon species, area, pokestop, or station for a time-bounded window. `!mute everything [duration:1h]` self-mutes the user across all alert types. Per-type aliases work too (`!raid mute id:X` ≡ `!mute raid id:X`). Mutes are listed by `!tracked`. See the "Mute Infrastructure" section for store + matcher integration.
 - `!poracle-admin <group> [subcommand] [args]` (also `!pa`) — administrative umbrella for live operations, admin-only. Groups: `slash` (slash-command lifecycle, incl. `list` — registered commands as Discord `</name:id>` mentions), `reload` (dts/geofence/state), `status` (health snapshot), `ratelimit` (inspect/reset alert limits), `summary` (summary buffer), `cache` (geocoder stats/clear), `maintenance` (pause/resume delivery), `emoji` (emoji config inspection), `reconcile` (Discord role sync), `config` (effective config dump), `warnings` (captured WARN/ERROR log buffer). See `docs/admin-commands/` for design and smoke-test checklist.
+- `!backup <name>` / `!restore <name>` (admin) — per-profile tracking template saved to `backups/<name>.json` covering every tracking table (`backupTables`; not profiles or summary schedules). Restore **replaces**: table/column names from the file are validated (allow-listed table, strict identifier, real column via information_schema) before anything changes, then in one transaction every backup table is cleared for the target's current profile and refilled from the file (empty/absent tables end up empty). `!script` emits re-runnable commands for every tracking type, including `!maxbattle` and `!fort`.
 - `!poracle` — register/start
 - `!profile` — switch/create/delete profiles
 - `!area` — add/remove geofence areas

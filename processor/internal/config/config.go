@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -260,7 +261,11 @@ type ProcessorConfig struct {
 	Port        int      `toml:"port"`
 	IPWhitelist []string `toml:"ip_whitelist"`
 	IPBlacklist []string `toml:"ip_blacklist"`
-	APISecret   string   `toml:"api_secret"` // API secret for X-Poracle-Secret header authentication
+	// TrustedProxies lists reverse-proxy IPs/CIDRs whose X-Forwarded-For /
+	// X-Real-IP headers are honoured when determining the client IP for
+	// ip_whitelist / ip_blacklist. Empty = trust none (use the TCP peer).
+	TrustedProxies []string `toml:"trusted_proxies"`
+	APISecret      string   `toml:"api_secret"` // API secret for X-Poracle-Secret header authentication
 	// EnablePprof serves /debug/pprof (Go profiling) behind the API secret.
 	// Off by default: the endpoints leak process details and can be used to
 	// trigger expensive CPU profiles.
@@ -460,6 +465,26 @@ func tomlTokens(v any) []string {
 		return tokens
 	}
 	return nil
+}
+
+// IsLoopbackHost reports whether a listen host binds only to the loopback
+// interface: "localhost" or any loopback IP (127.0.0.0/8, ::1), optionally
+// bracketed. An empty host binds all interfaces and is not loopback.
+func IsLoopbackHost(host string) bool {
+	h := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(host), "["), "]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(h)
+	return err == nil && a.Unmap().IsLoopback()
+}
+
+// BlankAPISecretExposed reports whether the API is unauthenticated (blank
+// api_secret, which disables auth by design) while listening on a
+// non-loopback host — the case that warrants a startup warning (#266).
+// Host is the effective host, i.e. after the PORACLE_HOST default applies.
+func (p ProcessorConfig) BlankAPISecretExposed() bool {
+	return p.APISecret == "" && !IsLoopbackHost(p.Host)
 }
 
 // ListenAddr returns the host:port listen address.
