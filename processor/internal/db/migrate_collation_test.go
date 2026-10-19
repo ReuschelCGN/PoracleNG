@@ -153,11 +153,10 @@ func TestProfileZeroMigrationMixedCollations(t *testing.T) {
 	seedProfileZero(t, conn)
 
 	require.NoError(t, runMigrationFile(conn, "000009_profile_zero_to_one.up.sql"))
-	require.NoError(t, runMigrationFile(conn, "000010_profile_zero_to_one_retry.up.sql"))
 	requireProfileZeroRepaired(t, conn)
 
-	// Every database runs 000010, including those where 000009 already worked.
-	require.NoError(t, runMigrationFile(conn, "000010_profile_zero_to_one_retry.up.sql"))
+	// Re-running (a dirty retry, or a manual reset to version 8) changes nothing.
+	require.NoError(t, runMigrationFile(conn, "000009_profile_zero_to_one.up.sql"))
 	requireProfileZeroRepaired(t, conn)
 }
 
@@ -168,7 +167,7 @@ func TestProfileZeroMigrationFailureChangesNothing(t *testing.T) {
 	// Fail on the last table, after every other table's rules have moved.
 	migrationExec(t, conn, `CREATE TRIGGER fail_maxbattle BEFORE UPDATE ON maxbattle FOR EACH ROW
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'injected failure'`)
-	require.ErrorContains(t, runMigrationFile(conn, "000010_profile_zero_to_one_retry.up.sql"), "injected failure")
+	require.ErrorContains(t, runMigrationFile(conn, "000009_profile_zero_to_one.up.sql"), "injected failure")
 	// The migrator exits on failure; closing the connection rolls back.
 	require.NoError(t, conn.Close())
 
@@ -180,7 +179,7 @@ func TestProfileZeroMigrationFailureChangesNothing(t *testing.T) {
 	require.Equal(t, 0, live)
 
 	migrationExec(t, conn, "DROP TRIGGER fail_maxbattle")
-	require.NoError(t, runMigrationFile(conn, "000010_profile_zero_to_one_retry.up.sql"))
+	require.NoError(t, runMigrationFile(conn, "000009_profile_zero_to_one.up.sql"))
 	requireProfileZeroRepaired(t, conn)
 }
 
@@ -206,7 +205,7 @@ func TestRunMigrationsDirtyState(t *testing.T) {
 	migrationExec(t, conn, "UPDATE schema_migrations SET version = 9")
 	require.NoError(t, RunMigrations(conn))
 	require.NoError(t, conn.QueryRow("SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty))
-	require.GreaterOrEqual(t, version, 10)
+	require.GreaterOrEqual(t, version, 9)
 	require.False(t, dirty)
 	requireProfileZeroRepaired(t, conn)
 }

@@ -49,10 +49,10 @@ func DropForeignKeys(db *sql.DB) {
 }
 
 // retrySafeMigrations are re-run, rather than refused, when a previous attempt
-// left them dirty. 000009 is now a no-op; its original SQL failed on mixed
-// collations before moving any rules, and 000010 completes anything it did
-// change. 000010 commits its data changes in a single transaction.
-var retrySafeMigrations = map[uint]bool{9: true, 10: true}
+// left them dirty. 000009 is idempotent and commits its data changes in one
+// transaction; its original SQL failed on mixed collations before moving any
+// rules, and anything it did change is repeated identically.
+var retrySafeMigrations = map[uint]bool{9: true}
 
 // RunMigrations runs all pending database migrations.
 func RunMigrations(db *sql.DB) error {
