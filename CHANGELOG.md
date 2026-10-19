@@ -74,6 +74,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1 if it is empty, and are deleted as abandoned if the user had since rebuilt
   profile 1. Humans with a genuine `profiles` row for 0 are left alone. Not
   reversible.
+- **Migration 000009 no longer fails on legacy mixed-collation databases.**
+  On databases adopted from Knex whose tables use different collations, it
+  failed with "Illegal mix of collations". It now normalises IDs before
+  comparing them and commits its data changes in one transaction. Startup
+  retries a dirty 000009 and refuses to skip any other dirty migration,
+  instead of silently marking it applied. A database where an older build
+  skipped a failed 000009 needs a manual reset to version 8; see
+  `docs/migration-collations.md`.
 - **v2 pokemon: a GET → POST of a rule stored with a legacy wildcard alias is
   `unchanged`, not a duplicate.** Rows holding `0` for `pvp_ranking_best`,
   `rarity`, `size` or `pvp_ranking_worst` read back as `null`, which the write
