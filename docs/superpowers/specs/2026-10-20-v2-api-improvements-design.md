@@ -122,10 +122,10 @@ PoracleNG keeps its consistency rules in the application, not the database. The 
 
 - **A per-human write lock.** PoracleNG is a single process, so an in-process lock keyed by human id serialises every write that touches one human's data. That covers tracking writes from the bot, v1 and v2; area and profile writes; and reconciliation prunes. Two writers can no longer interleave between "decide" and "write". It replaces the row locks (`SELECT … FOR UPDATE`) that #254's `StripUserAreas` uses today.
 - **Multi-row operations are idempotent and safe to retry, not transactional.** Area removal, area rename, the override rewrites that go with them, and prunes all produce the same end state when repeated. If one fails partway (for example, the database connection drops), the caller gets an error and repeats it. A repeat finishes the job and leaves already-done rows unchanged. Responses always report the resulting state.
-- **Every retry path must actually run.** An API client retries on error. A reconciler prune is only triggered by a community-membership change, so the new membership is saved **after** the prune succeeds. A failed prune then leaves the change pending, and the next cycle repeats it.
+- **Every retry path must actually run.** An API client retries on error. A reconciler prune is only triggered by a community-membership change, so the new membership is saved **after** the prune succeeds. A failed prune then leaves the change pending, and it is retried the next time that user is reconciled: on a Discord gateway member event for them, or at the latest on the next periodic sweep (`check_role_interval`, default 6 hours, on both Discord and Telegram). Until then the user keeps areas they should have lost. That is the same exposure that already exists between a role change and the next sweep when no gateway event fires.
 - **Tracking replace (`ApplyDiff`: delete, then insert):** with the lock, no other writer can see or interleave with the gap. A failure between the delete and the insert can still lose that one rule, as today. This is recorded rather than changed.
 
-This also removes the two existing DB transactions, #254's `StripUserAreas` and `!restore` (§8). None remain afterwards.
+This also removes #254's `StripUserAreas` transaction (§8). The only DB transaction left is `!restore`, kept on purpose (§8).
 
 ### 3.7 Maxbattle
 
@@ -259,7 +259,7 @@ PR #254 implements the agreed design. PoracleWeb.NET approved it, and it is merg
 
 The prune's behaviour and its tests (mock and real MySQL) are otherwise unchanged. #254's partial-load protection, the denied-set design, is untouched.
 
-**`!restore`** (`bot/commands/restore.go`) is the only other DB transaction in the codebase. It clears and refills every tracking table for a profile from a backup file. That is also idempotent, since repeating a restore produces the same result. It is aligned in the same way: per-human lock, no transaction. A restore that fails partway now leaves a partly restored profile until the admin runs it again; today the transaction rolls back to the old rules. This is listed in the changelog.
+**`!restore`** (`bot/commands/restore.go`) **keeps its DB transaction.** It is an admin-only bulk replace of a whole profile. If it fails partway, the transaction rolls back to the old rules instead of leaving a half-restored profile, and that guarantee is worth more there than consistency with the rest of the codebase. It is the only DB transaction left after this work, and that is deliberate. It does take the per-human lock as well, so a concurrent API or bot write cannot interleave with it.
 
 ---
 
@@ -309,7 +309,7 @@ Small fixes found while checking:
 - Set-based squashing ([Appendix A](#appendix-a-set-based-squashing-dominance-for-debate)): designed for debate, not built.
 - Choosing which rule wins when overlapping rules have different settings. Today it is the first match; most-specific-wins is a candidate.
 - A read-only report of existing rule sets that already break the squash invariant, and an opt-in cleanup.
-- DB transactions of any kind. Consistency is held in the application by design (§3.6).
+- New DB transactions. Consistency is held in the application by design (§3.6), and `!restore` is the only, deliberate, exception (§8).
 - Recovering the single rule a failure can lose between delete and insert in a tracking replace (§3.6).
 - v1 maxbattle diffing (v1 is frozen).
 
@@ -317,7 +317,7 @@ Small fixes found while checking:
 
 A detailed task plan follows comment on this document. The intended order, smallest blast radius first:
 
-1. The per-human write lock (§3.6), wired into every write path: tracking (bot, v1, v2), humans, profiles and areas, and reconciliation. Then #254's `StripUserAreas` and `!restore` move off DB transactions, with reconciliation saving membership only after a prune succeeds (§8).
+1. The per-human write lock (§3.6), wired into every write path: tracking (bot, v1, v2), humans, profiles and areas, and reconciliation. Then #254's `StripUserAreas` moves off its DB transaction, and reconciliation saves membership only after a prune succeeds (§8). `!restore` keeps its transaction and also takes the lock.
 2. Field tables per type (§4.2.4) and the exhaustive round-trip test (§4.2.1).
 3. `SquashPolicy` + scenario table, the batch-claim fix, maxbattle tags (§3.5, §3.7). No change in behaviour beyond the listed fixes.
 4. `previous` and `dry_run` on the existing v2 tracking mutations (§3.4), then the PUT conflict check (§3.5).
