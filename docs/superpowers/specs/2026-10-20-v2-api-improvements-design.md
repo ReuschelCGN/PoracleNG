@@ -29,8 +29,8 @@ Nothing here is built yet. Comments on any section are welcome. The open questio
 | #324 | Machine-readable wildcard (`x-wildcard`) | **Declined, with an alternative.** A tested guarantee that `null` round-trips on every nullable field, schema bounds for display, and a stated contract that a v2 client never needs the stored value. ([§4](#4-wildcards-324)) |
 | #325 | Bulk partial update | **Accepted with changes.** `PATCH …/tracking/{type}` with a uid list in the body, per-rule outcomes, and the squash policy applied. ([§5](#5-bulk-update-325)) |
 | #323 | Tracking mutes ignore rule type | **Accepted.** This is a bug. Mutes carry the tracking table on both sides, and the alert button can create them. ([§6](#6-typed-tracking-mutes-323)) |
-| #252 / #253 / #259 | Area doc fix; remove one area name everywhere; rename one area name everywhere | **Accepted.** Override areas are removed or renamed in the same transaction, and `broadened` rules are reported. ([§7](#7-area-name-operations-252-253-259)) |
-| #243 | Fences exempt from area security | **Merged into this branch** from #254 (approved). ([§8](#8-243-exemptfromareasecurity)) |
+| #252 / #253 / #259 | Area doc fix; remove one area name everywhere; rename one area name everywhere | **Accepted.** Override areas are removed or renamed by the same operation, and `broadened` rules are reported. Per-human lock plus idempotent retry, with no DB transactions. ([§7](#7-area-name-operations-252-253-259)) |
+| #243 | Fences exempt from area security | **Merged into this branch** from #254 (approved). Its one DB transaction is replaced by the per-human lock. ([§8](#8-243-exemptfromareasecurity)) |
 | — | v2 copies of unversioned routes? | **No.** They are stable and already documented. Small fixes are listed. ([§9](#9-unversioned-routes)) |
 | — | Release tags? | **Yes.** ([§10](#10-releases-and-versioning)) |
 
@@ -62,7 +62,7 @@ It has several gaps, which this work closes or records:
 |---|---|---|
 | PUT checks only for an *exact* duplicate of another rule | PUT can turn rule A into a near-duplicate of rule B, and both then match | Closed: PUT uses the same policy ([§3.5](#35-one-policy-every-surface)) |
 | A bulk PATCH could create near-duplicates | Setting `distance` on two rules that differed in distance and template leaves two rules differing only in template | Closed: PATCH uses the same policy ([§5](#5-bulk-update-325)) |
-| No lock or transaction between classify and write | A concurrent write can land between the decision and the write. This is the race #326 describes. | Closed for concurrent writers ([§3.6](#36-concurrency)) |
+| No lock or transaction between classify and write | A concurrent write can land between the decision and the write. This is the race #326 describes. | Closed: per-human write lock (§3.6) |
 | Maxbattle `clean`/`distance`/`template` are not `update`-tagged | `!maxbattle … d500` after `d1000` makes a second rule instead of replacing the first | Fixed: tags aligned with raid ([§3.7](#37-maxbattle)) |
 | v1 maxbattle POST never diffs | "Add twice stores the same rule twice" (#326) is a v1 behaviour. v2 already returns the second as `unchanged`. | v1 is frozen. Moving creates to v2 fixes it. |
 | Two *updatable* fields changed at once counts as a new rule | Changing IV and distance in one `!track` leaves two overlapping rules | **Recorded, not changed.** A set-based model handles this properly; see [Appendix A](#appendix-a-set-based-squashing-dominance-for-debate) |
@@ -116,11 +116,16 @@ type SquashPolicy[T any] interface {
 - **PUT and PATCH (v2):** `Conflicts`. These address a named uid, so an edit that would make the rule a squash target of *another* rule is **refused** (`409`, or a per-rule refusal in PATCH) and names the other uid. It is not merged. Merging there would mean "editing rule A deleted rule B", which is the kind of hidden side effect this work is meant to remove.
 - **The policy is replaceable.** The current row heuristic becomes `RowDiffPolicy`. Every surface is tested against **one shared scenario table** (existing rules + submitted rule → expected outcome). Changing the squash rule later, for example to the set-based model in Appendix A, is then a contained change: a new policy plus an edited scenario table, with the effect on every surface visible in one test diff.
 
-### 3.6 Concurrency
+### 3.6 Concurrency and failure: a per-human lock, no DB transactions
 
-The tracking tables are written without DB transactions. The schema deliberately keeps constraint management in the application. PoracleNG is a single process, so we add a **per-human write lock** in the store layer. Bot commands, v1 and v2 all take it for the whole classify-and-apply step. Two writers can then no longer interleave between "decide" and "write".
+PoracleNG keeps its consistency rules in the application, not the database. The tracking tables have no transactions, and this work does not add any. One rule applies across the codebase:
 
-This does not provide crash atomicity: a process killed in the middle of a write can still leave it half-applied, as today. Moving the tracking writes into transactions is possible later, independently of this work.
+- **A per-human write lock.** PoracleNG is a single process, so an in-process lock keyed by human id serialises every write that touches one human's data. That covers tracking writes from the bot, v1 and v2; area and profile writes; and reconciliation prunes. Two writers can no longer interleave between "decide" and "write". It replaces the row locks (`SELECT … FOR UPDATE`) that #254's `StripUserAreas` uses today.
+- **Multi-row operations are idempotent and safe to retry, not transactional.** Area removal, area rename, the override rewrites that go with them, and prunes all produce the same end state when repeated. If one fails partway (for example, the database connection drops), the caller gets an error and repeats it. A repeat finishes the job and leaves already-done rows unchanged. Responses always report the resulting state.
+- **Every retry path must actually run.** An API client retries on error. A reconciler prune is only triggered by a community-membership change, so the new membership is saved **after** the prune succeeds. A failed prune then leaves the change pending, and the next cycle repeats it.
+- **Tracking replace (`ApplyDiff`: delete, then insert):** with the lock, no other writer can see or interleave with the gap. A failure between the delete and the insert can still lose that one rule, as today. This is recorded rather than changed.
+
+This also removes the two existing DB transactions, #254's `StripUserAreas` and `!restore` (§8). None remain afterwards.
 
 ### 3.7 Maxbattle
 
@@ -168,6 +173,17 @@ PATCH /api/v2/humans/{id}/tracking/{type}[?profile=N][&dry_run=true][&silent=tru
 }
 ```
 
+`{id}` is the **human**, as in the create path. The rule uids are in the body because this operation acts on many rules at once:
+
+```
+POST  /api/v2/humans/123456789/tracking/pokemon     create rules for human 123456789
+PATCH /api/v2/humans/123456789/tracking/pokemon     bulk-edit that human's pokemon rules
+      { "uids": [12, 40, 41], "set": { "distance": 500 } }
+PUT   /api/v2/humans/123456789/tracking/pokemon/12  replace one rule (uid in the path)
+```
+
+The human in the path is the ownership scope. A uid that isn't that human's pokemon rule is reported as `not_found` and left alone.
+
 - **uids go in the body**, not the query string. This avoids the length limits they described, and the same applies to bulk delete ([§11](#11-open-questions-for-poracleweb-net), Q4). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
 - **Settable fields:** `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`. These are the delivery and "where" settings shared by every type. Filter fields are not bulk-settable: setting `min_iv` on 300 different rules is a different operation and invites mass squashing. Unknown or unsupported fields get a 422 for the whole request.
 - **The merge happens in place.** Each rule keeps its uid, using an `UPDATE` of only the named columns rather than delete-and-reinsert. Every field not named stays exactly as it is.
@@ -184,16 +200,23 @@ PATCH /api/v2/humans/{id}/tracking/{type}[?profile=N][&dry_run=true][&silent=tru
 ```
 
   `reason` is one of `invalid` (the per-rule validation from #211), `conflict` (the squash policy's `Conflicts`, §3.5) or `not_found` (not owned by this human, or not of this type). `detail` is a human-readable message. A client switches on `reason`, not `detail`.
-- **One lock, one apply.** The whole PATCH runs under the per-human lock (§3.6). The squash check sees each rule's post-PATCH state, so two rules in the same PATCH that would collide with each other are reported, and the first in `uids` order wins.
+- **One lock.** The whole PATCH runs under the per-human lock (§3.6). It is idempotent, so a PATCH that fails partway is safe to repeat. The squash check sees each rule's post-PATCH state, so two rules in the same PATCH that would collide with each other are reported, and the first in `uids` order wins.
 - `dry_run` gives the same response without writing.
 
-The v2 design doc's "No `PATCH`/partial-update in v2" is revised: PUT stays a full replace, and PATCH is defined only for this bulk settings case.
+The v2 design doc's "No `PATCH`/partial-update in v2" is corrected. It was already out of date, because `PATCH /v2/humans/{id}/profiles/{profile_no}` exists. Tracking PUT stays a full replace, and tracking PATCH is defined only for this bulk settings case.
 
 ---
 
 ## 6. Typed tracking mutes (#323)
 
-Accepted as a bug. Each tracking table has its own auto-increment `uid`, so `tracking:60` currently mutes up to eleven unrelated rules. The bot's own comment says uids are "unique across the user's tracking", which is wrong.
+Accepted as a bug. Each tracking table numbers its rules separately, so one user can own raid rule #60 *and* pokemon rule #60. They are different rules that share a number. Today:
+
+1. The user runs `!raid mute id:60`, meaning their raid rule.
+2. The bot drops `raid` and stores only `tracking: 60` (`stripMuteTypePrefix`).
+3. At match time the matcher compares only the matched rule's uid with 60, never its table.
+4. So the user's pokemon rule #60 is silenced too, and nothing tells them.
+
+Mutes are per user, so a collision needs one user to hold the same number in two tables. That is most likely for long-standing users and heavy trackers. The bot's comment says uids are "unique across the user's tracking", which is wrong.
 
 - **`mute.Entry`** gains `RuleType`: the tracking type of the rule. It is `pokemon`, `raid`, `egg` and so on, using the v2 type names. `invasion` and `incident` share one table and one uid space, and both names resolve to it.
 - **`webhook.MatchedUser`** gains `RuleType`, set by each matcher next to `RuleUID`. It is the table the rule came from, not the webhook type. One raid webhook goes through either the raid matcher or the egg matcher, and each sets its own type. Quest summary entries record the type alongside their buffered rule uids.
@@ -213,21 +236,30 @@ The shapes were agreed on the issues. This section records the additions from Po
 
 - **#252:** the `?all_profiles=` description on `POST …/areas` is corrected to say it is a whole-list replace. Documentation only.
 - **#253:** `DELETE /api/v2/humans/{id}/areas?name=<area>[&profile=N|&all_profiles=true]` removes one name from each targeted profile's own list. There is no existence or permission check, because a removal can't widen alerts and the fence is usually already gone.
-  - **Also removed from `override_areas`** on that human's rules in the targeted profiles, in the same transaction. Leaving a dead name would make the rule fail its next write (`area not permitted`), as noted on #259.
+  - **Also removed from `override_areas`** on that human's rules in the targeted profiles, as part of the same operation. Leaving a dead name would make the rule fail its next write (`area not permitted`), as noted on #259.
   - Rules whose **only** override area was removed now fall back to the human's area list, which may be broader. They are reported:
     ```json
     { "name": "animal kingdom", "removed_from": [1, 2], "broadened": { "pokemon": [12, 40], "raid": [7] } }
     ```
   - `?on_last_override=` is not adopted. Reporting `broadened`, together with `dry_run` for an advance warning, lets the client offer "delete or rescope these rules" with full information, and avoids a server-side policy choice we would have to defend for every client.
-- **#259:** `PATCH /api/v2/humans/{id}/areas?from=<old>&to=<new>[&profile=N|&all_profiles=true][&trusted=true]` renames in one transaction. `to` gets the same checks as set-areas (`userSelectable`/`trusted`, area security, `exemptFromAreaSecurity`). If `to` is not a loaded fence the response is a 422 and nothing changes. Matching `override_areas` entries are renamed in the same transaction. A rule that held both names ends up holding `to` once.
-- Both operations support `dry_run`, and both lock and transact across `humans`, `profiles` and the tracking tables' `override_areas`. #254 already added `StripOverrideAreas` across the tracking tables, and that is reused.
-- The existing #252/#253 implementation plan (`docs/superpowers/plans/2026-10-11-v2-set-areas-profile-ops.md`) is amended for the override and `broadened` additions rather than rewritten.
+- **#259:** `PATCH /api/v2/humans/{id}/areas?from=<old>&to=<new>[&profile=N|&all_profiles=true][&trusted=true]` renames the name everywhere it is held. `to` gets the same checks as set-areas (`userSelectable`/`trusted`, area security, `exemptFromAreaSecurity`). If `to` is not a loaded fence the response is a 422 and nothing changes. Matching `override_areas` entries are renamed in the same operation. A rule that held both names ends up holding `to` once.
+- **Consistency without DB transactions (§3.6).** Both operations run under the per-human lock across `humans`, `profiles` and the tracking tables' `override_areas`. Both are idempotent: if one fails partway, the client gets an error and repeats the same request, which finishes the job. Once the first call has run, the old name is no longer held anywhere, so a repeated rename changes nothing that is already done. Both support `dry_run`. #254's `StripOverrideAreas` is reused.
+- The existing #252/#253 implementation plan (`docs/superpowers/plans/2026-10-11-v2-set-areas-profile-ops.md`) is superseded where it differs: no DB transaction, plus the override and `broadened` additions. The plan for this branch replaces it.
 
 ---
 
 ## 8. #243 exemptFromAreaSecurity
 
 PR #254 implements the agreed design. PoracleWeb.NET approved it, and it is merged into this branch so the area operations in §7 build on `PermittedAreas`. The pre-merge check they asked for is still to do, and it happens before the branch goes to `develop`: a production query for community members with no `area_restriction` whose `override_areas` reference fences outside their community's `allowed_areas`. Those rules would start returning 422 on their next write.
+
+**One change to #254 here, for consistency with §3.6.** Its `SQLHumanStore.StripUserAreas` prunes `humans.area` and every profile inside a DB transaction with `SELECT … FOR UPDATE` row locks. That becomes the same model as everything else:
+- plain sequential writes under the per-human lock;
+- an idempotent prune (it already is: it removes denied names, so a repeat is a no-op);
+- in both reconcilers, the community membership is saved **only after** the prune succeeds, so a failed prune is retried on the next cycle instead of being lost.
+
+The prune's behaviour and its tests (mock and real MySQL) are otherwise unchanged. #254's partial-load protection, the denied-set design, is untouched.
+
+**`!restore`** (`bot/commands/restore.go`) is the only other DB transaction in the codebase. It clears and refills every tracking table for a profile from a backup file. That is also idempotent, since repeating a restore produces the same result. It is aligned in the same way: per-human lock, no transaction. A restore that fails partway now leaves a partly restored profile until the admin runs it again; today the transaction rolls back to the old rules. This is listed in the changelog.
 
 ---
 
@@ -239,6 +271,15 @@ What "stable" means, now written into `docs/v2-api-design.md`:
 - Additive changes (new fields, new optional parameters) can arrive in any release.
 - A breaking change to one of these routes is listed under **Changed** in the changelog for that release, with a migration note. Where practical it is preceded by a release that accepts both shapes.
 - v1 tracking, humans and profiles routes stay frozen, as before.
+
+**What is not on huma.** Every route under `/api` is on huma except the frozen v1 tracking, humans and profiles routes. Each of those has a v2 equivalent, and they stay on gin by design. Outside `/api`:
+
+| Route | Decision |
+|---|---|
+| `GET /health` | **Documented in the OpenAPI spec.** Clients use it for `version` and `capabilities` (feature detection), and it matters more once releases are tagged (§10). It stays outside `/api`, unauthenticated, with its response shape unchanged. It is added to the spec as an operation with no security requirement. |
+| `POST /` (Golbat webhook receiver) | Stays on gin. It is scanner input, not a client API. |
+| `/metrics`, `/debug/pprof` | Stay on gin. They are operational endpoints, not API. |
+| `/openapi.json`, `/docs` | Stay on gin. They serve the spec itself. |
 
 Small fixes found while checking:
 - **The 401 from the secret check** is still the legacy `{"status":"authError"}` body. It becomes problem+json for huma-served routes (all of the above, and `/api/v2`). The frozen v1 gin routes keep the legacy body.
@@ -268,20 +309,22 @@ Small fixes found while checking:
 - Set-based squashing ([Appendix A](#appendix-a-set-based-squashing-dominance-for-debate)): designed for debate, not built.
 - Choosing which rule wins when overlapping rules have different settings. Today it is the first match; most-specific-wins is a candidate.
 - A read-only report of existing rule sets that already break the squash invariant, and an opt-in cleanup.
-- DB transactions for tracking writes (§3.6).
+- DB transactions of any kind. Consistency is held in the application by design (§3.6).
+- Recovering the single rule a failure can lose between delete and insert in a tracking replace (§3.6).
 - v1 maxbattle diffing (v1 is frozen).
 
 ## 13. Implementation outline
 
 A detailed task plan follows comment on this document. The intended order, smallest blast radius first:
 
-1. Field tables per type (§4.2.4) and the exhaustive round-trip test (§4.2.1).
-2. `SquashPolicy` + scenario table, the batch-claim fix, maxbattle tags, the per-human write lock (§3.5–3.7). No change in behaviour beyond the listed fixes.
-3. `previous` and `dry_run` on the existing v2 tracking mutations (§3.4), then the PUT conflict check (§3.5).
-4. Bulk PATCH (§5).
-5. Typed mutes (§6).
-6. Area DELETE/PATCH with override handling and `broadened` (§7).
-7. Route fixes and the stability statement (§9), changelog, API.md, golden spec.
+1. The per-human write lock (§3.6), wired into every write path: tracking (bot, v1, v2), humans, profiles and areas, and reconciliation. Then #254's `StripUserAreas` and `!restore` move off DB transactions, with reconciliation saving membership only after a prune succeeds (§8).
+2. Field tables per type (§4.2.4) and the exhaustive round-trip test (§4.2.1).
+3. `SquashPolicy` + scenario table, the batch-claim fix, maxbattle tags (§3.5, §3.7). No change in behaviour beyond the listed fixes.
+4. `previous` and `dry_run` on the existing v2 tracking mutations (§3.4), then the PUT conflict check (§3.5).
+5. Bulk PATCH (§5).
+6. Typed mutes (§6).
+7. Area DELETE/PATCH with override handling and `broadened` (§7).
+8. Route fixes, `/health` in the spec, and the stability statement (§9). Then the changelog, API.md and the golden spec.
 
 ---
 
