@@ -478,8 +478,8 @@ var weatherChangeFields = []FieldDef{
 	{Name: "s2_cell_id", Type: "string", Description: "S2 weather cell ID (webhook)", Category: "weather", RawWebhook: true},
 	{Name: "source", Type: "string", Description: "How the change was detected: \"webhook\" or \"fromMonster\" (webhook)", Category: "weather", RawWebhook: true},
 	{Name: "weatherTth", Type: "object", Description: "Time until the next hourly weather update: {days, hours, minutes, seconds} — e.g. {{weatherTth.minutes}}", Category: "time"},
-	{Name: "enrichedActivePokemons", Type: "array", Description: "The user's tracked pokemon affected by the change: {pokemon_id, form, iv, cp, latitude, longitude, disappearTime (unix), name, nameEng, formName, formNormalised, fullName, fullNameEng, imgUrl}", Category: "pokemon"},
-	{Name: "activePokemons", Type: "array", Description: "Same as enrichedActivePokemons, set only when [weather] show_altered_pokemon_static_map is enabled", Category: "pokemon"},
+	{Name: "activePokemons", Type: "array", Description: "The user's tracked pokemon affected by the change (requires [weather] show_altered_pokemon): {pokemon_id, form, iv, cp, latitude, longitude, disappearTime (unix), name, nameEng, formName, formNormalised, fullName, fullNameEng, imgUrl}", Category: "pokemon", Preferred: true},
+	{Name: "enrichedActivePokemons", Type: "array", Description: "Alias of activePokemons", Category: "pokemon"},
 }
 
 // greetingFields is the whole greeting view: the registration/greeting
