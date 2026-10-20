@@ -28,14 +28,18 @@
 - **v1 wire behaviour is frozen.** v1 may take the lock but returns exactly what it returned before.
 - **The OpenAPI golden** is regenerated in any task that changes a schema: `UPDATE_GOLDEN=1 go test ./internal/api/ -run TestOpenAPIGolden`. Then check that the diff touches only the intended operations.
 - **i18n:** new strings go in `processor/internal/i18n/locale/en.json` only. Other locales come through Crowdin, with per-key English fallback.
+- **Area names (Task 11 onward):**
+  - **Stored form:** the canonical name, `strings.ToLower(fence.Name)`, underscores kept, as set-areas already writes to `humans.area`.
+  - **Comparison form:** `geofence.NormalizeAreaKey`, which is only ever a comparison key and is never written by non-v1 code.
+  - **v1:** writes and returns spaces, as it does today.
 - **Canonical tracking-table keys** for mutes are `pokemon, raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle`. `incident` is normalised to `invasion`.
 - **A dry run never writes, reloads or pushes.** Its response is the real response plus `"dry_run": true`, with `uid: 0` for rules it would create.
 
 ## Review Focus
 
 1. **The same human is written concurrently from two surfaces** (a bot command and an API POST). The writes must serialise and must never interleave between classify and apply. Pinned in Task 2.
-2. **A dry run on any endpoint** must leave the store, reload counter and push log untouched. Pinned in Tasks 6, 7, 8, 11 and 12.
-3. **The same area under different spellings** (`Gent_Centrum`, `gent centrum`, `GENT CENTRUM`). These must match `humans.area`, which keeps underscores, and `override_areas`, which stores spaces. Pinned in Tasks 11 and 12.
+2. **A dry run on any endpoint** must leave the store, reload counter and push log untouched. Pinned in Tasks 6, 7, 8, 12 and 13.
+3. **The same area under different spellings** (`Gent_Centrum`, `gent centrum`, `GENT CENTRUM`), including legacy rows stored with spaces. They must match one another on every write, comparison and match, and every new write must store the canonical fence name. Pinned in Tasks 11, 12 and 13.
 4. **A bare `!mute id:N`** where N is in none, one, or several of the user's tables, or belongs to another user. The expected results are refused, typed, refused with a list, and refused. Pinned in Task 10.
 5. **A failing reconciler prune** must leave the membership change unsaved, so the next reconciliation retries it. Pinned in Task 3.
 
@@ -302,7 +306,50 @@
 - [ ] **Step 4: Run** `go test ./internal/bot/... ./internal/api/ ./internal/buttonactions/`. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `feat: typed tracking mutes in the bot, v2 API and alert buttons (#323)`.
 
-### Task 11: Remove one area name (#252, #253)
+### Task 11: One canonical area spelling: store fence names, compare by key
+
+Today `override_areas` is written with underscores turned into spaces (`api/tracking.go:383`, `bot/commands/override.go:100`). That's only because the 10 matcher state loaders (9 files, `db/{monsters,raids,quests,invasions,lures,nests,gyms,forts,maxbattle}.go`, with `raids.go` holding both the raid and egg loaders) unmarshal the column without normalising it, and `areaOverlap` (`matching/human.go:254`) compares against the fences' spaced `NormalizedName`. So an override stored with underscores (from a client's direct DB write, for example) silently never matches.
+
+This task makes the stored form the fence name everywhere outside v1, and moves all normalising into comparisons.
+
+**Files:**
+- Modify:
+  - `processor/internal/geofence/normalize.go` (add `CanonicalAreaName`)
+  - the 10 state loaders listed above: normalise each loaded override with `geofence.NormalizeAreaKey` right after the `json.Unmarshal` (e.g. `db/forts.go:44`)
+  - `processor/internal/db/tracking_queries.go:36` (`parseOverrideAreas` returns the stored names, lowercased, without the underscore→space rewrite)
+  - `processor/internal/db/diff.go:18` (key comparison for tagged fields) and the `OverrideAreas` field tag on the 10 `*TrackingAPI` structs (`areakey:"true"`)
+  - `processor/internal/api/tracking.go:370-385`: rename `normalizeOverrideAreas` to `v1NormalizeOverrideAreas`, used only by the 10 v1 `tracking<Type>.go` handlers, and add `canonicalOverrideAreas`
+  - the 11 v2 Translate call sites (`v2_<type>.go`, e.g. `v2_pokemon.go:174`): switch to `canonicalOverrideAreas`
+  - `processor/internal/api/v2_tracking.go` (`buildRuleEnvelopes` at `:564`, `buildSnapshotRules` at `:600`): canonicalise on read
+  - the v1 GET handlers (`tracking<Type>.go`, list and all/allProfiles): spaced output, so v1's wire format is unchanged
+  - `processor/internal/bot/commands/override.go:80-104` (resolve against `available` by key; store the canonical name)
+- Test: `processor/internal/geofence/normalize_test.go`, `processor/internal/db/diff_test.go`, `processor/internal/db/override_load_test.go` (new), `processor/internal/api/v2_area_spelling_test.go` (new), `processor/internal/api/tracking_v1_override_test.go` (new), `processor/internal/bot/commands/override_test.go`
+
+**Interfaces:**
+- Produces:
+  - `func geofence.CanonicalAreaName(fences []Fence, name string) string` returns `strings.ToLower(f.Name)` of the fence whose `NormalizedName == NormalizeAreaKey(name)`. If no loaded fence matches, it returns `strings.ToLower(name)`.
+  - `func canonicalOverrideAreas(deps *TrackingDeps, in []string) []string` (package `api`). An empty input gives nil. It maps every entry through `CanonicalAreaName` using `deps.StateMgr.Get().Fences`, and dedupes by `NormalizeAreaKey`, keeping first-seen order.
+  - `func canonicalizeRowOverrideAreas[T any](deps *TrackingDeps, row *T)` (package `api`, reflection on the `OverrideAreas []string` field). It runs in `buildRuleEnvelopes` and `buildSnapshotRules` before `ToRule`, so v2 always shows fence names, including for legacy spaced rows.
+  - **Comparison:** `db.DiffTracking` compares fields tagged `areakey:"true"` element-wise by `NormalizeAreaKey`, in order and with the same length, instead of with `reflect.DeepEqual`.
+  - The `api.validateOverrideFields` permitted check is unchanged; it already compares by key.
+
+- [ ] **Step 1: Failing tests**
+  - `TestCanonicalAreaName`: with fence `Gent_Centrum`, the inputs `gent centrum`, `GENT_CENTRUM` and `Gent Centrum` all give `gent_centrum`. With no matching fence, `Foo Bar` gives `foo bar`.
+  - `TestLoadedOverridesMatchEitherSpelling`: the loader's normalise step (as a small unexported helper `loadOverrideKeys(raw string) []string` in `db`) turns `["gent_centrum"]` and `["gent centrum"]` into keys that `areaOverlap` matches against `{"gent centrum": true}`. Add one matcher-level case per path (`ValidateHumans`, `ValidateHumansForRaid`, `ValidateHumansGeneric`, gym) with a rule whose override holds `gent_centrum`.
+  - `TestDiffTracking_OverrideAreasByKey`: `["gent centrum"]` against `["gent_centrum"]` is a duplicate. `["a","b"]` against `["b","a"]` is not a duplicate (order kept, as today).
+  - `TestV2_OverrideAreas_WriteCanonicalReadCanonical`:
+    1. POST `override_areas: ["Gent Centrum"]`. The stored row (`AllRows()`) holds `["gent_centrum"]`, and GET returns `["gent_centrum"]`.
+    2. Seed a legacy row holding `["gent centrum"]`. GET returns `["gent_centrum"]`.
+    3. POSTing that GET result back gives `unchanged`.
+    4. PUTting it back stores `["gent_centrum"]`.
+  - `TestV1_OverrideAreasStillSpaced`: a row stored as `["gent_centrum"]` by v2 is returned by v1 GET as `["gent centrum"]`. A v1 POST of `["Gent_Centrum"]` still stores `["gent centrum"]`.
+  - `TestOverrideCommand_StoresCanonicalName`: `!track pikachu area:gent_centrum`, which reaches the command as `gent centrum` because the parser turns underscores into spaces (`bot/parser.go:147`), is permitted and stored as `gent_centrum`. Today the permitted check compares `strings.ToLower(a.Name)` (`override.go:84`) with the spaced argument, so this case is refused. That is a bug this task fixes.
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Implement.** Do the loaders, `parseOverrideAreas` and the `DiffTracking` key comparison in one commit, because matching depends on them together. Then the write side, the v2 read side, the v1 output, and the bot. `StripOverrideAreas` needs no change: `PruneForMembership` puts both spellings into `denied` (`reconcile_prune.go:44`) and `dropDeniedAreas` compares lowercase.
+- [ ] **Step 4: Run** `go test ./internal/geofence/ ./internal/db/ ./internal/matching/ ./internal/api/ ./internal/bot/...`. Expected: PASS. If the round-trip test from Task 5 ran on override fixtures, it must still pass unchanged.
+- [ ] **Step 5: Gate and commit:** `refactor: store canonical fence names for override_areas; spaces are a comparison key only`.
+
+### Task 12: Remove one area name (#252, #253)
 
 **Files:**
 - Modify:
@@ -311,10 +358,11 @@
 - Test: `processor/internal/store/mock_human_test.go`, `processor/internal/store/user_locations_sql_test.go`, `processor/internal/api/v2_humans_test.go`
 
 **Interfaces:**
+- Consumes: `geofence.CanonicalAreaName` and the key comparison (Task 11).
 - Produces:
   - `HumanStore.RemoveAreaFromProfiles(id, name string, profileNos []int) (removedFrom []int, err error)`. It changes the listed profile rows, and `humans.area` only when `current_profile_no` is in `profileNos`. Profiles come back ascending. It uses no transaction.
-  - `HumanStore.EditOverrideAreas(id string, profileNos []int, from, to string) (broadened map[string][]int64, err error)`. It walks `trackingTablesWithOverrideAreas` filtered to `profile_no IN profileNos`. An empty `to` removes `from`; otherwise `from` is replaced by `to`, collapsing duplicates. The result maps canonical v2 type keys (`monsters`→`pokemon`, `lures`→`lure`, `nests`→`nest`, `forts`→`fort`, others as they are) to the uids whose override list became empty. Those become `NULL`.
-  - `func areaNameMatches(stored, requested string) bool`, which compares with `strings.EqualFold` or `geofence.NormalizeAreaKey` equality. `RemoveAreaFromProfiles` and `EditOverrideAreas` both use it.
+  - `HumanStore.EditOverrideAreas(id string, profileNos []int, from, to string) (broadened map[string][]int64, err error)`. It walks `trackingTablesWithOverrideAreas` filtered to `profile_no IN profileNos`. An empty `to` removes `from`; otherwise every entry matching `from` (by `areaNameMatches`) is replaced by `to`, collapsing duplicates by key. `to` is written exactly as passed, and callers pass `geofence.CanonicalAreaName(fences, to)`. The result maps canonical v2 type keys (`monsters`→`pokemon`, `lures`→`lure`, `nests`→`nest`, `forts`→`fort`, others as they are) to the uids whose override list became empty. Those become `NULL`.
+  - `func areaNameMatches(stored, requested string) bool`, which compares with `geofence.NormalizeAreaKey` equality (this also covers case). `RemoveAreaFromProfiles` and `EditOverrideAreas` both use it. Kept names are written back exactly as stored, so a remove does not rewrite unrelated legacy entries.
   - `DELETE /api/v2/humans/{id}/areas?name=&profile=&all_profiles=&dry_run=` returns `{name, removed_from []int, broadened {type: [uid]}, dry_run}`. `removed_from` and `broadened` are never null.
   - The `AllProfiles` doc string becomes: `Replace the areas on EVERY profile the human owns with the submitted list. This is a whole-list replace, not a per-name removal: profiles that currently hold different areas all end up with this list. To remove one area from every profile, use DELETE /api/v2/humans/{id}/areas?name=…&all_profiles=true. Mutually exclusive with profile.`
 
@@ -324,11 +372,11 @@
   - `TestV2Humans_RemoveArea_SpellingVariants`: `?name=Private`, `?name=PRIVATE` and the underscore/space forms all remove `private`.
   - An SQL twin `TestEditOverrideAreas_SQL`, gated on `PORACLENG_TEST_DSN`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Profiles first, then overrides, then `reloadState` if anything changed. A dry run computes the same result from reads only (add `dryRun bool` parameters, or read-only variants; pick one and use it for Task 12 too). Mark the 2026-10-11 plan as superseded with a header line. Regenerate the golden.
+- [ ] **Step 3: Implement.** Profiles first, then overrides, then `reloadState` if anything changed. A dry run computes the same result from reads only (add `dryRun bool` parameters, or read-only variants; pick one and use it for Task 13 too). Mark the 2026-10-11 plan as superseded with a header line. Regenerate the golden.
 - [ ] **Step 4: Run** the store and API tests, including SQL with the DSN. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `feat(api): DELETE /v2/humans/{id}/areas removes one name everywhere, incl. overrides (#252, #253)`.
 
-### Task 12: Rename one area name (#259)
+### Task 13: Rename one area name (#259)
 
 **Files:**
 - Modify: `processor/internal/api/v2_humans.go` (new `registerV2HumanRenameArea`), `processor/internal/store/human.go`, `human_sql.go`, `mock_human.go`
@@ -338,21 +386,21 @@
 - Consumes: `EditOverrideAreas`, `areaNameMatches`, `settableAreaSet` (`v2_humans.go:649`), `bot.PermittedAreas`.
 - Produces:
   - `HumanStore.RenameAreaInProfiles(id, from, to string, profileNos []int) (renamedIn []int, err error)`. It follows the same current-profile rule for `humans.area`, and if a profile already holds `to`, it ends up holding it once.
-  - **Spelling written:** `humans.area` and `profiles.area` get `strings.ToLower(fence.Name)` for the matched fence, the same form set-areas writes (`v2_humans.go:601,669`, underscores kept). `override_areas` gets `geofence.NormalizeAreaKey(to)` (spaces), the same form `normalizeOverrideAreas` writes. The duplicate collapse in both places compares with `areaNameMatches`, so two spellings of `to` can't both survive.
+  - **Spelling written:** `humans.area`, `profiles.area` and `override_areas` all get the same value, `geofence.CanonicalAreaName(fences, to)` (Task 11): the lowercase fence name, underscores kept. The duplicate collapse in all three compares with `areaNameMatches`, so two spellings of `to` can't both survive.
   - `PATCH /api/v2/humans/{id}/areas?from=&to=&profile=&all_profiles=&trusted=&dry_run=` returns `{from, to, renamed_in []int, dry_run}`. `to` must be in `settableAreaSet(deps, human, admin, trusted)`, otherwise 422 `area not permitted: <to>`, and nothing changes. `from` needs no check.
 
 - [ ] **Step 1: Failing tests**
   - `TestV2Humans_RenameArea_AllProfiles`: profiles [private, alpha] and [private] become [<to>, alpha] and [<to>], and override `["private"]` becomes `[<to>]`.
   - `TestV2Humans_RenameArea_ToNotLoadedIs422AndChangesNothing`.
   - `TestV2Humans_RenameArea_Idempotent`: a second call returns 200 with `renamed_in: []`.
-  - `TestV2Humans_RenameArea_HoldsBothCollapses`: the profile holds `["gent_centrum", "private"]` and the override holds `["gent centrum", "private"]`. Rename `private` → `Gent_Centrum`. The profile ends `["gent_centrum"]` and the override ends `["gent centrum"]`, each holding exactly one entry.
+  - `TestV2Humans_RenameArea_HoldsBothCollapses`: the profile holds `["gent_centrum", "private"]` and the override holds the legacy `["gent centrum", "private"]`. Rename `private` → `Gent_Centrum`. Both end `["gent_centrum"]`, with exactly one entry each and the legacy spelling replaced.
   - `TestV2Humans_RenameArea_DryRunWritesNothing`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Regenerate the golden.
 - [ ] **Step 4: Run** `go test ./internal/api/ ./internal/store/`. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `feat(api): PATCH /v2/humans/{id}/areas renames one name everywhere (#259)`.
 
-### Task 13: Routes, `/health` in the spec, and the 401 shape
+### Task 14: Routes, `/health` in the spec, and the 401 shape
 
 **Files:**
 - Modify:
@@ -377,7 +425,7 @@
 - [ ] **Step 4: Run** `go test ./internal/api/`. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `feat(api): /health in the spec, servers prefix, problem+json 401 on huma routes`.
 
-### Task 14: Documentation and changelog
+### Task 15: Documentation and changelog
 
 **Files:**
 - Modify: `CHANGELOG.md` (`[Unreleased]`: Added at `:9`, Changed at `:66`), `docs/v2-api-design.md` (`## Changes` at `:11`; `:94`, `:248` and `:311` if not already done; a new "API stability" section), `docs/v1-to-v2-migration-guide.md` (tracking `:31`, humans `:50`), `CLAUDE.md` (v2 surface, mute infrastructure, area security prune ordering, `humanlock`)
@@ -387,6 +435,7 @@
   - **Changed (breaking):** mutes `tracking_type` required for tracking scope; 401 problem+json on huma routes; PUT 409 on near-duplicate; maxbattle edits now squash; the reconciler saves membership after the prune.
   - **Stability statement:** the spec §9 bullets, copied as written.
   - **The `null` contract** in the `docs/v2-api-design.md` wildcard section (`:105-146`) and the migration guide sentinels section (`:116`): "`null` means unconstrained. A v2 client never needs to know how that is stored, and the stored representation may change without notice." Keep the sentinel table there, labelled as internal and for v1 readers only.
+  - **Area spelling:** in CLAUDE.md ("Area security" and the override sections) and API.md, state that stored area names are canonical fence names, that spaces are only a comparison key, and that v1 still writes and returns spaces.
   - **CLAUDE.md:** replace "Tracking-UID mutes are fully wired: …" with the table-aware description, and add `humanlock` to the directory list and the API Security / Command System notes.
 - [ ] **Step 2: Check** that `grep -n "transaction" CLAUDE.md docs/v2-api-design.md` mentions only `!restore`.
 - [ ] **Step 3: Gate and commit:** `docs: v2 API improvements — changelog, design doc, migration guide, CLAUDE.md`.
