@@ -47,13 +47,6 @@ func (e v2RuleEnvelope[Req]) MarshalJSON() ([]byte, error) {
 		descBytes, _ := json.Marshal(e.Description)
 		merged["description"] = descBytes
 	}
-	if e.Previous != nil {
-		prevBytes, err := json.Marshal(e.Previous)
-		if err != nil {
-			return nil, err
-		}
-		merged["previous"] = prevBytes
-	}
 	if e.ProfileNo != nil {
 		pnBytes, _ := json.Marshal(*e.ProfileNo)
 		merged["profile_no"] = pnBytes
@@ -126,24 +119,56 @@ func (v2RuleEnvelope[Req]) Schema(r huma.Registry) *huma.Schema {
 	required := append([]string(nil), reqSchema.Required...)
 	required = append(required, "uid")
 
-	// previous has the same shape as the rule itself (minus previous). It is a
-	// separate copy so the registry's cached schema is never mutated.
-	prevProps := make(map[string]*huma.Schema, len(props))
-	maps.Copy(prevProps, props)
-	prev := &huma.Schema{
-		Type:                 huma.TypeObject,
-		Description:          "The stored rule this one replaced (present only on rules in `updated`)",
-		Properties:           prevProps,
-		Required:             required,
-		AdditionalProperties: false,
-	}
-	prev.PrecomputeMessages()
-	props["previous"] = prev
-
 	s := &huma.Schema{
 		Type:                 huma.TypeObject,
 		Properties:           props,
 		Required:             required,
+		AdditionalProperties: false,
+	}
+	s.PrecomputeMessages()
+	return s
+}
+
+// v2UpdatedRuleEnvelope is a rule in a write response's `updated` list: the
+// rule as stored now, plus (optionally) the stored rule it replaced. Only this
+// list carries previous, so only its schema documents it.
+type v2UpdatedRuleEnvelope[Req any] struct {
+	v2RuleEnvelope[Req]
+	Previous *v2RuleEnvelope[Req]
+}
+
+// MarshalJSON emits the flattened rule, adding previous only when set.
+func (e v2UpdatedRuleEnvelope[Req]) MarshalJSON() ([]byte, error) {
+	b, err := e.v2RuleEnvelope.MarshalJSON()
+	if err != nil || e.Previous == nil {
+		return b, err
+	}
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(b, &merged); err != nil {
+		return nil, err
+	}
+	prev, err := json.Marshal(e.Previous)
+	if err != nil {
+		return nil, err
+	}
+	merged["previous"] = prev
+	return json.Marshal(merged)
+}
+
+// Schema is the base rule envelope schema plus an optional previous property
+// of the same shape. Built as copies; the registry's cached schemas are never
+// mutated.
+func (v2UpdatedRuleEnvelope[Req]) Schema(r huma.Registry) *huma.Schema {
+	base := v2RuleEnvelope[Req]{}.Schema(r)
+	props := make(map[string]*huma.Schema, len(base.Properties)+1)
+	maps.Copy(props, base.Properties)
+	prev := *base
+	prev.Description = "The stored rule this one replaced"
+	props["previous"] = &prev
+	s := &huma.Schema{
+		Type:                 huma.TypeObject,
+		Properties:           props,
+		Required:             base.Required,
 		AdditionalProperties: false,
 	}
 	s.PrecomputeMessages()
@@ -160,10 +185,10 @@ type v2ListOutput[Req any] struct {
 // v2CreateOutput is the {created, updated, unchanged} response (POST + PUT).
 type v2CreateOutput[Req any] struct {
 	Body struct {
-		Created   []v2RuleEnvelope[Req] `json:"created"`
-		Updated   []v2RuleEnvelope[Req] `json:"updated"`
-		Unchanged []v2RuleEnvelope[Req] `json:"unchanged"`
-		DryRun    bool                  `json:"dry_run,omitempty" doc:"True when the request was a dry run: nothing was written"`
+		Created   []v2RuleEnvelope[Req]        `json:"created"`
+		Updated   []v2UpdatedRuleEnvelope[Req] `json:"updated"`
+		Unchanged []v2RuleEnvelope[Req]        `json:"unchanged"`
+		DryRun    bool                         `json:"dry_run,omitempty" doc:"True when the request was a dry run: nothing was written"`
 	}
 }
 

@@ -49,10 +49,6 @@ type v2RuleEnvelope[Req any] struct {
 	// endpoints leave it nil, so their wire shape and OpenAPI schema are
 	// unchanged.
 	ProfileNo *int `json:"-"`
-
-	// Previous is the stored rule this one replaced. Set only on rules in a
-	// POST's `updated` list; nil (and absent from the wire) everywhere else.
-	Previous *v2RuleEnvelope[Req] `json:"previous,omitempty"`
 }
 
 // v2TrackingType captures everything the generic layer needs to serve one
@@ -452,7 +448,11 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 	out := &v2CreateOutput[Req]{}
 	out.Body.DryRun = in.DryRun
 	out.Body.Created = buildRuleEnvelopes(deps, typ, human, diff.Inserts, in.IncludeDescriptions)
-	out.Body.Updated = buildRuleEnvelopes(deps, typ, human, diff.Updates, in.IncludeDescriptions)
+	updated := buildRuleEnvelopes(deps, typ, human, diff.Updates, in.IncludeDescriptions)
+	out.Body.Updated = make([]v2UpdatedRuleEnvelope[Req], len(updated))
+	for i := range updated {
+		out.Body.Updated[i].v2RuleEnvelope = updated[i]
+	}
 	// previous is what each update actually replaced (from the diff, not from
 	// a separate read), so a commit reports the truth even if the stored rule
 	// changed after a dry-run preview.
@@ -538,7 +538,9 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	v2PushDiff(deps, typ, human, store.DiffResult[T]{Updates: []T{row}}, in.Silent)
 
 	out := &v2CreateOutput[Req]{}
-	out.Body.Updated = buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions)
+	for _, env := range buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions) {
+		out.Body.Updated = append(out.Body.Updated, v2UpdatedRuleEnvelope[Req]{v2RuleEnvelope: env})
+	}
 	return out, nil
 }
 
