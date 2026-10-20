@@ -516,7 +516,8 @@ func registerStringHelpers() {
 // workers, so mutating in place is a concurrent-write bug (observed in
 // production under parallel renders of the same alert).
 // For non-map contexts: wraps in an eachWrapper that implements
-// FieldResolver so {{this}} still works.
+// FieldResolver so {{this}} still works, and HelperArgProvider so helpers
+// receive the item itself.
 func eachContextWithMeta(ctx any, index, length int) any {
 	isFirst := index == 0
 	isLast := index == length-1
@@ -555,6 +556,15 @@ func (w *eachWrapper) GetField(name string) (any, bool) {
 func (w *eachWrapper) String() string {
 	return fmt.Sprintf("%v", w.value)
 }
+
+// HelperArg implements raymond.HelperArgProvider so helpers (and the builtin
+// if/unless/with) receive the wrapped value, not the wrapper: otherwise
+// {{gt this 1}} saw a pointer and {{#if this}} treated a 0 item as true.
+func (w *eachWrapper) HelperArg() any {
+	return w.value
+}
+
+var _ raymond.HelperArgProvider = (*eachWrapper)(nil)
 
 func registerArrayHelpers() {
 	// forEach — block helper with @isFirst, @isLast, @total

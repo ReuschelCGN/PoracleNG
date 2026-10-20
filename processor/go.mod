@@ -72,4 +72,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/mailgun/raymond/v2 => github.com/jfberry/raymond/v2 v2.0.49-0.20261020095807-69db99dfb65f
+replace github.com/mailgun/raymond/v2 => github.com/jfberry/raymond/v2 v2.0.49-0.20261020101040-3ed90f20eba2
