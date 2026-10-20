@@ -330,7 +330,7 @@ Release plan (§10): confirmed. 5.3.0 carries #230, #303 and this batch together
 - New DB transactions. Consistency is held in the application by design (§3.6), and `!restore` is the only, deliberate, exception (§8).
 - Recovering the single rule a failure can lose between delete and insert in a tracking replace (§3.6).
 - v1 maxbattle diffing (v1 is frozen).
-- `!script` drops per-rule overrides (`area:` / `location:`) from the commands it emits (`script.go:150-242`). This predates this work and is a follow-up.
+- `!script` drops per-rule overrides (`area:` / `location:`), pings and the quest `summary` bit from the commands it emits. This predates this work and is tracked in #329.
 
 ## 13. Implementation outline
 
