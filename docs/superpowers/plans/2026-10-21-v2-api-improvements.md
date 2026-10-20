@@ -323,6 +323,7 @@ This task makes the stored form the fence name everywhere outside v1, and moves 
   - `processor/internal/api/v2_tracking.go` (`buildRuleEnvelopes` at `:564`, `buildSnapshotRules` at `:600`): canonicalise on read
   - the v1 GET handlers (`tracking<Type>.go`, list and all/allProfiles): spaced output, so v1's wire format is unchanged
   - `processor/internal/bot/commands/override.go:80-104` (resolve against `available` by key; store the canonical name)
+  - `processor/internal/bot/area_logic.go:113-196` (`AddAreas`, `matchAvailableArea`, `RemoveAreas`): look up and dedupe by `NormalizeAreaKey` instead of the one-way space→underscore retry, so either spelling resolves, in both directions. `AddAreas` still stores the canonical name it returns today.
 - Test: `processor/internal/geofence/normalize_test.go`, `processor/internal/db/diff_test.go`, `processor/internal/db/override_load_test.go` (new), `processor/internal/api/v2_area_spelling_test.go` (new), `processor/internal/api/tracking_v1_override_test.go` (new), `processor/internal/bot/commands/override_test.go`
 
 **Interfaces:**
@@ -344,6 +345,7 @@ This task makes the stored form the fence name everywhere outside v1, and moves 
     4. PUTting it back stores `["gent_centrum"]`.
   - `TestV1_OverrideAreasStillSpaced`: a row stored as `["gent_centrum"]` by v2 is returned by v1 GET as `["gent centrum"]`. A v1 POST of `["Gent_Centrum"]` still stores `["gent centrum"]`.
   - `TestOverrideCommand_StoresCanonicalName`: `!track pikachu area:gent_centrum`, which reaches the command as `gent centrum` because the parser turns underscores into spaces (`bot/parser.go:147`), is permitted and stored as `gent_centrum`. Today the permitted check compares `strings.ToLower(a.Name)` (`override.go:84`) with the spaced argument, so this case is refused. That is a bug this task fixes.
+  - `TestAreaLogic_EitherSpellingBothDirections`: for fence `Gent_Centrum`, `!area add gent centrum` stores `gent_centrum`. For fence `Gent Centrum` (with a space), adding the quoted `"gent_centrum"` stores `gent centrum`. Today `matchAvailableArea` only retries space→underscore, so this case fails. `RemoveAreas` removes a stored entry given either spelling. Adding a name already held under the other spelling doesn't duplicate it.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Do the loaders, `parseOverrideAreas` and the `DiffTracking` key comparison in one commit, because matching depends on them together. Then the write side, the v2 read side, the v1 output, and the bot. `StripOverrideAreas` needs no change: `PruneForMembership` puts both spellings into `denied` (`reconcile_prune.go:44`) and `dropDeniedAreas` compares lowercase.
 - [ ] **Step 4: Run** `go test ./internal/geofence/ ./internal/db/ ./internal/matching/ ./internal/api/ ./internal/bot/...`. Expected: PASS. If the round-trip test from Task 5 ran on override fixtures, it must still pass unchanged.
