@@ -179,6 +179,12 @@ func toString(v any) string {
 	if a, ok := v.([]any); ok && len(a) == 0 {
 		return ""
 	}
+	// Whole-number floats (raw webhook numbers decode as float64) print in
+	// full like JS String(n), not in Go's exponent form, so large ids such
+	// as s2_cell_id work as map keys and match what {{field}} renders.
+	if f, ok := v.(float64); ok && f == math.Trunc(f) && math.Abs(f) < 1e21 {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
 	return fmt.Sprintf("%v", v)
 }
 

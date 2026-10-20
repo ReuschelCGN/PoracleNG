@@ -719,6 +719,7 @@ func TestCustomMapHelperModes(t *testing.T) {
 	store := writeCustomMaps(t, map[string]string{
 		"generation.json": `{"name": "generation", "map": {"1": {"genName": "Kanto", "genNumber": "1"}, "26_61": {"genName": "Alola", "genNumber": "7"}}}`,
 		"shiny.json":      `{"name": "shinyPossible", "map": {"25": "✨"}}`,
+		"cells.json":      `{"name": "cells", "map": {"5101693287038812000": "cellA"}}`,
 	})
 	raymond.RegisterHelper("testmap", func(mapName, value any, options *raymond.Options) any {
 		v, ok := lookupCustomMap(store, toString(mapName), toString(value), "", getLang(options))
@@ -747,6 +748,13 @@ func TestCustomMapHelperModes(t *testing.T) {
 		{"map2 prefers first key", `{{#testmap2 'generation' (concat pokemonId '_' formId) pokemonId}}{{genName}}{{/testmap2}}`, map[string]any{"pokemonId": 26, "formId": 61}, "Alola"},
 		{"map2 falls back to second key", `{{#testmap2 'generation' (concat pokemonId '_' formId) pokemonId}}{{genName}}{{/testmap2}}`, map[string]any{"pokemonId": 1, "formId": 0}, "Kanto"},
 		{"missing field in concat key", `[{{testmap 'shinyPossible' (concat pokemonId '_' formId)}}]`, map[string]any{"pokemonId": 25}, "[]"},
+		// Inline lookups inside another block must still render inline (#ivSymbol report).
+		{"inline inside if block", `{{#if pokemonId}}{{testmap 'shinyPossible' pokemonId}}{{/if}}`, map[string]any{"pokemonId": 25}, "✨"},
+		{"inline inside else block", `{{#if nope}}x{{else}}{{testmap 'shinyPossible' pokemonId}}{{/if}}`, map[string]any{"pokemonId": 25}, "✨"},
+		{"inline inside each", `{{#each ids}}{{testmap 'shinyPossible' this}}{{/each}}`, map[string]any{"ids": []int{25, 1, 25}}, "✨✨"},
+		{"inline inside comparison block", `{{#isnt iv '100.00'}}{{testmap 'shinyPossible' pokemonId}}{{/isnt}}`, map[string]any{"iv": "48.89", "pokemonId": 25}, "✨"},
+		{"block inside if block", `{{#if pokemonId}}{{#testmap 'generation' pokemonId}}{{genName}}{{/testmap}}{{/if}}`, map[string]any{"pokemonId": 1}, "Kanto"},
+		{"large float key", `{{testmap 'cells' cell}}`, map[string]any{"cell": float64(5101693287038812160)}, "cellA"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
