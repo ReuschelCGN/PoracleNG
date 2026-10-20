@@ -795,3 +795,24 @@ func TestPokemonBlockHelperWithoutForm(t *testing.T) {
 		t.Errorf("pokemon without form: got %q, want %q", got, "Pikachu")
 	}
 }
+
+// A helper used as a block helper's argument is its own invocation and must
+// not see the enclosing block's IsBlock flag (it used to render the block
+// body instead of returning its value).
+func TestHelperAsBlockArgument(t *testing.T) {
+	ctx := map[string]any{"id": 25}
+	data := map[string]any{"language": "en"}
+	tests := []struct{ tmpl, want string }{
+		{`{{#eq (pokemon id 0) 'Pikachu'}}Y{{else}}N{{/eq}}`, "Y"},
+		{`{{#isnt (pokemon id 0) 'Pikachu'}}N{{else}}Y{{/isnt}}`, "Y"},
+		{`{{#if (eq (pokemon id 0) 'Pikachu')}}Y{{else}}N{{/if}}`, "Y"},
+		{`{{#with (pokemon id 0)}}[{{this}}]{{/with}}`, "[Pikachu]"},
+		{`{{#if id}}{{#eq (pokemon id 0) 'Pikachu'}}Y{{/eq}}{{/if}}`, "Y"},
+		{`{{#pokemon id 0}}{{fullName}}{{/pokemon}}`, "Pikachu"},
+	}
+	for _, tc := range tests {
+		if got := renderWithData(t, tc.tmpl, ctx, data); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+	}
+}
