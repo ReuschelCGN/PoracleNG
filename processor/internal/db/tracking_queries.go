@@ -704,15 +704,17 @@ func InsertGym(db *sqlx.DB, gym *GymTrackingAPI) (int64, error) {
 }
 
 // MaxbattleTrackingAPI represents a maxbattle tracking row for API operations.
-// Maxbattle in JS always inserts (no diff logic), so no diff:"match" tags.
+// Ping, clean, distance and template are updatable: a rule that differs from a
+// stored one in exactly one of them updates it in place; any other difference
+// inserts a new row.
 type MaxbattleTrackingAPI struct {
 	UID                   int64    `db:"uid"                     json:"uid"                    diff:"-"`
 	ID                    string   `db:"id"                      json:"id"                     diff:"-"`
 	ProfileNo             int      `db:"profile_no"              json:"profile_no"             diff:"-"`
 	Ping                  string   `db:"ping"                    json:"ping"                   diff:"update"`
-	Clean                 int      `db:"clean"                   json:"clean"`
-	Distance              int      `db:"distance"                json:"distance"`
-	Template              string   `db:"template"                json:"template"`
+	Clean                 int      `db:"clean"                   json:"clean"                  diff:"update"`
+	Distance              int      `db:"distance"                json:"distance"               diff:"update"`
+	Template              string   `db:"template"                json:"template"               diff:"update"`
 	PokemonID             int      `db:"pokemon_id"              json:"pokemon_id"`
 	Form                  int      `db:"form"                    json:"form"`
 	Level                 int      `db:"level"                   json:"level"`

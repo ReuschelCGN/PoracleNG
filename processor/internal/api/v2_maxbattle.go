@@ -137,9 +137,9 @@ func maxbattleRowToRule(row *db.MaxbattleTrackingAPI) v2MaxbattleRule {
 // RegisterV2TrackingMaxbattle registers the strict v2 maxbattle tracking
 // endpoints via the generic resource helpers.
 //
-// Note: MaxbattleTrackingAPI carries no diff:"match" tags, so the shared
-// ApplyDiff path treats every candidate as a fresh insert (matching the v1
-// "always inserts" behaviour) — the generic layer needs no special-casing.
+// Note: MaxbattleTrackingAPI tags ping, clean, distance and template as
+// updatable, so the shared ApplyDiff path squashes a rule that differs only in
+// one of those — the generic layer needs no special-casing.
 func RegisterV2TrackingMaxbattle(api huma.API, deps *TrackingDeps) {
 	registerV2Tracking(api, deps, v2TrackingType[v2MaxbattleRule, db.MaxbattleTrackingAPI]{
 		Name: "maxbattle",
