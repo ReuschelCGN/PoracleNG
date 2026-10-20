@@ -11,7 +11,7 @@ PoracleWeb.NET has set out to stop reading and writing the PoracleNG database di
 
 Some requests are accepted as asked, some are accepted with changes, and some are answered with a different design. Where we diverge, the reasoning is given in full so it can be argued with. The aim is a v2 API that is coherent on its own terms, rather than one that mirrors a client's existing database operations one-for-one. That way the next client gets the same benefit.
 
-Nothing here is built yet. Comments on any section are welcome. The open questions are collected in [§11](#11-open-questions-for-poracleweb-net).
+Nothing here is built yet. Comments on any section are welcome. The open questions are collected in [§11](#11-open-questions-for-poraclewebnet).
 
 ## 1. Principles applied
 
@@ -184,7 +184,7 @@ PUT   /api/v2/humans/123456789/tracking/pokemon/12  replace one rule (uid in the
 
 The human in the path is the ownership scope. A uid that isn't that human's pokemon rule is reported as `not_found` and left alone.
 
-- **uids go in the body**, not the query string. This avoids the length limits they described, and the same applies to bulk delete ([§11](#11-open-questions-for-poracleweb-net), Q4). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
+- **uids go in the body**, not the query string. This avoids the length limits they described, and the same applies to bulk delete ([§11](#11-open-questions-for-poraclewebnet), Q4). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
 - **Settable fields:** `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`. These are the delivery and "where" settings shared by every type. Filter fields are not bulk-settable: setting `min_iv` on 300 different rules is a different operation and invites mass squashing. Unknown or unsupported fields get a 422 for the whole request.
 - **The merge happens in place.** Each rule keeps its uid, using an `UPDATE` of only the named columns rather than delete-and-reinsert. Every field not named stays exactly as it is.
 - **Per-rule outcomes, never all-or-nothing:**
@@ -283,7 +283,7 @@ What "stable" means, now written into `docs/v2-api-design.md`:
 
 Small fixes found while checking:
 - **The 401 from the secret check** is still the legacy `{"status":"authError"}` body. It becomes problem+json for huma-served routes (all of the above, and `/api/v2`). The frozen v1 gin routes keep the legacy body.
-- **The spec has no `servers` entry**, so its paths appear without the `/api` prefix. `servers: [{ "url": "/api" }]` is added ([§11](#11-open-questions-for-poracleweb-net), Q5, in case it affects their code generation).
+- **The spec has no `servers` entry**, so its paths appear without the `/api` prefix. `servers: [{ "url": "/api" }]` is added ([§11](#11-open-questions-for-poraclewebnet), Q5, in case it affects their code generation).
 - **Stale references** are removed: the design doc names `/v2/summaries` (the path is `/summaries`), and `main.go` comments say test and tile routes "stay on gin" (they moved to huma).
 
 ## 10. Releases and versioning
