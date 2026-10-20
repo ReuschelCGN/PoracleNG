@@ -1,6 +1,6 @@
 # v2 API Improvements for Full Client Migration — Design for Comment
 
-**Status:** draft, for comment by PoracleWeb.NET before implementation
+**Status:** reviewed by PoracleWeb.NET (comment on #328, 2026-10-20); answers folded in ([§11](#11-open-questions-for-poraclewebnet)). Ready for an implementation plan.
 **Date:** 2026-10-20
 **Branch:** `v2-api-improvements` (off `develop`, with #254 / #243 merged in)
 **Issues:** #326, #325, #324, #323, #259, #253, #252, #243, plus two questions asked out of band (versioning of unversioned routes, release tagging)
@@ -99,6 +99,10 @@ The request is to refuse any candidate that would update or duplicate, and to ha
 
 The client needs no copy of the diff rules: the server decides once, in the preview, and again in the commit, using the same code.
 
+**A commit always reports what it actually did, not what the preview predicted.** The commit re-classifies under the per-human lock (§3.6). Its `created`/`updated`/`unchanged` and every `previous` describe the rows it really replaced at that moment, even if another write landed between preview and commit. A client that compares the commit response with its preview can tell when the two differ, and the confirmation it shows from the commit response is always true. The same holds for every endpoint that supports `dry_run`.
+
+The same flow works for bulk adds (quick-pick apply, profile import): preview, drop any candidate the preview shows in `updated`, and commit the rest.
+
 ### 3.5 One policy, every surface
 
 Squashing moves behind a single policy type in `internal/store`, used by every write path. Today it is called separately from the bot commands, v1 POST, v2 POST and (partially) v2 PUT.
@@ -184,7 +188,7 @@ PUT   /api/v2/humans/123456789/tracking/pokemon/12  replace one rule (uid in the
 
 The human in the path is the ownership scope. A uid that isn't that human's pokemon rule is reported as `not_found` and left alone.
 
-- **uids go in the body**, not the query string. This avoids the length limits they described, and the same applies to bulk delete ([§11](#11-open-questions-for-poraclewebnet), Q4). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
+- **uids go in the body**, not the query string. This avoids the length limits they described. Bulk DELETE gets the same option (below). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
 - **Settable fields:** `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`. These are the delivery and "where" settings shared by every type. Filter fields are not bulk-settable: setting `min_iv` on 300 different rules is a different operation and invites mass squashing. Unknown or unsupported fields get a 422 for the whole request.
 - **The merge happens in place.** Each rule keeps its uid, using an `UPDATE` of only the named columns rather than delete-and-reinsert. Every field not named stays exactly as it is.
 - **Per-rule outcomes, never all-or-nothing:**
@@ -202,6 +206,8 @@ The human in the path is the ownership scope. A uid that isn't that human's poke
   `reason` is one of `invalid` (the per-rule validation from #211), `conflict` (the squash policy's `Conflicts`, §3.5) or `not_found` (not owned by this human, or not of this type). `detail` is a human-readable message. A client switches on `reason`, not `detail`.
 - **One lock.** The whole PATCH runs under the per-human lock (§3.6). It is idempotent, so a PATCH that fails partway is safe to repeat. The squash check sees each rule's post-PATCH state, so two rules in the same PATCH that would collide with each other are reported, and the first in `uids` order wins.
 - `dry_run` gives the same response without writing.
+
+**Bulk DELETE takes a body uid list too** (confirmed in §11, Q4). `DELETE /api/v2/humans/{id}/tracking/{type}` accepts either the existing `?uid=1,2,3` or a JSON body `{ "uids": [1, 2, 3] }`. Sending both is a 422, and so is sending neither, so there is still no implicit "delete everything". The response is unchanged (`{deleted:[…]}`), and `dry_run` is supported. We use a body on DELETE, not a `POST …/delete` alias, so a bulk delete stays the same resource and verb. A client that cannot send a DELETE body keeps the query form.
 
 The v2 design doc's "No `PATCH`/partial-update in v2" is corrected. It was already out of date, because `PATCH /v2/humans/{id}/profiles/{profile_no}` exists. Tracking PUT stays a full replace, and tracking PATCH is defined only for this bulk settings case.
 
@@ -250,7 +256,7 @@ The shapes were agreed on the issues. This section records the additions from Po
 
 ## 8. #243 exemptFromAreaSecurity
 
-PR #254 implements the agreed design. PoracleWeb.NET approved it, and it is merged into this branch so the area operations in §7 build on `PermittedAreas`. The pre-merge check they asked for is still to do, and it happens before the branch goes to `develop`: a production query for community members with no `area_restriction` whose `override_areas` reference fences outside their community's `allowed_areas`. Those rules would start returning 422 on their next write.
+PR #254 implements the agreed design. PoracleWeb.NET approved it, and it is merged into this branch so the area operations in §7 build on `PermittedAreas`. **The pre-merge check is done** (PoracleWeb.NET, read-only against their production, 2026-10-20). It counted community members with no `area_restriction` whose `override_areas` name a fence outside their communities' `allowed_areas`: **0 rules**. Widened to all community members, it found 27 rules for 4 users. 25 are scoped to the user's own drawn fence, which is what `exemptFromAreaSecurity` exists for, and their feed will mark those fences before area security is enabled. The other 2 are stale community names in stored memberships that reconciliation rewrites. Nothing needs changing on our side. (`area_security` is off in their production config.)
 
 **One change to #254 here, for consistency with §3.6.** Its `SQLHumanStore.StripUserAreas` prunes `humans.area` and every profile inside a DB transaction with `SELECT … FOR UPDATE` row locks. That becomes the same model as everything else:
 - plain sequential writes under the per-human lock;
@@ -295,14 +301,16 @@ Small fixes found while checking:
 - From 5.3.0 on, each release is a `vX.Y.Z` tag plus a GitHub Release whose notes are that version's CHANGELOG section. `[Unreleased]` is renamed on release.
 - `/health` already returns `version`, so a client can check what it is talking to.
 
-## 11. Open questions for PoracleWeb.NET
+## 11. Questions for PoracleWeb.NET: answered (#328, 2026-10-20)
 
-1. **§3 instead of `on_match=refuse`:** does `dry_run` + `previous` give your Add flow what it needs? Is there a case where only a refusal would do?
-2. **§3.5:** PUT and PATCH refuse an edit that collides with another rule, rather than merging it. Does that suit your edit screens?
-3. **§4:** with the round-trip guarantee and schema bounds, is there anything left that needs the stored value once reads and creates are on v2?
-4. **§5:** should bulk DELETE also take a body uid list (as `POST …/tracking/{type}/delete`, mirroring v1), for the same length reason?
-5. **§9:** would adding `servers: [{url: "/api"}]` to the spec break your client generation?
-6. **§6:** is a separate `tracking_type` field acceptable, rather than `value: "raid:60"`?
+1. **§3 instead of `on_match=refuse`:** yes. It covers Add and bulk adds (quick-pick apply, profile import: preview, drop candidates that would update, commit the rest). Asked for: a commit's `previous` must describe what it actually replaced, even after an intervening write. Now stated in §3.4.
+2. **§3.5, PUT/PATCH refuse a collision:** yes. It matches what their edit path already does client-side, so a 409 naming the other uid replaces client code.
+3. **§4, stored values:** nothing needed at runtime once reads and creates are on v2. They migrate one type at a time, with `null` in their models. They keep only a frozen sentinel table for converting old profile exports and stored quick-pick definitions on input.
+4. **§5, body uid list on bulk DELETE:** yes. They fall back to v1 past about 2,000 characters of query string today. Now specified in §5.
+5. **§9, `servers: [{url: "/api"}]`:** no impact. They read `paths` by key and do not generate a client.
+6. **§6, separate `tracking_type`:** yes, preferred over `raid:60`. They pass it through only when lifting a bot-created tracking mute.
+
+Release plan (§10): confirmed. 5.3.0 carries #230, #303 and this batch together.
 
 ## 12. Out of scope (recorded)
 
