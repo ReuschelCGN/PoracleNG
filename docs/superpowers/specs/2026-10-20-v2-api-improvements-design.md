@@ -301,7 +301,9 @@ Small fixes found while checking:
 - From 5.3.0 on, each release is a `vX.Y.Z` tag plus a GitHub Release whose notes are that version's CHANGELOG section. `[Unreleased]` is renamed on release.
 - `/health` already returns `version`, so a client can check what it is talking to.
 
-## 11. Questions for PoracleWeb.NET: answered (#328, 2026-10-20)
+## 11. Open questions for PoracleWeb.NET
+
+**All answered** on #328 (2026-10-20):
 
 1. **§3 instead of `on_match=refuse`:** yes. It covers Add and bulk adds (quick-pick apply, profile import: preview, drop candidates that would update, commit the rest). Asked for: a commit's `previous` must describe what it actually replaced, even after an intervening write. Now stated in §3.4.
 2. **§3.5, PUT/PATCH refuse a collision:** yes. It matches what their edit path already does client-side, so a 409 naming the other uid replaces client code.
