@@ -17,6 +17,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/dts"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
@@ -194,6 +195,10 @@ func (r *TelegramReconciliation) reconcileUser(id string, user *store.Human, tel
 			r.log.Errorf("Synchronisation of Poracle user %s panicked: %v", id, rv)
 		}
 	}()
+
+	// Hold the per-human write lock for the whole reconcile. Nothing called
+	// from here locks again.
+	defer humanlock.Lock(id)()
 
 	r.log.Debugf("Check user %s", id)
 
@@ -384,9 +389,12 @@ func (r *TelegramReconciliation) UpdateTelegramChannels() {
 			areaRestriction := community.CalculateLocationRestrictions(r.cfg.Area.Communities, user.CommunityMembership)
 			if !bot.HaveSameContents(areaRestriction, user.AreaRestriction) {
 				areaRestrictionJSON, _ := json.Marshal(areaRestriction)
-				if err := r.humanStore.Update(user.ID, map[string]any{
+				unlock := humanlock.Lock(user.ID)
+				err := r.humanStore.Update(user.ID, map[string]any{
 					"area_restriction": string(areaRestrictionJSON),
-				}); err != nil {
+				})
+				unlock()
+				if err != nil {
 					r.log.Errorf("Update channel %s: %v", user.ID, err)
 					continue
 				}

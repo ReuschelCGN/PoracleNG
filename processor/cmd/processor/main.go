@@ -341,6 +341,9 @@ func main() {
 	// Authenticated API group
 	apiGroup := r.Group("/api")
 	apiGroup.Use(api.RequireSecretGin(cfg.Processor.APISecret))
+	// Per-human write lock: after auth, before huma and v1 groups are created
+	// so it covers /api/v2/humans/{id}/* and the v1 /:id routes alike.
+	apiGroup.Use(api.HumanLock())
 	if cfg.Processor.BlankAPISecretExposed() {
 		log.Warnf("[processor] api_secret is empty and the API listens on %q (not loopback): every /api endpoint, including writes (users, tracking, config, DTS, commands), is open to anyone who can reach port %d. Set api_secret or bind host to 127.0.0.1.", cfg.Processor.Host, cfg.Processor.Port)
 	}

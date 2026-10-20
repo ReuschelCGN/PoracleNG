@@ -453,7 +453,7 @@ func RegisterCommand(api huma.API, deps *bot.BotDeps) {
 				ctx.HasArea = target.HasArea
 			}
 
-			replies := handler.Run(ctx, remainingArgs)
+			replies := bot.RunLocked(handler, ctx, remainingArgs)
 			// Apply maintenance suffix so callers see the paused-delivery
 			// warning, matching discordbot/bot.go and telegrambot/bot.go.
 			replies = bot.ApplyMaintenanceSuffix(replies, deps.Dispatcher, tr.T("cmd.maintenance.active_suffix"))

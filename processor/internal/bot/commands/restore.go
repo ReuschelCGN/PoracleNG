@@ -84,6 +84,9 @@ func (c *RestoreCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply
 		return []bot.Reply{{React: "🙅"}}
 	}
 
+	// The transaction is deliberately kept (spec §8): the per-human lock taken
+	// by bot.RunLocked serialises this against API/reconciler writes, and the
+	// transaction keeps the multi-table replace atomic.
 	if err := restoreBackup(sqlxRestoreDB{ctx.DB}, backup, ctx.TargetID, ctx.ProfileNo); err != nil {
 		log.Errorf("restore %s for %s: %v", name, ctx.TargetID, err)
 		return []bot.Reply{{Text: tr.Tf("msg.restore.failed", name, err.Error())}}

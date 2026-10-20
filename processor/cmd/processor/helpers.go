@@ -14,6 +14,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/state"
@@ -396,6 +397,9 @@ func (ps *ProcessorService) notifySummaryRateBreach(target, typ, name, language 
 func (ps *ProcessorService) OnBan(target, typ, name, language string) {
 	tr := ps.translations.For(language)
 	var msg string
+	// Hold the per-human lock only around the disable write, not the
+	// notifications below.
+	unlock := humanlock.Lock(target)
 	if ps.cfg.AlertLimits.DisableOnStop {
 		if ps.humans != nil {
 			if err := ps.humans.SetAdminDisable(target, true); err != nil {
@@ -411,6 +415,7 @@ func (ps *ProcessorService) OnBan(target, typ, name, language string) {
 		}
 		msg = tr.Tf("rate_limit.banned_soft", bot.CommandPrefixForType(ps.cfg, typ))
 	}
+	unlock()
 
 	ps.dispatchBypass(target, typ, name, msg, "RateLimit")
 
@@ -442,7 +447,10 @@ func (ps *ProcessorService) disableUserForDeliveryFailure(target, name, jobType 
 	if ps.humans == nil {
 		return
 	}
-	if err := ps.humans.SetEnabled(target, false); err != nil {
+	unlock := humanlock.Lock(target)
+	err := ps.humans.SetEnabled(target, false)
+	unlock()
+	if err != nil {
 		log.Errorf("Delivery failure: failed to disable user %s: %s", target, err)
 		return
 	}

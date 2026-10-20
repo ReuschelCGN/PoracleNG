@@ -16,6 +16,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/dts"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/state"
 	"github.com/pokemon/poracleng/processor/internal/store"
@@ -258,6 +259,10 @@ func (r *Reconciliation) ReconcileUser(id string, user *store.Human, discordUser
 			r.log.Errorf("Synchronisation of Poracle user %s panicked: %v", id, rv)
 		}
 	}()
+
+	// Hold the per-human write lock for the whole reconcile (create,
+	// reactivate, disable, delete). Nothing called from here locks again.
+	defer humanlock.Lock(id)()
 
 	r.log.Debugf("Check user %s", id)
 
@@ -678,9 +683,11 @@ func (r *Reconciliation) SyncDiscordChannels(syncNames, syncNotes, removeInvalid
 				if restErr.Response.StatusCode == 404 {
 					if removeInvalidChannels {
 						r.log.Infof("Disable channel %s %s", user.ID, user.Name)
+						unlock := humanlock.Lock(user.ID)
 						if err := r.humanStore.SetAdminDisable(user.ID, true); err != nil {
 							r.log.Errorf("Disable channel %s: %v", user.ID, err)
 						}
+						unlock()
 					}
 					continue
 				}
@@ -744,7 +751,10 @@ func (r *Reconciliation) SyncDiscordChannels(syncNames, syncNotes, removeInvalid
 		}
 
 		if len(updates) > 0 {
-			if err := r.humanStore.Update(user.ID, updates); err != nil {
+			unlock := humanlock.Lock(user.ID)
+			err := r.humanStore.Update(user.ID, updates)
+			unlock()
+			if err != nil {
 				r.log.Errorf("Update channel %s: %v", user.ID, err)
 				continue
 			}

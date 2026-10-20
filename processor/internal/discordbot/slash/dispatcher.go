@@ -242,7 +242,7 @@ func (d *Dispatcher) HandleCommand(s *discordgo.Session, ic *discordgo.Interacti
 		d.respondError(s, ic, "🛑 Command not implemented.")
 		return
 	}
-	replies := cmd.Run(ctx, tokens)
+	replies := bot.RunLocked(cmd, ctx, tokens)
 	// Apply maintenance suffix so slash users see the paused-delivery
 	// warning, matching the gateway (discordbot/bot.go) and Telegram surfaces.
 	if d.bundle != nil && ctx != nil && d.deps != nil {

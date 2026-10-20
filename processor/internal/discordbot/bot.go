@@ -716,7 +716,7 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 			}
 		}
 
-		replies := handler.Run(ctx, remainingArgs)
+		replies := bot.RunLocked(handler, ctx, remainingArgs)
 		replies = bot.ApplyMaintenanceSuffix(replies, b.Dispatcher, tr.T("cmd.maintenance.active_suffix"))
 		b.sendReplies(s, m, replies)
 	}
