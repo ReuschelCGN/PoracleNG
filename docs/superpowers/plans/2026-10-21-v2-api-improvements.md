@@ -73,6 +73,7 @@
   - `processor/internal/discordbot/reconciliation.go:255` (`ReconcileUser`) and `processor/internal/telegrambot/reconciliation.go:191` (`reconcileUser`): lock `id` for the whole function, which covers both the area-security and non-area-security branches (create, reactivate, disable, delete-all)
   - `processor/internal/bot/commands/apply.go:167` (`handler.Run(&targetCtx, cmdArgs)` becomes `bot.RunLocked(handler, &targetCtx, cmdArgs)`, which locks each apply target)
   - `processor/internal/bot/commands/apply.go:18` and `processor/internal/bot/commands/poracle_admin.go:17`: implement `bot.TargetLockExempt`
+  - `processor/internal/discordbot/reconciliation.go:662` (`SyncDiscordChannels`: lock each channel human's id around its writes at `:681` and `:747`) and `processor/internal/telegrambot/reconciliation.go:371` (`UpdateTelegramChannels`, write at `:387`)
   - `processor/cmd/processor/helpers.go:396` (`OnBan`) and `:441` (`disableUserForDeliveryFailure`): lock the target id around the disable writes
   - `processor/internal/buttonactions/unsubscribe.go:24` (lock the clicking user's id)
   - `processor/cmd/processor/profiles.go:47` (`checkProfileSwitches`: lock each human id around its write at about line 99)
@@ -185,7 +186,7 @@
 - Produces:
   - `v2RuleEnvelope[Req]` gains `Previous *v2RuleEnvelope[Req]` with `json:"previous,omitempty"`. `MarshalJSON` emits it, and the schema provider adds an optional `previous` property that references the same rule schema.
   - `v2CreateOutput` and `v2DeleteOutput` bodies gain `DryRun bool` with `json:"dry_run,omitempty"`.
-  - A query field `DryRun bool` with `query:"dry_run"` on `v2CreateInput`, `v2PutInput` and `v2BulkDeleteInput`, and on a **new** `v2DeleteItemInput` (a copy of `v2ItemInput` plus `DryRun`) used only by the single-delete op. `v2ItemInput` is shared with GET-by-uid, and the ops set `RejectUnknownQueryParameters`, so adding `dry_run` to it would make GET accept the parameter without complaint.
+  - A query field `DryRun bool` with `query:"dry_run"` on `v2CreateInput` only. Task 7 adds it to `v2PutInput`, `v2BulkDeleteInput` and a **new** `v2DeleteItemInput` in the same commit that honours it, so no endpoint ever accepts `dry_run` and then writes anyway. The new input is (a copy of `v2ItemInput` plus `DryRun`) used only by the single-delete op. `v2ItemInput` is shared with GET-by-uid, and the ops set `RejectUnknownQueryParameters`, so adding `dry_run` to it would make GET accept the parameter without complaint.
   - `v2HandleCreate`: with `DryRun` set, it calls `store.DiffAndClassify` on the scoped rows, leaves inserts at uid 0, and skips `ApplyDiff`, `reloadState` and `v2PushDiff`.
 
 - [ ] **Step 1: Failing tests**
@@ -237,9 +238,9 @@
   - `TestV2Patch_PerRuleRefusals`: a rule with `override_areas` and `distance:500` gives `invalid`. A uid owned by u2 gives `not_found`. Two rules that differ only in distance gives one `updated` and the other `conflict` with `conflicts_with` set, and the first in `uids` order wins.
   - `TestV2Patch_UnsupportedFieldIs422`: `{summary:true}` on raid, and `{edit:true}` on gym.
   - `TestV2Patch_DryRunWritesNothing`.
-  - `TestV2Patch_UnchangedWhenAlreadySet`.
+  - `TestV2Patch_UnchangedWhenAlreadySet`: also a case where the stored row holds the legacy spaced override `["gent centrum"]`. PATCHing a value it already has gives `unchanged`, not an `updated` whose `previous` differs only in spelling.
 - [ ] **Step 2: Run them.** Expected: FAIL (405).
-- [ ] **Step 3: Implement.** For each uid in order: find the owned row (`v2FindOwnedRow`) or report `not_found`; take `ToRule(row)`; apply the set; `Translate` (an error becomes `invalid` with the error's detail); compare with the stored row (equal means `unchanged`); run `Conflicts` against the rows **as already patched in this request**; then write. Regenerate the golden. Update the "No PATCH" lines in `docs/v2-api-design.md:94` and `:311`.
+- [ ] **Step 3: Implement.** For each uid in order: find the owned row (`v2FindOwnedRow`) or report `not_found`; take `ToRule(row)`; apply the set; `Translate` (an error becomes `invalid` with the error's detail); compare with the stored row using `db.DiffTracking`'s duplicate result, not `reflect.DeepEqual` (duplicate means `unchanged`; key comparison from Task 11); run `Conflicts` against the rows **as already patched in this request**; then write. Regenerate the golden. Update the "No PATCH" lines in `docs/v2-api-design.md:94` and `:311`.
 - [ ] **Step 4: Run** `go test ./internal/api/`. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `feat(api): v2 bulk PATCH of rule settings with per-rule outcomes (#325)`.
 
@@ -285,7 +286,7 @@
   - `processor/internal/bot/commands/mute.go` (`stripMuteTypePrefix` at `:198`, `runMuteTrackingUID` at `:219`, `runUnmuteTrackingUID` at `:514`, the comment at `:107-111`)
   - `processor/internal/bot/commands/tracked.go:66` (`propertyMuteValueLabel`)
   - `processor/internal/i18n/locale/en.json`
-  - `processor/internal/api/v2_mutes.go` (`:37-135`, `:262`)
+  - `processor/internal/api/v2_mutes.go` (`:37-135`; `:262`, where the DELETE lookup uses `mute.sameScopeValue`-equivalent matching, including EqualFold for areas and the table for tracking, instead of exact `==`)
   - `processor/internal/buttonactions/mute.go:113-118`
   - `processor/internal/buttons/buttons.go:49` (comment)
 - Test: `processor/internal/bot/commands/mute_test.go`, `processor/internal/api/v2_mutes_test.go`, `processor/internal/buttonactions/buttonactions_test.go`
@@ -316,13 +317,14 @@ This task makes the stored form the fence name everywhere outside v1, and moves 
 - Modify:
   - `processor/internal/geofence/normalize.go` (add `CanonicalAreaName`)
   - the 10 state loaders listed above: normalise each loaded override with `geofence.NormalizeAreaKey` right after the `json.Unmarshal` (e.g. `db/forts.go:44`)
-  - `processor/internal/db/tracking_queries.go:36` (`parseOverrideAreas` returns the stored names, lowercased, without the underscore→space rewrite)
+  - `processor/internal/db/tracking_queries.go:36`: `parseOverrideAreas` is **unchanged**. It keeps returning the spaced key form, so v1 GET, `!tracked` and rowtext output stay exactly as today without any edit to the v1 handlers. The canonical form is shown only by v2, through `canonicalizeRowOverrideAreas`. Trade-off: a stored name whose fence is not loaded shows spaced in v2, the same as the `CanonicalAreaName` fallback.
   - `processor/internal/db/diff.go:18` (key comparison for tagged fields) and the `OverrideAreas` field tag on the 10 `*TrackingAPI` structs (`areakey:"true"`)
   - `processor/internal/api/tracking.go:370-385`: rename `normalizeOverrideAreas` to `v1NormalizeOverrideAreas`, used only by the 10 v1 `tracking<Type>.go` handlers, and add `canonicalOverrideAreas`
   - the 11 v2 Translate call sites (`v2_<type>.go`, e.g. `v2_pokemon.go:174`): switch to `canonicalOverrideAreas`
   - `processor/internal/api/v2_tracking.go` (`buildRuleEnvelopes` at `:564`, `buildSnapshotRules` at `:600`): canonicalise on read
-  - the v1 GET handlers (`tracking<Type>.go`, list and all/allProfiles): spaced output, so v1's wire format is unchanged
   - `processor/internal/bot/commands/override.go:80-104` (resolve against `available` by key; store the canonical name)
+  - `processor/internal/api/v2_humans.go:596-599,649-660` (set-areas): resolve each requested name with `CanonicalAreaName` before the `settableAreaSet` lookup, so `Gent Centrum` for fence `Gent_Centrum` is accepted and stored as `gent_centrum`. Task 13's rename `to` check inherits this.
+  - `processor/internal/bot/permitted_areas.go:70-88` (`communityAllowedSet` / `communityPermits`): key both sides by `NormalizeAreaKey`. Without this, an `allowed_areas = ["gent centrum"]` config never permits fence `Gent_Centrum`, which feeds `PermittedAreas`, `!area` and the Task 3 prune denied set. Reconciliation would strip areas users legitimately hold.
   - `processor/internal/bot/area_logic.go:113-196` (`AddAreas`, `matchAvailableArea`, `RemoveAreas`): look up and dedupe by `NormalizeAreaKey` instead of the one-way space→underscore retry, so either spelling resolves, in both directions. `AddAreas` still stores the canonical name it returns today.
 - Test: `processor/internal/geofence/normalize_test.go`, `processor/internal/db/diff_test.go`, `processor/internal/db/override_load_test.go` (new), `processor/internal/api/v2_area_spelling_test.go` (new), `processor/internal/api/tracking_v1_override_test.go` (new), `processor/internal/bot/commands/override_test.go`
 
@@ -343,11 +345,18 @@ This task makes the stored form the fence name everywhere outside v1, and moves 
     2. Seed a legacy row holding `["gent centrum"]`. GET returns `["gent_centrum"]`.
     3. POSTing that GET result back gives `unchanged`.
     4. PUTting it back stores `["gent_centrum"]`.
-  - `TestV1_OverrideAreasStillSpaced`: a row stored as `["gent_centrum"]` by v2 is returned by v1 GET as `["gent centrum"]`. A v1 POST of `["Gent_Centrum"]` still stores `["gent centrum"]`.
+  - `TestV1_OverrideAreasStillSpaced`: a row stored as `["gent_centrum"]` by v2 is returned by v1 GET as `["gent centrum"]`. This passes with no v1 change, and guards against anyone later changing `parseOverrideAreas`. A v1 POST of `["Gent_Centrum"]` still stores `["gent centrum"]`.
   - `TestOverrideCommand_StoresCanonicalName`: `!track pikachu area:gent_centrum`, which reaches the command as `gent centrum` because the parser turns underscores into spaces (`bot/parser.go:147`), is permitted and stored as `gent_centrum`. Today the permitted check compares `strings.ToLower(a.Name)` (`override.go:84`) with the spaced argument, so this case is refused. That is a bug this task fixes.
+  - `TestV2Humans_SetAreas_EitherSpelling`: `{"areas":["Gent Centrum"]}` with fence `Gent_Centrum` gives `areas: ["gent_centrum"]` and `rejected: []`.
+  - `TestPermittedAreas_CommunityAllowedAreasEitherSpelling`: a community with `allowed_areas = ["gent centrum"]` permits fence `Gent_Centrum`. The prune's denied set for a member does not contain it.
   - `TestAreaLogic_EitherSpellingBothDirections`: for fence `Gent_Centrum`, `!area add gent centrum` stores `gent_centrum`. For fence `Gent Centrum` (with a space), adding the quoted `"gent_centrum"` stores `gent centrum`. Today `matchAvailableArea` only retries space→underscore, so this case fails. `RemoveAreas` removes a stored entry given either spelling. Adding a name already held under the other spelling doesn't duplicate it.
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Do the loaders, `parseOverrideAreas` and the `DiffTracking` key comparison in one commit, because matching depends on them together. Then the write side, the v2 read side, the v1 output, and the bot. `StripOverrideAreas` needs no change: `PruneForMembership` puts both spellings into `denied` (`reconcile_prune.go:44`) and `dropDeniedAreas` compares lowercase.
+- [ ] **Step 3: Implement.** Commit order:
+  1. The loaders and the `DiffTracking` key comparison, together. They have to land before any canonical write, because a stored underscore name only matches once the loaders normalise it.
+  2. The v2 and bot write side plus the v2 read side.
+  3. Set-areas, the community filter and `!area`.
+
+  The tests pass at each commit. `StripOverrideAreas` needs no change: `PruneForMembership` puts both spellings into `denied` (`reconcile_prune.go:44`) and `dropDeniedAreas` compares lowercase.
 - [ ] **Step 4: Run** `go test ./internal/geofence/ ./internal/db/ ./internal/matching/ ./internal/api/ ./internal/bot/...`. Expected: PASS. If the round-trip test from Task 5 ran on override fixtures, it must still pass unchanged.
 - [ ] **Step 5: Gate and commit:** `refactor: store canonical fence names for override_areas; spaces are a comparison key only`.
 
