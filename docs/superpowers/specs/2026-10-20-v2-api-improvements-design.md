@@ -112,7 +112,7 @@ Squashing moves behind a single policy type in `internal/store`, used by every w
 // rules. It is the single definition of "this rule replaces that one".
 type SquashPolicy[T any] interface {
     Classify(existing []T, candidates []T) Classification[T] // inserts, updates (with previous), duplicates
-    Conflicts(existing []T, edited T, editedUID int64) (otherUID int64, ok bool)
+    Conflicts(existing []T, edited *T, editedUID int64) (otherUID int64, conflict bool)
 }
 ```
 
@@ -127,6 +127,8 @@ PoracleNG keeps its consistency rules in the application, not the database. The 
 - **A per-human write lock.** PoracleNG is a single process, so an in-process lock keyed by human id serialises every write that touches one human's data. That covers tracking writes from the bot, v1 and v2; area and profile writes; and reconciliation prunes. Two writers can no longer interleave between "decide" and "write". It replaces the row locks (`SELECT … FOR UPDATE`) that #254's `StripUserAreas` uses today.
 - **Multi-row operations are idempotent and safe to retry, not transactional.** Area removal, area rename, the override rewrites that go with them, and prunes all produce the same end state when repeated. If one fails partway (for example, the database connection drops), the caller gets an error and repeats it. A repeat finishes the job and leaves already-done rows unchanged. Responses always report the resulting state.
 - **Every retry path must actually run.** An API client retries on error. A reconciler prune is only triggered by a community-membership change, so the new membership is saved **after** the prune succeeds. A failed prune then leaves the change pending, and it is retried the next time that user is reconciled: on a Discord gateway member event for them, or at the latest on the next periodic sweep (`check_role_interval`, default 6 hours, on both Discord and Telegram). Until then the user keeps areas they should have lost. That is the same exposure that already exists between a role change and the next sweep when no gateway event fires.
+- **Where the lock is taken:** only at the points where a write starts: an HTTP middleware for every mutating route with a human id (v1 and v2), the bot command hosts (`bot.RunLocked`), the reconcilers (per user), the alert buttons, the profile scheduler, and the rate-limit ban and delivery-failure disables. It is never taken inside the stores, so it cannot be acquired twice. Commands that act on *other* humans rather than their own target (`!apply`, `!poracle-admin`) don't take the target lock. They lock each human they touch.
+- **Not locked, recorded:** creating a brand-new human from `!channel add`, `!webhook add` and Telegram `/channel add`, and deleting a channel or webhook human outright (`DeleteHumanAndTracking`). These create or remove a whole human that has nothing concurrent to interleave with.
 - **Tracking replace (`ApplyDiff`: delete, then insert):** with the lock, no other writer can see or interleave with the gap. A failure between the delete and the insert can still lose that one rule, as today. This is recorded rather than changed.
 
 This also removes #254's `StripUserAreas` transaction (§8). The only DB transaction left is `!restore`, kept on purpose (§8).

@@ -66,7 +66,10 @@
 - Modify:
   - `processor/cmd/processor/main.go:343` (register the middleware after `RequireSecretGin`)
   - `processor/internal/discordbot/bot.go:719`, `processor/internal/telegrambot/bot.go:461`, `processor/internal/discordbot/slash/dispatcher.go:245`, `processor/internal/discordbot/autocreate.go:744`, `processor/internal/api/huma_features.go:456` (`handler.Run(ctx, args)` becomes `bot.RunLocked(handler, ctx, args)`)
-  - `processor/internal/discordbot/reconciliation.go:358` and `processor/internal/telegrambot/reconciliation.go:264` (lock `id` for the whole of `reconcileAreaSecurity`)
+  - `processor/internal/discordbot/reconciliation.go:255` (`ReconcileUser`) and `processor/internal/telegrambot/reconciliation.go:191` (`reconcileUser`): lock `id` for the whole function, which covers both the area-security and non-area-security branches (create, reactivate, disable, delete-all)
+  - `processor/internal/bot/commands/apply.go:167` (`handler.Run(&targetCtx, cmdArgs)` becomes `bot.RunLocked(handler, &targetCtx, cmdArgs)`, which locks each apply target)
+  - `processor/internal/bot/commands/apply.go:18` and `processor/internal/bot/commands/poracle_admin.go:17`: implement `bot.TargetLockExempt`
+  - `processor/cmd/processor/helpers.go:396` (`OnBan`) and `:441` (`disableUserForDeliveryFailure`): lock the target id around the disable writes
   - `processor/internal/buttonactions/unsubscribe.go:24` (lock the clicking user's id)
   - `processor/cmd/processor/profiles.go:47` (`checkProfileSwitches`: lock each human id around its write at about line 99)
   - `processor/internal/bot/commands/restore.go:87`: no change, because `RunLocked` covers it. Add a comment noting that the transaction is deliberately kept (spec §8).
@@ -75,12 +78,18 @@
 - Consumes: `humanlock.Lock`.
 - Produces:
   - `func HumanLock() gin.HandlerFunc` in package `api`. For every method except GET, HEAD and OPTIONS where `c.Param("id") != ""`, it holds `humanlock.Lock(c.Param("id"))` across `c.Next()`. It covers the v1 `/api/tracking/*/:id`, `/api/humans/:id/*` and `/api/profiles/:id/*` routes and the huma `/api/v2/humans/{id}/*` routes, because humagin registers `{id}` as `:id`.
-  - `func RunLocked(cmd Command, ctx *CommandContext, args []string) []Reply` in package `bot`. It locks `ctx.TargetID` and calls `cmd.Run`. Commands that delegate internally (`mute.go:46`, `track.go:63`, `untrack.go:71`) keep calling `Run` directly.
+  - `func RunLocked(cmd Command, ctx *CommandContext, args []string) []Reply` in package `bot`. It locks `ctx.TargetID` and calls `cmd.Run`, **unless** `cmd` implements `TargetLockExempt`, in which case it calls `cmd.Run` without locking.
+  - `type TargetLockExempt interface{ ExemptFromTargetLock() }` in package `bot`. It is implemented by commands that never write their own target but act on other humans or on none. Those commands take the lock per human themselves.
+    - `ApplyCommand` locks each target through `RunLocked`.
+    - `PoracleAdminCommand` is exempt because `!pa reconcile` runs the reconciler synchronously (`poracle_admin_reconcile.go:60` → `discordbot/bot.go:982`), and the reconciler locks each user. Without the exemption, a sweep that reaches the admin's own id deadlocks.
+  - Commands that delegate internally (`mute.go:46`, `track.go:63`, `untrack.go:71`, and `poracle_admin_ratelimit.go:254`, which is read-only) keep calling `Run` directly. Do not change them to `RunLocked`, because they already run under their host's lock.
 
 - [ ] **Step 1: Failing tests**
   - `TestHumanLockMiddleware_SerialisesSameHuman`: a gin engine with the middleware and `POST /api/x/:id`. The handler increments a shared `inside` counter, asserts it is 1, sleeps 5ms and decrements. 20 concurrent requests for `id=u1` must all return 200 with no overlap.
   - `TestHumanLockMiddleware_GetNotLocked`: hold `humanlock.Lock("u1")` in the test. `GET /api/x/u1` must still return within 100ms.
   - `TestRunLocked_SerialisesWithAPI`: hold `humanlock.Lock("u1")`. `RunLocked` with a fake `Command` and a `ctx.TargetID="u1"` must not return until the test releases the lock (assert via a channel and timeout).
+  - `TestRunLocked_ExemptCommandCanLockItsOwnTarget`: a fake command implementing `TargetLockExempt`, run through `RunLocked` with `TargetID="admin"`, calls `humanlock.Lock("admin")` in `Run`. It must return within 100ms. This pins the `!pa reconcile` deadlock (blocker B1).
+  - `TestApply_LocksEachTargetIncludingSelf`: `!apply` run by admin `a1` against targets `[a1, u2]` with a fake inner command. Running it through `RunLocked` completes, and with `humanlock.Lock("u2")` held by the test, it blocks on the `u2` target until the lock is released (blocker B2).
 - [ ] **Step 2: Run them.** Expected: FAIL (undefined).
 - [ ] **Step 3: Implement both helpers and change the call sites listed above.** Add a sentence to the `CLAUDE.md` "Command System" section saying hosts must call `bot.RunLocked`.
 - [ ] **Step 4: Run** `go test -race ./internal/api/ ./internal/bot/... ./internal/discordbot/... ./internal/telegrambot/...`. Expected: PASS.
@@ -93,10 +102,13 @@
 - Test: `processor/internal/discordbot/reconciliation_prune_test.go`, `processor/internal/telegrambot/reconciliation_prune_test.go`, `processor/internal/store/user_locations_sql_test.go` (existing SQL tests, which must still pass with `PORACLENG_TEST_DSN` set)
 
 **Interfaces:**
-- Produces: the `MockHumanStore` fields `StripUserAreasErr error` and `StripOverrideAreasErr error`, returned by the corresponding methods when non-nil. The signatures of `StripUserAreas` and `StripOverrideAreas` are unchanged.
+- Produces:
+  - The `MockHumanStore` fields `StripUserAreasErr error` and `StripOverrideAreasErr error`, returned by the corresponding methods when non-nil.
+  - A `MockHumanStore.UpdateCalls []MockUpdateCall` field, where `MockUpdateCall{ID string; Fields map[string]any}` is a copy of each `Update` call's arguments. The existing `Calls []string` only records method names.
+  - The signatures of `StripUserAreas` and `StripOverrideAreas` are unchanged.
 
 - [ ] **Step 1: Failing tests**
-  - `TestDiscordReconcile_PruneFailureLeavesMembershipUnsaved` and the Telegram twin: a community change with fences loaded, and `StripUserAreasErr = errors.New("boom")`. After `reconcileAreaSecurity`, assert that `Update` was **not** called with `community_membership`/`area_restriction` (`hasCall` or the recorded `Update` args). On a second run with the error cleared, assert that the prune ran and the membership was saved.
+  - `TestDiscordReconcile_PruneFailureLeavesMembershipUnsaved` and the Telegram twin: a community change with fences loaded, and `StripUserAreasErr = errors.New("boom")`. After `reconcileAreaSecurity`, assert from `UpdateCalls` that no `Update` call's `Fields` contains `community_membership` or `area_restriction`. Assert on the map contents, because a name sync in the same run legitimately calls `Update`. Include a renamed user in the fixture so that case is exercised. On a second run with the error cleared, assert that the prune ran and the membership was saved.
   - `TestDiscordReconcile_PruneThenSave`: on the happy path, the recorded call order is the strip call(s), then `Update`.
 - [ ] **Step 2: Run them.** Expected: FAIL. The current order is save first, and a prune error is only logged.
 - [ ] **Step 3: Implement.**
@@ -141,7 +153,7 @@
 
 **Files:**
 - Create: `processor/internal/api/v2_wildcards.go`, `processor/internal/api/v2_roundtrip_all_test.go`
-- Modify: the Translate and ToRule functions in all 11 `processor/internal/api/v2_<type>.go` files. Pokemon (`v2_pokemon.go:53-56,67`) and maxbattle (`v2_maxbattle.go:30`) also get bounds.
+- Modify: the Translate and ToRule functions in all 11 `processor/internal/api/v2_<type>.go` files. No bounds change is expected: the fields without a maximum (`max_weight`, `min_time` and `pvp_ranking_min_cp` at `v2_pokemon.go:53-56,67`) stay unbounded on purpose. Maxbattle `evolution` (`v2_maxbattle.go:30`) gets `minimum:"0"` only if a test shows a negative value can reach storage.
 
 **Interfaces:**
 - Produces: one named constant per stored wildcard, e.g. `wcPokemonMaxIV = 100`, `wcPokemonMaxWeight = 9000000`, `wcRaidAny = 9000`, `wcRaidLevelAny = 90`, `wcFortIncludeEmpty = true`. `Translate` (`valueOr(req.X, wc…)`) and `ToRule` (`ptrUnless(row.X, wc…)`) must both refer to the same constant. No literal wildcard number may remain in either function.
@@ -154,7 +166,7 @@
 
   Also seed legacy pokemon rows (`rarity 0`, `size 0`, `pvp_ranking_best 0`, `pvp_ranking_worst 0`) through the mock store. A GET must show them as `null`, and POSTing that GET back must give `unchanged`.
 - [ ] **Step 2: Run it.** It should fail on any field that isn't null. Fix those through the constants, not inside the test.
-- [ ] **Step 3: Replace the literals with the constants.** Add `maximum` to `max_rarity`/`max_size`-style fields only where a natural bound exists. Leave `max_weight`, `min_time` and `pvp_ranking_min_cp` unbounded (spec §4.2). Regenerate the golden.
+- [ ] **Step 3: Replace the literals with the constants.** Don't add a maximum anywhere it would equal a sentinel (spec §4.2). Regenerate the golden only if the doc strings changed.
 - [ ] **Step 4: Run** `go test ./internal/api/`. Expected: PASS.
 - [ ] **Step 5: Gate and commit:** `test(api): every nullable v2 field round-trips null; wildcard constants shared by translate and read`.
 
@@ -169,7 +181,7 @@
 - Produces:
   - `v2RuleEnvelope[Req]` gains `Previous *v2RuleEnvelope[Req]` with `json:"previous,omitempty"`. `MarshalJSON` emits it, and the schema provider adds an optional `previous` property that references the same rule schema.
   - `v2CreateOutput` and `v2DeleteOutput` bodies gain `DryRun bool` with `json:"dry_run,omitempty"`.
-  - A shared query field `DryRun bool` with `query:"dry_run"` on `v2CreateInput`, `v2PutInput`, `v2ItemInput`-for-delete and `v2BulkDeleteInput`.
+  - A query field `DryRun bool` with `query:"dry_run"` on `v2CreateInput`, `v2PutInput` and `v2BulkDeleteInput`, and on a **new** `v2DeleteItemInput` (a copy of `v2ItemInput` plus `DryRun`) used only by the single-delete op. `v2ItemInput` is shared with GET-by-uid, and the ops set `RejectUnknownQueryParameters`, so adding `dry_run` to it would make GET accept the parameter without complaint.
   - `v2HandleCreate`: with `DryRun` set, it calls `store.DiffAndClassify` on the scoped rows, leaves inserts at uid 0, and skips `ApplyDiff`, `reloadState` and `v2PushDiff`.
 
 - [ ] **Step 1: Failing tests**
@@ -191,7 +203,7 @@
 - Consumes: `RowDiffPolicy.Conflicts` (Task 4) and `DryRun` (Task 6).
 - Produces:
   - PUT returns 409 with the detail `would duplicate rule <uid>` whenever `Conflicts` reports another rule, which replaces the exact-duplicate-only check. PUT's `updated[0].previous` is the stored rule before the edit.
-  - `v2BulkDeleteInput.UID` becomes optional, and the input gains an optional body `{ "uids": []int64 }` (`minItems:"1"`). Both present, or neither, is a 422 with detail `send uid or a body uids list, not both` / `uid or uids is required`.
+  - `v2BulkDeleteInput.UID` becomes optional (`required:"false"`), and the input gains an optional body `{ "uids": []int64 }` (`minItems:"1"`). The `Body` field must be tagged `required:"false"`, otherwise huma rejects the existing `?uid=` form, which has an empty body. `TestV2BulkDelete_QueryFormStillWorks` pins this. Both present, or neither, is a 422 with detail `send uid or a body uids list, not both` / `uid or uids is required`.
 
 - [ ] **Step 1: Failing tests**
   - `TestV2Put_RefusesNearDuplicateOfOtherRule`: rules 1 (IV90 d0) and 2 (IV80 d0). PUT rule 1 as IV80 at d500, which is one updatable field away from rule 2. Expect 409 naming uid 2, with both rows unchanged.
@@ -247,11 +259,14 @@
   - `mute.Event.MatchedRuleTable string`.
   - `webhook.MatchedUser.RuleTable string` with `json:"rule_table,omitempty"`.
   - `func mute.CanonicalRuleTable(typeName string) (string, bool)`, which maps the 11 v2/bot type names to the 10 canonical keys (`incident` → `invasion`).
-  - A tracking mute matches only when the table and the uid are both equal. `Add`/`Remove` identity becomes (scope, table, value), with signature `Remove(humanID, scopeType, ruleTable, scopeValue string) bool`.
+  - A tracking mute matches only when the table and the uid are both equal.
+  - Identity becomes (scope, table, value) for **both** `Add` (replace-on-duplicate goes through `sameScopeValue`, `mute.go:127`, which gains the table) and `Remove`. The new signature is `Remove(humanID, scopeType, ruleTable, scopeValue string) bool`.
   - Each matcher sets `RuleTable` to its own table key: `raid` vs `egg` by matcher, quest summaries `quest`.
 
 - [ ] **Step 1: Failing tests**
   - `TestTrackingMuteRequiresTable`: an entry `{tracking, raid, "60"}` matches the event `{raid, 60}`, but not `{pokemon, 60}` and not `{egg, 60}`.
+  - `TestAddKeepsDifferentTables`: adding `{tracking, raid, 60}` and then `{tracking, pokemon, 60}` leaves two entries, with `replaced == false`.
+  - `TestRaidAndEggSameUIDGetOwnTables` (matching): seed one raid rule and one egg rule with the **same** uid. `MatchRaid` returns `RuleTable "raid"` and `MatchEgg` returns `"egg"`. Both matchers build the shared `raidUserData` (`human.go:240`), so the table must be set by the matcher (`raid.go:114` and `:188`), not taken from the struct type.
   - In each matcher's tests, assert `RuleTable` on a matched user (pokemon, raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle).
   - Summary: a raid-table mute with uid N does not drop a quest row whose rule uid is N.
 - [ ] **Step 2: Run them.** Expected: FAIL.
@@ -323,13 +338,14 @@
 - Consumes: `EditOverrideAreas`, `areaNameMatches`, `settableAreaSet` (`v2_humans.go:649`), `bot.PermittedAreas`.
 - Produces:
   - `HumanStore.RenameAreaInProfiles(id, from, to string, profileNos []int) (renamedIn []int, err error)`. It follows the same current-profile rule for `humans.area`, and if a profile already holds `to`, it ends up holding it once.
+  - **Spelling written:** `humans.area` and `profiles.area` get `strings.ToLower(fence.Name)` for the matched fence, the same form set-areas writes (`v2_humans.go:601,669`, underscores kept). `override_areas` gets `geofence.NormalizeAreaKey(to)` (spaces), the same form `normalizeOverrideAreas` writes. The duplicate collapse in both places compares with `areaNameMatches`, so two spellings of `to` can't both survive.
   - `PATCH /api/v2/humans/{id}/areas?from=&to=&profile=&all_profiles=&trusted=&dry_run=` returns `{from, to, renamed_in []int, dry_run}`. `to` must be in `settableAreaSet(deps, human, admin, trusted)`, otherwise 422 `area not permitted: <to>`, and nothing changes. `from` needs no check.
 
 - [ ] **Step 1: Failing tests**
   - `TestV2Humans_RenameArea_AllProfiles`: profiles [private, alpha] and [private] become [<to>, alpha] and [<to>], and override `["private"]` becomes `[<to>]`.
   - `TestV2Humans_RenameArea_ToNotLoadedIs422AndChangesNothing`.
   - `TestV2Humans_RenameArea_Idempotent`: a second call returns 200 with `renamed_in: []`.
-  - `TestV2Humans_RenameArea_HoldsBothCollapses`.
+  - `TestV2Humans_RenameArea_HoldsBothCollapses`: the profile holds `["gent_centrum", "private"]` and the override holds `["gent centrum", "private"]`. Rename `private` → `Gent_Centrum`. The profile ends `["gent_centrum"]` and the override ends `["gent centrum"]`, each holding exactly one entry.
   - `TestV2Humans_RenameArea_DryRunWritesNothing`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Regenerate the golden.
@@ -349,7 +365,7 @@
 **Interfaces:**
 - Produces:
   - **401 shape:** `RequireSecretGin` sends the legacy body `{"status":"authError","reason":"incorrect or missing api secret"}` for paths starting with `/api/tracking/`, `/api/humans/` or `/api/profiles/` (v1). Every other path gets `application/problem+json` `{"status":401,"title":"Unauthorized","detail":"incorrect or missing api secret"}`.
-  - **`/health` in the spec:** document `GET /health` as an operation with no security. Its response schema is `{status string, version string, capabilities object<string,bool>}`. The response itself is unchanged. If huma can't register a path outside the `/api` group, add the path to the generated `OpenAPI().Paths` at setup, with an `OpenAPI.Servers` override on that path of `{url:"/"}`.
+  - **`/health` in the spec:** do **not** `huma.Register` it. The huma API is bound to `apiGroup` (`huma_setup.go:35`), so registering it would create a real `/api/health` route behind the secret. Instead, in `NewHumaAPI`, add `humaAPI.OpenAPI().Paths["/health"]` by hand: a GET operation with `Security: []map[string][]string{}`, a path-level `Servers: []*huma.Server{{URL: "/"}}`, and a response schema of `{status string, version string, capabilities object<string,bool>}`. The gin handler and its response are unchanged. `TestNoAPIHealthRoute` asserts that `GET /api/health` is 404.
 
 - [ ] **Step 1: Failing tests**
   - `TestRequireSecret_V1KeepsLegacyBody` (POST `/api/tracking/pokemon/u1`).
