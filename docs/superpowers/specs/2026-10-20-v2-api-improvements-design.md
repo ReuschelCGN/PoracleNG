@@ -78,7 +78,7 @@ The request is to refuse any candidate that would update or duplicate, and to ha
 
 ### 3.4 What we propose instead
 
-**(a) `?dry_run=true` on every v2 tracking and area mutation.** The request is validated and classified exactly as a real one would be, using the same code path, and returns the response the real request would have returned. Nothing is written, no state reload is triggered, and no confirmation message is pushed. The response carries `"dry_run": true`. Endpoints: tracking POST, PUT, PATCH (§5), single and bulk DELETE, area DELETE and PATCH (§7).
+**(a) `?dry_run=true` on every v2 tracking and area mutation.** The request is validated and classified exactly as a real one would be, using the same code path, and returns the response the real request would have returned. Nothing is written, no state reload is triggered, and no confirmation message is pushed. The response carries `"dry_run": true`. A rule that would be created has `uid: 0`. Endpoints: tracking POST, PUT, PATCH (§5), single and bulk DELETE, area DELETE and PATCH (§7).
 
 **(b) `previous` on every rule that a write modified.** Each rule in `updated` carries the stored state it replaced:
 
@@ -150,7 +150,7 @@ The risk described ("our edit path re-reads a rule before every write, so a wron
 ### 4.2 What we provide instead
 
 1. **A round-trip guarantee, enforced by test.** For all 11 types, every nullable field is checked for: `null` / omitted on write reads back as `null`, and GET → PUT and GET → POST of any stored rule (including legacy alias values such as `rarity 0`) result in `unchanged`. The existing round-trip helper covers this partly; it becomes exhaustive and is generated from the field table in point 4.
-2. **Display bounds in the schema.** Every range field carries `minimum`/`maximum` (IV is already 0–100), so a UI can draw a slider or say "up to 100" without the stored value.
+2. **Display bounds in the schema.** Every range field with a natural bound carries `minimum`/`maximum` (IV is already 0–100), so a UI can draw a slider or say "up to 100" without the stored value. A field whose only ceiling is a sentinel (e.g. `max_weight`, stored 9000000) gets no `maximum`, because publishing it would leak the sentinel.
 3. **A stated contract** in the API docs: "`null` means unconstrained. A v2 client never needs to know how that is stored, and the stored representation may change without notice."
 4. **One internal field table per type** (wildcard, kind, bounds) that drives `Translate` defaults, the `ToRule` null projection and the documentation. The same value is currently written separately in all three places. This removes drift on our side. It also feeds the squash policy (Appendix A). It stays internal.
 
@@ -190,7 +190,7 @@ The human in the path is the ownership scope. A uid that isn't that human's poke
 
 - **uids go in the body**, not the query string. This avoids the length limits they described. Bulk DELETE gets the same option (below). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
 - **Settable fields:** `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`. These are the delivery and "where" settings shared by every type. Filter fields are not bulk-settable: setting `min_iv` on 300 different rules is a different operation and invites mass squashing. Unknown or unsupported fields get a 422 for the whole request.
-- **The merge happens in place.** Each rule keeps its uid, using an `UPDATE` of only the named columns rather than delete-and-reinsert. Every field not named stays exactly as it is.
+- **The merge keeps everything else.** Each rule keeps its uid, and every field not named stays as it is. PATCH reuses the PUT path: the stored rule is read as its v2 shape, the named settings are applied, and the result is written back through the normal translate and validate step. The §4 round-trip guarantee is what makes this lossless, so a rule stored with a legacy alias value (e.g. `rarity 0`) is written back in its canonical form, and `previous` shows what it was.
 - **Per-rule outcomes, never all-or-nothing:**
 
 ```json
@@ -224,7 +224,7 @@ Accepted as a bug. Each tracking table numbers its rules separately, so one user
 
 Mutes are per user, so a collision needs one user to hold the same number in two tables. That is most likely for long-standing users and heavy trackers. The bot's comment says uids are "unique across the user's tracking", which is wrong.
 
-- **`mute.Entry`** gains `RuleType`: the tracking type of the rule. It is `pokemon`, `raid`, `egg` and so on, using the v2 type names. `invasion` and `incident` share one table and one uid space, and both names resolve to it.
+- **`mute.Entry`** gains `RuleType`: the tracking type of the rule. It is `pokemon`, `raid`, `egg` and so on, using the v2 type names. `invasion` and `incident` share one table and one uid space, so a tracking mute is keyed by table. An incident rule's mute is stored and listed as `tracking_type: "invasion"`. The API accepts `incident` on input and normalises it.
 - **`webhook.MatchedUser`** gains `RuleType`, set by each matcher next to `RuleUID`. It is the table the rule came from, not the webhook type. One raid webhook goes through either the raid matcher or the egg matcher, and each sets its own type. Quest summary entries record the type alongside their buffered rule uids.
 - **Matching:** a tracking mute matches only when both type and uid match. Mutes are in memory and none survive a restart, so there are no legacy untyped entries to migrate.
 - **v2 mutes API:** `scope: "tracking"` takes a separate `tracking_type` field rather than encoding it into `value` (`"raid:60"`). It is required for `tracking` and rejected for other scopes. The uid is checked to exist and belong to the human; it currently isn't. GET returns `tracking_type`. DELETE addresses `?scope=tracking&tracking_type=raid&value=60`. This **is a breaking change**: the mutes API shipped in 5.2.1. It is listed under **Changed** for 5.3.0. We accept the break rather than keep an untyped form, because an untyped tracking mute is the bug itself. PoracleWeb.NET does not create per-rule mutes today (#323).
