@@ -1177,8 +1177,8 @@ Map URLs (`googleMapUrl`, `appleMapUrl`, `wazeMapUrl`, etc.) are available for n
 | `weatherEmoji` | string | New weather emoji (`weatheremoji` alias) |
 | `oldWeatherEmoji` | string | Previous weather emoji (`oldweatheremoji` alias) |
 | `weatherTth` | object | Time until the next hourly weather update: `{days, hours, minutes, seconds}`, e.g. `{{weatherTth.minutes}}` |
-| `enrichedActivePokemons` | array | The user's tracked pokemon affected by the change |
-| `activePokemons` | array | Same entries, set only when `[weather] show_altered_pokemon_static_map` is enabled |
+| `activePokemons` | array | The user's tracked pokemon affected by the change (requires `[weather] show_altered_pokemon = true`; independent of `show_altered_pokemon_static_map`) |
+| `enrichedActivePokemons` | array | Alias of `activePokemons` |
 
 There is no `weatherId`, `oldWeatherId`, `condition` or `weatherCellId` — use the raw fields above. Map links and the `tthd`…`tths` fields are not set for weather changes.
 
