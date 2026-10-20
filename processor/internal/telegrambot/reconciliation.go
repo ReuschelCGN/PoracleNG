@@ -342,15 +342,8 @@ func (r *TelegramReconciliation) reconcileAreaSecurity(id string, user *store.Hu
 			updates["community_membership"] = string(communityJSON)
 		}
 
-		if len(updates) > 0 {
-			if err := r.humanStore.Update(id, updates); err != nil {
-				r.log.Errorf("Update user %s: %v", id, err)
-				return
-			}
-			r.log.Infof("Update user %s %s with communities %v", id, name, communityList)
-		}
-
-		// Opt-in humans.area prune (#243), through PermittedAreas so exempt
+		// Opt-in humans.area prune (#243), run BEFORE the membership save so a
+		// failed prune is retried next cycle, through PermittedAreas so exempt
 		// fences survive. Telegram has never pruned override_areas; Discord
 		// does. That asymmetry predates #243 and is deliberately not changed here.
 		if communityChanged && r.cfg.Reconciliation.Telegram.PruneUserAreas {
@@ -362,12 +355,24 @@ func (r *TelegramReconciliation) reconcileAreaSecurity(id string, user *store.Hu
 				removed, err := bot.PruneForMembership(r.humanStore, fences, r.cfg, after,
 					bot.IsAdmin(r.cfg, "telegram", id), bot.PruneOptions{UserAreas: true})
 				if err != nil {
+					// Keep the membership change pending so the next cycle
+					// retries the prune (the prune is idempotent).
 					r.log.Errorf("prune areas for %s: %v", id, err)
+					delete(updates, "community_membership")
+					delete(updates, "area_restriction")
 				}
 				if len(removed) > 0 {
 					r.log.Infof("Pruned areas %v from %s after community change", removed, id)
 				}
 			}
+		}
+
+		if len(updates) > 0 {
+			if err := r.humanStore.Update(id, updates); err != nil {
+				r.log.Errorf("Update user %s: %v", id, err)
+				return
+			}
+			r.log.Infof("Update user %s %s with communities %v", id, name, communityList)
 		}
 	}
 }

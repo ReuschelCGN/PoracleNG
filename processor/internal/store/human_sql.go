@@ -673,18 +673,10 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// StripUserAreas implements HumanStore.
+// StripUserAreas implements HumanStore. It is idempotent (re-running with the
+// same denied set removes nothing further) and runs without a transaction:
+// callers hold humanlock for the human, so no row lock is needed.
 func (s *SQLHumanStore) StripUserAreas(humanID string, denied map[string]bool) (removed []string, err error) {
-	tx, err := s.db.Beginx()
-	if err != nil {
-		return nil, fmt.Errorf("prune user areas %s: begin: %w", humanID, err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
 	seen := map[string]bool{}
 	prune := func(raw string) (kept []string, changed bool) {
 		areas := unmarshalStringSlice(raw)
@@ -705,16 +697,14 @@ func (s *SQLHumanStore) StripUserAreas(humanID string, denied map[string]bool) (
 	}
 
 	var humanArea sql.NullString
-	if err = tx.Get(&humanArea, `SELECT area FROM humans WHERE id = ? FOR UPDATE`, humanID); err != nil {
+	if err = s.db.Get(&humanArea, `SELECT area FROM humans WHERE id = ?`, humanID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			err = nil
-			_ = tx.Rollback()
 			return nil, nil
 		}
 		return nil, fmt.Errorf("prune user areas %s: select human: %w", humanID, err)
 	}
 	if kept, changed := prune(humanArea.String); changed {
-		if _, err = tx.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), humanID); err != nil {
+		if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), humanID); err != nil {
 			return nil, fmt.Errorf("prune user areas %s: update human: %w", humanID, err)
 		}
 	}
@@ -723,19 +713,16 @@ func (s *SQLHumanStore) StripUserAreas(humanID string, denied map[string]bool) (
 		ProfileNo int            `db:"profile_no"`
 		Area      sql.NullString `db:"area"`
 	}
-	if err = tx.Select(&profiles, `SELECT profile_no, area FROM profiles WHERE id = ? ORDER BY profile_no FOR UPDATE`, humanID); err != nil {
+	if err = s.db.Select(&profiles, `SELECT profile_no, area FROM profiles WHERE id = ? ORDER BY profile_no`, humanID); err != nil {
 		return nil, fmt.Errorf("prune user areas %s: select profiles: %w", humanID, err)
 	}
 	for _, p := range profiles {
 		if kept, changed := prune(p.Area.String); changed {
-			if _, err = tx.Exec(`UPDATE profiles SET area = ? WHERE id = ? AND profile_no = ?`,
+			if _, err = s.db.Exec(`UPDATE profiles SET area = ? WHERE id = ? AND profile_no = ?`,
 				marshalStringSlice(kept), humanID, p.ProfileNo); err != nil {
 				return nil, fmt.Errorf("prune user areas %s/%d: update profile: %w", humanID, p.ProfileNo, err)
 			}
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("prune user areas %s: commit: %w", humanID, err)
 	}
 	return removed, nil
 }

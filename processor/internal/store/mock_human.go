@@ -18,9 +18,23 @@ type MockHumanStore struct {
 	// Calls records method names called (for assertion).
 	Calls []string
 
+	// UpdateCalls records a copy of each Update call's arguments.
+	UpdateCalls []MockUpdateCall
+
+	// StripUserAreasErr / StripOverrideAreasErr, when non-nil, are returned
+	// by the corresponding methods.
+	StripUserAreasErr     error
+	StripOverrideAreasErr error
+
 	Locations         map[string][]UserLocation
 	LocationRefs      map[string][]ReferencingRule // keyed by id|lowercased-label
 	StrippedAreaCalls map[string]map[string]bool   // humanID → denied set, for test assertions
+}
+
+// MockUpdateCall is a copy of one Update call's arguments.
+type MockUpdateCall struct {
+	ID     string
+	Fields map[string]any
 }
 
 // NewMockHumanStore creates a new empty MockHumanStore.
@@ -233,6 +247,11 @@ func (m *MockHumanStore) Update(id string, fields map[string]any) error {
 	m.record("Update")
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cp := make(map[string]any, len(fields))
+	for k, v := range fields {
+		cp[k] = v
+	}
+	m.UpdateCalls = append(m.UpdateCalls, MockUpdateCall{ID: id, Fields: cp})
 	if h, ok := m.humans[id]; ok {
 		for k, v := range fields {
 			switch k {
@@ -529,6 +548,9 @@ func (m *MockHumanStore) StripOverrideAreas(humanID string, denied map[string]bo
 	m.record("StripOverrideAreas")
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.StripOverrideAreasErr != nil {
+		return m.StripOverrideAreasErr
+	}
 	if m.StrippedAreaCalls == nil {
 		m.StrippedAreaCalls = map[string]map[string]bool{}
 	}
@@ -542,6 +564,9 @@ func (m *MockHumanStore) StripUserAreas(humanID string, denied map[string]bool) 
 	m.record("StripUserAreas")
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.StripUserAreasErr != nil {
+		return nil, m.StripUserAreasErr
+	}
 	var removed []string
 	seen := map[string]bool{}
 	prune := func(areas []string) []string {

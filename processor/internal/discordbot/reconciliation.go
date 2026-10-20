@@ -448,17 +448,10 @@ func (r *Reconciliation) reconcileAreaSecurity(id string, user *store.Human, nam
 			updates["community_membership"] = string(communityJSON)
 		}
 
-		if len(updates) > 0 {
-			if err := r.humanStore.Update(id, updates); err != nil {
-				r.log.Errorf("Update user %s: %v", id, err)
-				return
-			}
-			r.log.Infof("Update user %s %s with communities %v", id, name, communityList)
-		}
-
 		// A membership change may leave areas this human can no longer hold.
 		// Pruned through PermittedAreas so exempt and trusted-granted fences
-		// survive. override_areas always; humans.area only when the operator
+		// survive. Runs BEFORE the membership save so a failed prune is retried
+		// next cycle. override_areas always; humans.area only when the operator
 		// has asserted their community config is complete (#243).
 		if communityChanged {
 			fences := r.fences()
@@ -470,12 +463,24 @@ func (r *Reconciliation) reconcileAreaSecurity(id string, user *store.Human, nam
 					slices.Contains(r.cfg.Discord.Admins, id),
 					bot.PruneOptions{Overrides: true, UserAreas: r.cfg.Reconciliation.Discord.PruneUserAreas})
 				if err != nil {
-					r.log.Errorf("prune areas for %s: %v", id, err) // best effort — don't abort reconciliation
+					// Keep the membership change pending so the next cycle
+					// retries the prune (the prune is idempotent).
+					r.log.Errorf("prune areas for %s: %v", id, err)
+					delete(updates, "community_membership")
+					delete(updates, "area_restriction")
 				}
 				if len(removed) > 0 {
 					r.log.Infof("Pruned areas %v from %s after community change", removed, id)
 				}
 			}
+		}
+
+		if len(updates) > 0 {
+			if err := r.humanStore.Update(id, updates); err != nil {
+				r.log.Errorf("Update user %s: %v", id, err)
+				return
+			}
+			r.log.Infof("Update user %s %s with communities %v", id, name, communityList)
 		}
 	}
 }
