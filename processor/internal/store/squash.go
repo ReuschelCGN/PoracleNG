@@ -28,22 +28,39 @@ type RowDiffPolicy[T any] struct {
 // rows in order, first match winning. Updates carry the replaced row's uid and
 // Replaced[i] is a copy of the stored row Updates[i] replaces.
 //
-// Claiming: a row that has been chosen as an update target is skipped for the
-// remaining candidates, so one call never produces two updates of one uid (the
-// second delete+insert would otherwise resurrect or clobber the first).
-// Duplicates do not claim: several identical candidates all stay
-// AlreadyPresent, as submitting the same rule twice is idempotent.
+// Claiming and pinning keep the batch consistent and independent of the order
+// candidates are submitted in:
+//   - A row chosen as an update target is claimed: later candidates skip it, so
+//     one call never produces two updates of one uid.
+//   - A row that any candidate matches as a duplicate is pinned (decided up
+//     front, before any update is chosen). A pinned row is never an update
+//     target in the same call, otherwise ApplyDiff would delete a row the
+//     response reports as unchanged. A candidate that would have updated it is
+//     classified against the remaining rows. Pinned rows still match further
+//     identical candidates, so several identical candidates all stay
+//     AlreadyPresent.
 //
 // candidates is not modified; Inserts keeps the submission order.
 func (p RowDiffPolicy[T]) Classify(existing, candidates []T) DiffResult[T] {
 	var result DiffResult[T]
+
+	pinned := make(map[int64]bool)
+	for i := range candidates {
+		for j := range existing {
+			if _, isDup, _, _ := db.DiffTracking(&existing[j], &candidates[i]); isDup {
+				pinned[p.GetUID(&existing[j])] = true
+			}
+		}
+	}
+
 	claimed := make(map[int64]bool)
 	isInsert := make([]bool, len(candidates))
 
 	for i := len(candidates) - 1; i >= 0; i-- {
 		matched := false
 		for j := range existing {
-			if claimed[p.GetUID(&existing[j])] {
+			rowUID := p.GetUID(&existing[j])
+			if claimed[rowUID] {
 				continue
 			}
 			noMatch, isDup, uid, isUpd := db.DiffTracking(&existing[j], &candidates[i])
@@ -56,6 +73,9 @@ func (p RowDiffPolicy[T]) Classify(existing, candidates []T) DiffResult[T] {
 				break
 			}
 			if isUpd {
+				if pinned[rowUID] {
+					continue
+				}
 				update := candidates[i]
 				p.SetUID(&update, uid)
 				claimed[uid] = true

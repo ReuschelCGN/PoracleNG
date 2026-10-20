@@ -124,6 +124,44 @@ func runScenarios[T any](t *testing.T, s scenarioType[T]) {
 		}
 	})
 
+	for _, order := range []struct {
+		name  string
+		knobs []int
+	}{{"update first", []int{80, 90}}, {"duplicate first", []int{90, 80}}} {
+		t.Run("batch: duplicate pins its row ("+order.name+")", func(t *testing.T) {
+			mock := NewMockTrackingStore(s.get, s.set)
+			a := s.knob(90, 0)
+			aUID, _ := mock.Insert(&a)
+			existing, _ := mock.SelectByIDProfile("u", 0)
+			var cands []T
+			for _, k := range order.knobs {
+				cands = append(cands, s.knob(k, 0))
+			}
+			res, err := ApplyDiff[T](mock, "u", existing, cands, s.get, s.set)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.AlreadyPresent) != 1 || s.val(&res.AlreadyPresent[0]) != 90 {
+				t.Fatalf("AlreadyPresent = %+v", res.AlreadyPresent)
+			}
+			if len(res.Updates) != 0 || len(res.Inserts) != 1 || s.val(&res.Inserts[0]) != 80 {
+				t.Fatalf("got %+v", res)
+			}
+			var found bool
+			for _, r := range mock.AllRows() {
+				if s.get(&r) == aUID && s.val(&r) == 90 {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("row %d with knob 90 was lost: %+v", aUID, mock.AllRows())
+			}
+			if len(mock.AllRows()) != 2 {
+				t.Fatalf("rows = %+v", mock.AllRows())
+			}
+		})
+	}
+
 	t.Run("conflicts: exact duplicate of another rule", func(t *testing.T) {
 		existing := []T{row(1, 90, 0), row(2, 70, 0)}
 		edited := s.knob(70, 0)
