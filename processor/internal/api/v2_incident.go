@@ -69,7 +69,7 @@ func translateV2Incident(deps *TrackingDeps, humanID string, profileNo int, oc o
 	}
 	gruntType := strings.ToLower(evt.Name)
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -95,7 +95,7 @@ func translateV2Incident(deps *TrackingDeps, humanID string, profileNo int, oc o
 // strict v2 incident rule shape, recovering display_type from the event name.
 func v2IncidentToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2IncidentRule {
 	rule := v2IncidentRule{
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

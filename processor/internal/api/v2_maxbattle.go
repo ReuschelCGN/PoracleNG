@@ -50,17 +50,17 @@ func translateV2Maxbattle(deps *TrackingDeps, humanID string, profileNo int, oc 
 	if err := rejectEdit("maxbattle", req.Edit); err != nil {
 		return db.MaxbattleTrackingAPI{}, err
 	}
-	pokemonID := valueOr(req.PokemonID, 9000)
+	pokemonID := valueOr(req.PokemonID, wcAnyID)
 
 	// The level field's meaning depends on pokemon_id (see matching/maxbattle.go:48):
 	//   - by-level mode (pokemon_id == 9000): omitted level => 90 ("any tier" /
 	//     "everything"); an explicit level must be >= 1.
 	//   - specific-pokemon mode: level is ignored by the matcher and stored as the
 	//     9000 placeholder (byte-identical to bot/v1 rows).
-	level := 9000
-	if pokemonID == 9000 {
+	level := wcLevelPlaceholder
+	if pokemonID == wcAnyID {
 		if req.Level == nil {
-			level = 90
+			level = wcLevelAny
 		} else {
 			level = *req.Level
 			if level < 1 {
@@ -69,7 +69,7 @@ func translateV2Maxbattle(deps *TrackingDeps, humanID string, profileNo int, oc 
 		}
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -93,11 +93,11 @@ func translateV2Maxbattle(deps *TrackingDeps, humanID string, profileNo int, oc 
 		Template:              valueOr(req.Template, ""),
 		Distance:              distance,
 		PokemonID:             pokemonID,
-		Form:                  valueOr(req.Form, 0),
+		Form:                  valueOr(req.Form, wcForm),
 		Level:                 level,
-		Move:                  valueOr(req.Move, 9000),
+		Move:                  valueOr(req.Move, wcAnyID),
 		Gmax:                  gmax,
-		Evolution:             valueOr(req.Evolution, 9000),
+		Evolution:             valueOr(req.Evolution, wcAnyID),
 		StationID:             stationID,
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
@@ -114,16 +114,16 @@ func maxbattleRowToRule(row *db.MaxbattleTrackingAPI) v2MaxbattleRule {
 		stationID = row.StationID
 	}
 	return v2MaxbattleRule{
-		PokemonID: ptrUnless(row.PokemonID, 9000),
+		PokemonID: ptrUnless(row.PokemonID, wcAnyID),
 		// level has no meaningful tier when stored 9000 (specific-pokemon
 		// placeholder, incl. legacy bot rows) or 90 (by-level any-tier).
 		Level:                 raidLevelOrNull(row.Level),
-		Form:                  ptrUnless(row.Form, 0),
-		Move:                  ptrUnless(row.Move, 9000),
+		Form:                  ptrUnless(row.Form, wcForm),
+		Move:                  ptrUnless(row.Move, wcAnyID),
 		Gmax:                  ptrUnless(row.Gmax != 0, false),
-		Evolution:             ptrUnless(row.Evolution, 9000),
+		Evolution:             ptrUnless(row.Evolution, wcAnyID),
 		StationID:             stationID,
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

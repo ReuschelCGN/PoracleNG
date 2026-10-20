@@ -66,7 +66,7 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 	team := teamEnum.resolveStored(req.Team)
 	rsvp := rsvpChangesEnum.resolveStored(req.RSVPChanges)
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -79,11 +79,11 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 	//     level" guard).
 	//   - specific-pokemon mode: level is ignored by the matcher and stored as the
 	//     9000 placeholder (byte-identical to bot/v1 rows).
-	pokemonID := valueOr(req.PokemonID, 9000)
-	level := 9000
-	if pokemonID == 9000 {
+	pokemonID := valueOr(req.PokemonID, wcAnyID)
+	level := wcLevelPlaceholder
+	if pokemonID == wcAnyID {
 		if req.Level == nil {
-			level = 90
+			level = wcLevelAny
 		} else {
 			level = *req.Level
 			if level < 1 {
@@ -105,12 +105,12 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		Distance:              distance,
 		Team:                  team,
 		PokemonID:             pokemonID,
-		Form:                  valueOr(req.Form, 0),
-		Costume:               valueOr(req.Costume, 9000),
+		Form:                  valueOr(req.Form, wcForm),
+		Costume:               valueOr(req.Costume, wcAnyID),
 		Level:                 level,
 		Exclusive:             db.IntBool(valueOr(req.Exclusive, false)),
-		Move:                  valueOr(req.Move, 9000),
-		Evolution:             valueOr(req.Evolution, 9000),
+		Move:                  valueOr(req.Move, wcAnyID),
+		Evolution:             valueOr(req.Evolution, wcAnyID),
 		GymID:                 gymID,
 		RSVPChanges:           rsvp,
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
@@ -125,7 +125,7 @@ func translateV2Raid(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // placeholder, incl. legacy bot rows) or 90 (by-level "any tier"). Any other
 // value is a concrete tracked tier.
 func raidLevelOrNull(level int) *int {
-	if level == 9000 || level == 90 {
+	if level == wcLevelPlaceholder || level == wcLevelAny {
 		return nil
 	}
 	return &level
@@ -142,19 +142,19 @@ func raidRowToRule(row *db.RaidTrackingAPI) v2RaidRule {
 		gymID = &s
 	}
 	return v2RaidRule{
-		PokemonID: ptrUnless(row.PokemonID, 9000),
-		Form:      ptrUnless(row.Form, 0),
-		Costume:   ptrUnless(row.Costume, 9000),
+		PokemonID: ptrUnless(row.PokemonID, wcAnyID),
+		Form:      ptrUnless(row.Form, wcForm),
+		Costume:   ptrUnless(row.Costume, wcAnyID),
 		// level has no meaningful tier when stored 9000 (specific-pokemon
 		// placeholder, incl. legacy bot rows) or 90 (by-level any-tier).
 		Level:                 raidLevelOrNull(row.Level),
 		Team:                  ptrUnless(team, "any"),
 		Exclusive:             ptrUnless(bool(row.Exclusive), false),
-		Move:                  ptrUnless(row.Move, 9000),
-		Evolution:             ptrUnless(row.Evolution, 9000),
+		Move:                  ptrUnless(row.Move, wcAnyID),
+		Evolution:             ptrUnless(row.Evolution, wcAnyID),
 		GymID:                 gymID,
 		RSVPChanges:           ptrUnless(rsvp, "none"),
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

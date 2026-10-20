@@ -227,7 +227,7 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 		gruntType = "everything"
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -294,7 +294,7 @@ func gruntTypeName(gd *gamedata.GameData, grunt *gamedata.Grunt) string {
 // rules and is nulled at its 'any' wildcard.
 func v2InvasionToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2InvasionRule {
 	rule := v2InvasionRule{
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

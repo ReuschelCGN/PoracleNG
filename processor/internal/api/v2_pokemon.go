@@ -125,7 +125,7 @@ func packClean(clean, edit, summary bool) int {
 // bitmask, profile, and validated/normalized override fields.
 // Returns an huma error on override-field violation.
 func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc overrideContext, req *v2PokemonRule) (db.MonsterTrackingAPI, error) {
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -140,35 +140,35 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 		Ping:                  valueOr(req.Ping, ""),
 		Template:              template,
 		Distance:              distance,
-		PokemonID:             valueOr(req.PokemonID, 0),
-		Form:                  valueOr(req.Form, 0),
-		Costume:               valueOr(req.Costume, 9000),
-		MinIV:                 valueOr(req.MinIV, -1),
-		MaxIV:                 valueOr(req.MaxIV, 100),
-		MinCP:                 valueOr(req.MinCP, 0),
-		MaxCP:                 valueOr(req.MaxCP, 9000),
-		MinLevel:              valueOr(req.MinLevel, 0),
-		MaxLevel:              valueOr(req.MaxLevel, 55),
-		ATK:                   valueOr(req.ATK, 0),
-		DEF:                   valueOr(req.DEF, 0),
-		STA:                   valueOr(req.STA, 0),
-		MaxATK:                valueOr(req.MaxATK, 15),
-		MaxDEF:                valueOr(req.MaxDEF, 15),
-		MaxSTA:                valueOr(req.MaxSTA, 15),
+		PokemonID:             valueOr(req.PokemonID, wcAnyPokemonID),
+		Form:                  valueOr(req.Form, wcForm),
+		Costume:               valueOr(req.Costume, wcAnyID),
+		MinIV:                 valueOr(req.MinIV, wcPokemonMinIV),
+		MaxIV:                 valueOr(req.MaxIV, wcPokemonMaxIV),
+		MinCP:                 valueOr(req.MinCP, wcPokemonMinCP),
+		MaxCP:                 valueOr(req.MaxCP, wcPokemonMaxCP),
+		MinLevel:              valueOr(req.MinLevel, wcPokemonMinLevel),
+		MaxLevel:              valueOr(req.MaxLevel, wcPokemonMaxLevel),
+		ATK:                   valueOr(req.ATK, wcPokemonMinStat),
+		DEF:                   valueOr(req.DEF, wcPokemonMinStat),
+		STA:                   valueOr(req.STA, wcPokemonMinStat),
+		MaxATK:                valueOr(req.MaxATK, wcPokemonMaxStat),
+		MaxDEF:                valueOr(req.MaxDEF, wcPokemonMaxStat),
+		MaxSTA:                valueOr(req.MaxSTA, wcPokemonMaxStat),
 		Gender:                genderEnum.resolveStored(req.Gender),
-		MinWeight:             valueOr(req.MinWeight, 0),
-		MaxWeight:             valueOr(req.MaxWeight, 9000000),
-		MinTime:               valueOr(req.MinTime, 0),
-		Rarity:                valueOr(req.Rarity, -1),
-		MaxRarity:             valueOr(req.MaxRarity, 6),
-		Size:                  valueOr(req.Size, -1),
-		MaxSize:               valueOr(req.MaxSize, 5),
-		PVPRankingLeague:      valueOr(req.PVPRankingLeague, 0),
-		PVPRankingBest:        valueOr(req.PVPRankingBest, 1),
-		PVPRankingWorst:       valueOr(req.PVPRankingWorst, 4096),
-		PVPRankingMinCP:       valueOr(req.PVPRankingMinCP, 0),
-		PVPRankingCap:         valueOr(req.PVPRankingCap, 0),
-		PVPRankingEvolution:   valueOr(req.PVPRankingEvolution, 0),
+		MinWeight:             valueOr(req.MinWeight, wcPokemonMinWeight),
+		MaxWeight:             valueOr(req.MaxWeight, wcPokemonMaxWeight),
+		MinTime:               valueOr(req.MinTime, wcPokemonMinTime),
+		Rarity:                valueOr(req.Rarity, wcPokemonRarity),
+		MaxRarity:             valueOr(req.MaxRarity, wcPokemonMaxRarity),
+		Size:                  valueOr(req.Size, wcPokemonSize),
+		MaxSize:               valueOr(req.MaxSize, wcPokemonMaxSize),
+		PVPRankingLeague:      valueOr(req.PVPRankingLeague, wcPokemonPVPLeague),
+		PVPRankingBest:        valueOr(req.PVPRankingBest, wcPokemonPVPBest),
+		PVPRankingWorst:       valueOr(req.PVPRankingWorst, wcPokemonPVPWorst),
+		PVPRankingMinCP:       valueOr(req.PVPRankingMinCP, wcPokemonPVPMinCP),
+		PVPRankingCap:         valueOr(req.PVPRankingCap, wcPokemonPVPCap),
+		PVPRankingEvolution:   valueOr(req.PVPRankingEvolution, wcPokemonPVPEvolution),
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
 		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
@@ -185,36 +185,36 @@ func translateV2Pokemon(deps *TrackingDeps, humanID string, profileNo int, oc ov
 func pokemonRowToRule(row *db.MonsterTrackingAPI) v2PokemonRule {
 	gender := genderEnum.fromStored(row.Gender)
 	return v2PokemonRule{
-		PokemonID:             ptrUnless(row.PokemonID, 0),
-		Form:                  ptrUnless(row.Form, 0),
-		Costume:               ptrUnless(row.Costume, 9000),
-		MinIV:                 ptrUnless(row.MinIV, -1),
-		MaxIV:                 ptrUnless(row.MaxIV, 100),
-		MinCP:                 ptrUnless(row.MinCP, 0),
-		MaxCP:                 ptrUnless(row.MaxCP, 9000),
-		MinLevel:              ptrUnless(row.MinLevel, 0),
-		MaxLevel:              ptrUnless(row.MaxLevel, 55),
-		ATK:                   ptrUnless(row.ATK, 0),
-		DEF:                   ptrUnless(row.DEF, 0),
-		STA:                   ptrUnless(row.STA, 0),
-		MaxATK:                ptrUnless(row.MaxATK, 15),
-		MaxDEF:                ptrUnless(row.MaxDEF, 15),
-		MaxSTA:                ptrUnless(row.MaxSTA, 15),
+		PokemonID:             ptrUnless(row.PokemonID, wcAnyPokemonID),
+		Form:                  ptrUnless(row.Form, wcForm),
+		Costume:               ptrUnless(row.Costume, wcAnyID),
+		MinIV:                 ptrUnless(row.MinIV, wcPokemonMinIV),
+		MaxIV:                 ptrUnless(row.MaxIV, wcPokemonMaxIV),
+		MinCP:                 ptrUnless(row.MinCP, wcPokemonMinCP),
+		MaxCP:                 ptrUnless(row.MaxCP, wcPokemonMaxCP),
+		MinLevel:              ptrUnless(row.MinLevel, wcPokemonMinLevel),
+		MaxLevel:              ptrUnless(row.MaxLevel, wcPokemonMaxLevel),
+		ATK:                   ptrUnless(row.ATK, wcPokemonMinStat),
+		DEF:                   ptrUnless(row.DEF, wcPokemonMinStat),
+		STA:                   ptrUnless(row.STA, wcPokemonMinStat),
+		MaxATK:                ptrUnless(row.MaxATK, wcPokemonMaxStat),
+		MaxDEF:                ptrUnless(row.MaxDEF, wcPokemonMaxStat),
+		MaxSTA:                ptrUnless(row.MaxSTA, wcPokemonMaxStat),
 		Gender:                ptrUnless(gender, "any"),
-		MinWeight:             ptrUnless(row.MinWeight, 0),
-		MaxWeight:             ptrUnless(row.MaxWeight, 9000000),
-		MinTime:               ptrUnless(row.MinTime, 0),
-		Rarity:                ptrUnlessAny(row.Rarity, -1, 0),
-		MaxRarity:             ptrUnless(row.MaxRarity, 6),
-		Size:                  ptrUnlessAny(row.Size, -1, 0),
-		MaxSize:               ptrUnless(row.MaxSize, 5),
-		PVPRankingLeague:      ptrUnless(row.PVPRankingLeague, 0),
-		PVPRankingBest:        ptrUnlessAny(row.PVPRankingBest, 1, 0),
-		PVPRankingWorst:       ptrUnlessAny(row.PVPRankingWorst, 4096, 0),
-		PVPRankingMinCP:       ptrUnless(row.PVPRankingMinCP, 0),
-		PVPRankingCap:         ptrUnless(row.PVPRankingCap, 0),
-		PVPRankingEvolution:   ptrUnless(row.PVPRankingEvolution, 0),
-		Distance:              ptrUnless(row.Distance, 0),
+		MinWeight:             ptrUnless(row.MinWeight, wcPokemonMinWeight),
+		MaxWeight:             ptrUnless(row.MaxWeight, wcPokemonMaxWeight),
+		MinTime:               ptrUnless(row.MinTime, wcPokemonMinTime),
+		Rarity:                ptrUnlessAny(row.Rarity, wcPokemonRarity, wcLegacyUnset),
+		MaxRarity:             ptrUnless(row.MaxRarity, wcPokemonMaxRarity),
+		Size:                  ptrUnlessAny(row.Size, wcPokemonSize, wcLegacyUnset),
+		MaxSize:               ptrUnless(row.MaxSize, wcPokemonMaxSize),
+		PVPRankingLeague:      ptrUnless(row.PVPRankingLeague, wcPokemonPVPLeague),
+		PVPRankingBest:        ptrUnlessAny(row.PVPRankingBest, wcPokemonPVPBest, wcLegacyUnset),
+		PVPRankingWorst:       ptrUnlessAny(row.PVPRankingWorst, wcPokemonPVPWorst, wcLegacyUnset),
+		PVPRankingMinCP:       ptrUnless(row.PVPRankingMinCP, wcPokemonPVPMinCP),
+		PVPRankingCap:         ptrUnless(row.PVPRankingCap, wcPokemonPVPCap),
+		PVPRankingEvolution:   ptrUnless(row.PVPRankingEvolution, wcPokemonPVPEvolution),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
@@ -272,17 +272,17 @@ func RegisterV2TrackingPokemon(api huma.API, deps *TrackingDeps) {
 // projects to null (ptrUnlessAny) onto the value translateV2Pokemon stores
 // for null, so diffing treats them as the same rule.
 func canonicalizePokemonRow(row *db.MonsterTrackingAPI) {
-	if row.Rarity == 0 {
-		row.Rarity = -1
+	if row.Rarity == wcLegacyUnset {
+		row.Rarity = wcPokemonRarity
 	}
-	if row.Size == 0 {
-		row.Size = -1
+	if row.Size == wcLegacyUnset {
+		row.Size = wcPokemonSize
 	}
-	if row.PVPRankingBest == 0 {
-		row.PVPRankingBest = 1
+	if row.PVPRankingBest == wcLegacyUnset {
+		row.PVPRankingBest = wcPokemonPVPBest
 	}
-	if row.PVPRankingWorst == 0 {
-		row.PVPRankingWorst = 4096
+	if row.PVPRankingWorst == wcLegacyUnset {
+		row.PVPRankingWorst = wcPokemonPVPWorst
 	}
 }
 
