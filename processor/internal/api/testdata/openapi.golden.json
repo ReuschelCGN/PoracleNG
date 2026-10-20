@@ -2664,6 +2664,27 @@
         ],
         "type": "object"
       },
+      "V2BulkDeleteBody": {
+        "additionalProperties": false,
+        "properties": {
+          "uids": {
+            "description": "Rule uids to delete",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "uids"
+        ],
+        "type": "object"
+      },
       "V2CheckLocationOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -19649,13 +19670,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -19678,8 +19698,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -19956,12 +19995,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -20154,6 +20203,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -20227,13 +20286,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -20256,8 +20314,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -20534,12 +20611,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -20732,6 +20819,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -20805,13 +20902,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -20834,8 +20930,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -21112,12 +21227,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -21310,6 +21435,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -21383,13 +21518,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -21412,8 +21546,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -21690,12 +21843,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -21888,6 +22051,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -21961,13 +22134,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -21990,8 +22162,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -22268,12 +22459,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -22466,6 +22667,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -22539,13 +22750,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -22568,8 +22778,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -22846,12 +23075,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -23044,6 +23283,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -23117,13 +23366,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -23146,8 +23394,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -23424,12 +23691,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -23622,6 +23899,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -23695,13 +23982,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -23724,8 +24010,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -24002,12 +24307,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -24200,6 +24515,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -24273,13 +24598,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -24302,8 +24626,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -24580,12 +24923,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -24778,6 +25131,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -24851,13 +25214,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -24880,8 +25242,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -25158,12 +25539,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -25356,6 +25747,16 @@
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -25429,13 +25830,12 @@
             }
           },
           {
-            "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+            "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
             "explode": false,
             "in": "query",
             "name": "uid",
-            "required": true,
             "schema": {
-              "description": "Comma-separated rule uids to delete (e.g. 1,2,3)",
+              "description": "Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both.",
               "type": "string"
             }
           },
@@ -25458,8 +25858,27 @@
               "description": "Apply without sending the confirmation push",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+              "type": "boolean"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BulkDeleteBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -25736,12 +26155,22 @@
             }
           },
           {
-            "description": "Apply without sending the confirmation push (mutations only)",
+            "description": "Apply without sending the confirmation push",
             "explode": false,
             "in": "query",
             "name": "silent",
             "schema": {
-              "description": "Apply without sending the confirmation push (mutations only)",
+              "description": "Apply without sending the confirmation push",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }
@@ -25932,6 +26361,16 @@
             "name": "trusted",
             "schema": {
               "description": "Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed.",
               "type": "boolean"
             }
           }

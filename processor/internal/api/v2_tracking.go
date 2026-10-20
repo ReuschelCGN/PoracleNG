@@ -11,7 +11,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
-	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
@@ -164,13 +163,34 @@ type v2ItemInput struct {
 	Silent              bool   `query:"silent" doc:"Apply without sending the confirmation push (mutations only)"`
 }
 
-// v2BulkDeleteInput is the input for collection bulk-delete (?uid=1,2,3).
-type v2BulkDeleteInput struct {
+// v2DeleteItemInput is the input for single delete-by-uid. It is v2ItemInput
+// plus dry_run, kept separate so GET-by-uid (which shares v2ItemInput) does not
+// advertise a parameter it ignores.
+type v2DeleteItemInput struct {
 	ID                  string `path:"id" doc:"Human id (the owning user); ownership scope"`
+	UID                 int64  `path:"uid" doc:"Tracking rule uid (scoped to this human)"`
 	Profile             int    `query:"profile" default:"-1" doc:"Profile number; defaults to the human's active profile"`
-	UID                 string `query:"uid" required:"true" doc:"Comma-separated rule uids to delete (e.g. 1,2,3)"`
-	IncludeDescriptions bool   `query:"include_descriptions" doc:"Add a human-readable description to each deleted rule"`
+	IncludeDescriptions bool   `query:"include_descriptions" doc:"Add a human-readable description to the rule in the response"`
 	Silent              bool   `query:"silent" doc:"Apply without sending the confirmation push"`
+	DryRun              bool   `query:"dry_run" doc:"Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed."`
+}
+
+// v2BulkDeleteBody is the optional JSON form of the bulk-delete uid list, for
+// lists too long for a URL.
+type v2BulkDeleteBody struct {
+	UIDs []int64 `json:"uids" minItems:"1" doc:"Rule uids to delete"`
+}
+
+// v2BulkDeleteInput is the input for collection bulk-delete: the uids come
+// either from ?uid=1,2,3 or from a {"uids":[...]} body, never both.
+type v2BulkDeleteInput struct {
+	ID                  string            `path:"id" doc:"Human id (the owning user); ownership scope"`
+	Profile             int               `query:"profile" default:"-1" doc:"Profile number; defaults to the human's active profile"`
+	UID                 string            `query:"uid" required:"false" doc:"Comma-separated rule uids to delete (e.g. 1,2,3). Send this or a body uids list, not both."`
+	IncludeDescriptions bool              `query:"include_descriptions" doc:"Add a human-readable description to each deleted rule"`
+	Silent              bool              `query:"silent" doc:"Apply without sending the confirmation push"`
+	DryRun              bool              `query:"dry_run" doc:"Validate and report what would be deleted without deleting: same ownership checks and response, with dry_run:true. Nothing is stored, reloaded or pushed."`
+	Body                *v2BulkDeleteBody `required:"false"`
 }
 
 // v2SendConfirmation is the seam the v2 push functions use to dispatch the
@@ -307,7 +327,7 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		Summary:     "Delete one " + typ.Name + " tracking rule",
 		Description: "Scoped by (human, uid). Returns {deleted:[...]}. 404 if the uid is not owned by this human.",
 		Tags:        tag, Security: sec, RejectUnknownQueryParameters: true,
-	}, func(_ context.Context, in *v2ItemInput) (*v2DeleteOutput[Req], error) {
+	}, func(_ context.Context, in *v2DeleteItemInput) (*v2DeleteOutput[Req], error) {
 		human, profileNo, err := resolveHuman(deps, in.ID, in.Profile)
 		if err != nil {
 			return nil, err
@@ -316,13 +336,16 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		if err != nil {
 			return nil, err
 		}
-		if err := typ.Store(deps).DeleteByUID(human.ID, in.UID); err != nil {
-			log.Errorf("v2 tracking %s delete: %s", typ.Name, err)
-			return nil, huma.Error500InternalServerError("database error")
+		if !in.DryRun {
+			if err := typ.Store(deps).DeleteByUID(human.ID, in.UID); err != nil {
+				log.Errorf("v2 tracking %s delete: %s", typ.Name, err)
+				return nil, huma.Error500InternalServerError("database error")
+			}
+			reloadState(deps)
+			v2PushRemoved(deps, typ, human, []T{*row}, in.Silent)
 		}
-		reloadState(deps)
-		v2PushRemoved(deps, typ, human, []T{*row}, in.Silent)
 		out := &v2DeleteOutput[Req]{}
+		out.Body.DryRun = in.DryRun
 		out.Body.Deleted = buildRuleEnvelopes(deps, typ, human, []T{*row}, in.IncludeDescriptions)
 		return out, nil
 	})
@@ -338,9 +361,18 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		if err != nil {
 			return nil, err
 		}
-		uids, err := parseUIDList(in.UID)
-		if err != nil {
-			return nil, err
+		var uids []int64
+		switch {
+		case in.UID != "" && in.Body != nil:
+			return nil, huma.Error422UnprocessableEntity("send uid or a body uids list, not both")
+		case in.Body != nil:
+			uids = in.Body.UIDs
+		case in.UID != "":
+			if uids, err = parseUIDList(in.UID); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, huma.Error422UnprocessableEntity("uid or uids is required")
 		}
 		rows, err := typ.scopedRows(deps, human.ID, profileNo)
 		if err != nil {
@@ -354,13 +386,16 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		for i := range owned {
 			ownedUIDs[i] = typ.GetUID(&owned[i])
 		}
-		if err := typ.Store(deps).DeleteByUIDs(human.ID, ownedUIDs); err != nil {
-			log.Errorf("v2 tracking %s bulk delete: %s", typ.Name, err)
-			return nil, huma.Error500InternalServerError("database error")
+		if !in.DryRun {
+			if err := typ.Store(deps).DeleteByUIDs(human.ID, ownedUIDs); err != nil {
+				log.Errorf("v2 tracking %s bulk delete: %s", typ.Name, err)
+				return nil, huma.Error500InternalServerError("database error")
+			}
+			reloadState(deps)
+			v2PushRemoved(deps, typ, human, owned, in.Silent)
 		}
-		reloadState(deps)
-		v2PushRemoved(deps, typ, human, owned, in.Silent)
 		out := &v2DeleteOutput[Req]{}
+		out.Body.DryRun = in.DryRun
 		out.Body.Deleted = buildRuleEnvelopes(deps, typ, human, owned, in.IncludeDescriptions)
 		return out, nil
 	})
@@ -397,6 +432,7 @@ type v2PutInput[Req any] struct {
 	// userSelectable filter on override_areas only — an unknown fence name is
 	// still rejected, and the community restriction still applies (#228).
 	Trusted bool `query:"trusted" doc:"Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply."`
+	DryRun  bool `query:"dry_run" doc:"Validate without writing: same 404/409/422 checks and response as a real PUT, with dry_run:true. Nothing is stored, reloaded or pushed."`
 	Body    Req
 }
 
@@ -474,7 +510,8 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	}
 
 	// Ownership guard: the addressed uid must exist and belong to this human.
-	if _, err := v2FindOwnedRow(typ, deps, human.ID, profileNo, in.UID); err != nil {
+	stored, err := v2FindOwnedRow(typ, deps, human.ID, profileNo, in.UID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -488,26 +525,24 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 		return nil, terr
 	}
 
-	// App-level identity validation, mirroring the insert path's
-	// DiffAndClassify semantics: a body that is an exact duplicate of a
-	// DIFFERENT rule is rejected before anything is deleted. Constraint
-	// management is deliberately application-side in this schema (no DB
-	// transactions); without this check, the delete-then-insert below could
-	// destroy the addressed rule when the insert collides — deterministic
-	// data loss on databases still carrying the legacy invasion/lures
-	// unique keys, a silent duplicate on the keyless tables.
+	// Refuse an edit that would make this rule a duplicate of, or a one-field
+	// update of, a DIFFERENT rule: a later POST of the same body would squash
+	// the two together. Constraint management is deliberately application-side
+	// (no DB transactions); checking before the delete-then-insert below also
+	// stops that sequence destroying the addressed rule when the insert collides
+	// on databases still carrying legacy unique keys.
 	existing, err := typ.diffRows(deps, human.ID, profileNo)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("database error")
 	}
-	for i := range existing {
-		if typ.GetUID(&existing[i]) == in.UID {
-			continue
-		}
-		if noMatch, isDup, _, _ := db.DiffTracking(&existing[i], &row); !noMatch && isDup {
-			return nil, huma.Error409Conflict(fmt.Sprintf(
-				"an identical rule already exists (uid %d)", typ.GetUID(&existing[i])))
-		}
+	policy := store.RowDiffPolicy[T]{GetUID: typ.GetUID, SetUID: typ.SetUID}
+	if other, conflict := policy.Conflicts(existing, &row, in.UID); conflict {
+		return nil, huma.Error409Conflict(fmt.Sprintf("would duplicate rule %d", other))
+	}
+
+	if in.DryRun {
+		typ.SetUID(&row, in.UID)
+		return v2PutOutput(deps, typ, human, row, *stored, in), nil
 	}
 
 	// Full replace = delete the old row and insert the fully-specified body,
@@ -537,11 +572,25 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	reloadState(deps)
 	v2PushDiff(deps, typ, human, store.DiffResult[T]{Updates: []T{row}}, in.Silent)
 
+	return v2PutOutput(deps, typ, human, row, *stored, in), nil
+}
+
+// v2PutOutput builds the PUT response: the edited rule with the stored rule it
+// replaced as previous.
+func v2PutOutput[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T], human *store.HumanLite, row, prior T, in *v2PutInput[Req]) *v2CreateOutput[Req] {
 	out := &v2CreateOutput[Req]{}
-	for _, env := range buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions) {
-		out.Body.Updated = append(out.Body.Updated, v2UpdatedRuleEnvelope[Req]{v2RuleEnvelope: env})
+	out.Body.DryRun = in.DryRun
+	envs := buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions)
+	prev := buildRuleEnvelopes(deps, typ, human, []T{prior}, in.IncludeDescriptions)
+	for i, env := range envs {
+		u := v2UpdatedRuleEnvelope[Req]{v2RuleEnvelope: env}
+		if i < len(prev) {
+			p := prev[i]
+			u.Previous = &p
+		}
+		out.Body.Updated = append(out.Body.Updated, u)
 	}
-	return out, nil
+	return out
 }
 
 // --- helpers --------------------------------------------------------------
