@@ -49,6 +49,10 @@ type v2RuleEnvelope[Req any] struct {
 	// endpoints leave it nil, so their wire shape and OpenAPI schema are
 	// unchanged.
 	ProfileNo *int `json:"-"`
+
+	// Previous is the stored rule this one replaced. Set only on rules in a
+	// POST's `updated` list; nil (and absent from the wire) everywhere else.
+	Previous *v2RuleEnvelope[Req] `json:"previous,omitempty"`
 }
 
 // v2TrackingType captures everything the generic layer needs to serve one
@@ -381,6 +385,7 @@ type v2CreateInput[Req any] struct {
 	// userSelectable filter on override_areas only — an unknown fence name is
 	// still rejected, and the community restriction still applies (#228).
 	Trusted bool `query:"trusted" doc:"Allow override_areas to name fences that are not userSelectable, for a client that has already authorised the change. Unknown fence names are still rejected; area_security community restrictions still apply."`
+	DryRun  bool `query:"dry_run" doc:"Validate and classify without writing: returns what would be created/updated/unchanged (created rules have uid 0, updated rules carry previous), with dry_run:true. Nothing is stored, reloaded or pushed. The preview is advisory; a later commit reports what it actually did."`
 	Body    []Req
 }
 
@@ -429,18 +434,35 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 		return nil, huma.Error500InternalServerError("database error")
 	}
 
-	diff, err := store.ApplyDiff(typ.Store(deps), human.ID, existing, candidates, typ.GetUID, typ.SetUID)
-	if err != nil {
-		log.Errorf("v2 tracking %s create: %s", typ.Name, err)
-		return nil, huma.Error500InternalServerError("database error")
+	var diff store.DiffResult[T]
+	if in.DryRun {
+		// Same scoped rows and classification as a commit, but nothing is
+		// written, reloaded or pushed; inserts keep uid 0.
+		diff = store.DiffAndClassify(existing, candidates, typ.GetUID, typ.SetUID)
+	} else {
+		diff, err = store.ApplyDiff(typ.Store(deps), human.ID, existing, candidates, typ.GetUID, typ.SetUID)
+		if err != nil {
+			log.Errorf("v2 tracking %s create: %s", typ.Name, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		reloadState(deps)
+		v2PushDiff(deps, typ, human, diff, in.Silent)
 	}
 
-	reloadState(deps)
-	v2PushDiff(deps, typ, human, diff, in.Silent)
-
 	out := &v2CreateOutput[Req]{}
+	out.Body.DryRun = in.DryRun
 	out.Body.Created = buildRuleEnvelopes(deps, typ, human, diff.Inserts, in.IncludeDescriptions)
 	out.Body.Updated = buildRuleEnvelopes(deps, typ, human, diff.Updates, in.IncludeDescriptions)
+	// previous is what each update actually replaced (from the diff, not from
+	// a separate read), so a commit reports the truth even if the stored rule
+	// changed after a dry-run preview.
+	prev := buildRuleEnvelopes(deps, typ, human, diff.Replaced, in.IncludeDescriptions)
+	for i := range out.Body.Updated {
+		if i < len(prev) {
+			p := prev[i]
+			out.Body.Updated[i].Previous = &p
+		}
+	}
 	out.Body.Unchanged = buildRuleEnvelopes(deps, typ, human, diff.AlreadyPresent, in.IncludeDescriptions)
 	return out, nil
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -34,6 +35,9 @@ type pushRecord struct {
 // through a REAL huma+gin engine. It returns the engine, the monster store
 // (id-scoped), and a pointer to the slice that records confirmation pushes.
 // The returned restore func resets the v2SendConfirmation seam.
+// v2PokemonTestReloads counts ReloadFunc calls since the last test API was built.
+var v2PokemonTestReloads int32
+
 func newV2PokemonTestAPI(t *testing.T) (*gin.Engine, *store.MockTrackingStore[db.MonsterTrackingAPI], *[]pushRecord, func()) {
 	t.Helper()
 	return newV2PokemonTestAPIWithConfig(t, nil, nil)
@@ -98,9 +102,11 @@ func newV2PokemonTestAPIWithConfig(t *testing.T, cfg *config.Config, setup func(
 			DefaultTemplateName: "1",
 		},
 		Translations: i18n.Load(""),
+		ReloadFunc:   func() { atomic.AddInt32(&v2PokemonTestReloads, 1) },
 		// Dispatcher nil; pushes go through the v2SendConfirmation seam below.
 	}
 
+	atomic.StoreInt32(&v2PokemonTestReloads, 0)
 	pushes := &[]pushRecord{}
 	orig := v2SendConfirmation
 	v2SendConfirmation = func(_ *TrackingDeps, human *store.HumanLite, message, _ string) {
