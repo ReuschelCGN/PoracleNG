@@ -111,7 +111,7 @@ func TestUnmutedSummaryRows(t *testing.T) {
 	exp := time.Now().Add(time.Hour).Unix()
 	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopePokestop, ScopeValue: "stop-A", ExpiresAt: exp})
 	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeArea, ScopeValue: "Park", ExpiresAt: exp})
-	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, ScopeValue: "7", ExpiresAt: exp})
+	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "quest", ScopeValue: "7", ExpiresAt: exp})
 	ps := &ProcessorService{muteStore: ms}
 
 	rows := func() []tracker.BufferedQuest {
@@ -192,5 +192,17 @@ func TestDispatchQuestSummary_MutedEntriesNotSent(t *testing.T) {
 	ps.DispatchQuestSummary("u1", AlertTypeQuest)
 	if v.callCount() != 0 {
 		t.Errorf("validator calls = %d, want 0 (all entries muted)", v.callCount())
+	}
+}
+
+// A raid-table mute with uid N must not drop a quest row whose rule uid is N.
+func TestUnmutedSummaryRows_OtherTableMuteIgnored(t *testing.T) {
+	ms := mute.NewStore()
+	exp := time.Now().Add(time.Hour).Unix()
+	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "raid", ScopeValue: "7", ExpiresAt: exp})
+	ps := &ProcessorService{muteStore: ms}
+	got := ps.unmutedSummaryRows("u1", "discord:user", []tracker.BufferedQuest{{PokestopID: "s", RuleUIDs: []int64{7}}})
+	if len(got) != 1 {
+		t.Errorf("raid mute dropped a quest row: %v", got)
 	}
 }

@@ -223,6 +223,8 @@ func runMuteTrackingUID(ctx *bot.CommandContext, raw string, duration time.Durat
 	if err != nil || uid <= 0 {
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.mute.bad_uid", raw)}}
 	}
+	// Task 10: RuleTable is not known to this producer yet, so the entry
+	// stays untyped and matches nothing until Task 10 types it.
 	entry := mute.Entry{
 		HumanID:    ctx.TargetID,
 		ScopeType:  mute.ScopeTracking,
@@ -497,7 +499,7 @@ func (c *UnmuteCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply 
 		}}
 	}
 
-	removed := ctx.MuteStore.Remove(ctx.TargetID, scopeType, value)
+	removed := ctx.MuteStore.Remove(ctx.TargetID, scopeType, "", value)
 	if !removed {
 		return []bot.Reply{{
 			React: "👌",
@@ -519,7 +521,7 @@ func runUnmuteTrackingUID(ctx *bot.CommandContext, raw string) []bot.Reply {
 		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.mute.bad_uid", raw)}}
 	}
 	label := fmt.Sprintf("rule id:%d", uid)
-	if ok := ctx.MuteStore.Remove(ctx.TargetID, mute.ScopeTracking, strconv.FormatInt(uid, 10)); !ok {
+	if ok := ctx.MuteStore.Remove(ctx.TargetID, mute.ScopeTracking, "", strconv.FormatInt(uid, 10)); !ok {
 		return []bot.Reply{{React: "👌", Text: tr.Tf("msg.mute.none_found", label)}}
 	}
 	return []bot.Reply{{React: "✅", Text: tr.Tf("msg.mute.removed", label)}}

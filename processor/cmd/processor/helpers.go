@@ -259,6 +259,7 @@ func (ps *ProcessorService) filterMuted(matched []webhook.MatchedUser, areas []w
 		// scopes use the event-level fields (gym_id, pokemon_id, etc.)
 		// from the caller's ev.
 		ev.MatchedRuleUID = m.RuleUID
+		ev.MatchedRuleTable = m.RuleTable
 		if ps.muteStore.Match(m.ID, ev, now) {
 			metrics.MuteHitsTotal.WithLabelValues(m.Type).Inc()
 			log.Debugf("Mute filter: dropping %s %s %s (active mute matches event)", m.Type, m.ID, m.Name)

@@ -37,8 +37,13 @@ const (
 // Entry is a single active mute. Held by Store keyed under HumanID; the
 // matcher reads via Match.
 type Entry struct {
-	HumanID    string
-	ScopeType  string // one of the Scope* constants
+	HumanID   string
+	ScopeType string // one of the Scope* constants
+	// RuleTable is the canonical tracking table (see CanonicalRuleTable) the
+	// muted uid belongs to. Set only for ScopeTracking: uids are per-table, so
+	// a tracking mute is identified by (table, uid). An empty table matches
+	// nothing (an untyped tracking mute is the #323 bug).
+	RuleTable  string
 	ScopeValue string // gym id, pokemon dex id (as string), area name, etc. Empty for ScopeEverything.
 	ExpiresAt  int64  // unix seconds; entries past this are skipped by Match and removed by Sweep
 }
@@ -62,6 +67,24 @@ type Event struct {
 	// compare against this — when a user has muted UID N, alerts whose
 	// MatchedRuleUID is N get dropped.
 	MatchedRuleUID int64
+	// MatchedRuleTable is the canonical tracking table of that rule.
+	MatchedRuleTable string
+}
+
+// ruleTables are the canonical tracking-table keys.
+var ruleTables = map[string]string{
+	"pokemon": "pokemon", "raid": "raid", "egg": "egg", "quest": "quest",
+	"invasion": "invasion", "lure": "lure", "nest": "nest", "gym": "gym",
+	"fort": "fort", "maxbattle": "maxbattle",
+	// v2 "incident" rules live in the invasion table.
+	"incident": "invasion",
+}
+
+// CanonicalRuleTable maps a v2/bot tracking type name to its canonical table
+// key. Unknown names return ("", false).
+func CanonicalRuleTable(typeName string) (string, bool) {
+	t, ok := ruleTables[typeName]
+	return t, ok
 }
 
 // Store is the in-memory mute repository. Safe for concurrent use; the
@@ -92,7 +115,7 @@ func (s *Store) Add(e Entry) (replaced bool) {
 	defer s.mu.Unlock()
 	list := s.entries[e.HumanID]
 	for i, existing := range list {
-		if existing.ScopeType == e.ScopeType && sameScopeValue(e.ScopeType, existing.ScopeValue, e.ScopeValue) {
+		if existing.ScopeType == e.ScopeType && existing.RuleTable == e.RuleTable && sameScopeValue(e.ScopeType, existing.ScopeValue, e.ScopeValue) {
 			list[i] = e
 			s.entries[e.HumanID] = list
 			return true
@@ -102,14 +125,15 @@ func (s *Store) Add(e Entry) (replaced bool) {
 	return false
 }
 
-// Remove deletes the entry matching (HumanID, ScopeType, ScopeValue).
+// Remove deletes the entry matching (HumanID, ScopeType, RuleTable,
+// ScopeValue). ruleTable is "" for every non-tracking scope.
 // Returns true when an entry was removed, false when no match existed.
-func (s *Store) Remove(humanID, scopeType, scopeValue string) bool {
+func (s *Store) Remove(humanID, scopeType, ruleTable, scopeValue string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := s.entries[humanID]
 	for i, e := range list {
-		if e.ScopeType == scopeType && sameScopeValue(scopeType, e.ScopeValue, scopeValue) {
+		if e.ScopeType == scopeType && e.RuleTable == ruleTable && sameScopeValue(scopeType, e.ScopeValue, scopeValue) {
 			s.entries[humanID] = append(list[:i], list[i+1:]...)
 			if len(s.entries[humanID]) == 0 {
 				delete(s.entries, humanID)
@@ -243,7 +267,7 @@ func matchScope(e Entry, ev Event) bool {
 		// Match when the muted rule UID equals the rule that produced
 		// this match. Skip when either side is empty so a zero-UID
 		// synthetic match doesn't accidentally trip a "0" mute entry.
-		if e.ScopeValue == "" || ev.MatchedRuleUID == 0 {
+		if e.ScopeValue == "" || e.RuleTable == "" || ev.MatchedRuleUID == 0 || e.RuleTable != ev.MatchedRuleTable {
 			return false
 		}
 		return e.ScopeValue == itoa(int(ev.MatchedRuleUID))

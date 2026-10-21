@@ -265,7 +265,7 @@ func registerV2MutesDelete(api huma.API, deps *TrackingDeps, tag []string, sec [
 				break
 			}
 		}
-		if found == nil || !deps.Mutes.Remove(in.ID, in.Scope, in.Value) {
+		if found == nil || !deps.Mutes.Remove(in.ID, in.Scope, found.RuleTable, in.Value) {
 			return nil, huma.Error404NotFound("mute not found")
 		}
 		out.Body.Deleted = append(out.Body.Deleted, muteEntryToItem(*found, now))

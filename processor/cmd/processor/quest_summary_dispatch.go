@@ -416,6 +416,7 @@ func (ps *ProcessorService) unmutedSummaryRows(humanID, humanType string, rows [
 			muted = true
 			for _, uid := range r.RuleUIDs {
 				ev.MatchedRuleUID = uid
+				ev.MatchedRuleTable = "quest"
 				if !ps.muteStore.Match(humanID, ev, now) {
 					muted = false
 					break
