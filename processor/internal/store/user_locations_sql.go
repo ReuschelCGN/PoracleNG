@@ -216,7 +216,8 @@ func removeAreaName(areas []string, name string) (kept []string, changed bool) {
 }
 
 // editAreaList applies an EditOverrideAreas edit to one list. Empty to removes
-// from (other entries untouched); otherwise matching entries become to and
+// from (other entries untouched); otherwise entries matching from OR to become
+// to (so a legacy spelling of to is normalised to the written form) and
 // duplicates by key collapse, keeping the first.
 func editAreaList(areas []string, from, to string) (out []string, changed bool) {
 	if to == "" {
@@ -225,7 +226,7 @@ func editAreaList(areas []string, from, to string) (out []string, changed bool) 
 	out = make([]string, 0, len(areas))
 	seen := map[string]bool{}
 	for _, a := range areas {
-		if areaNameMatches(a, from) {
+		if areaNameMatches(a, from) || areaNameMatches(a, to) {
 			a = to
 		}
 		k := geofence.NormalizeAreaKey(a)
@@ -290,6 +291,60 @@ func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int
 		}
 	}
 	return removedFrom, changed, nil
+}
+
+// RenameAreaInProfiles implements HumanStore.
+func (s *SQLHumanStore) RenameAreaInProfiles(id, from, to string, profileNos []int, dryRun bool) (renamedIn []int, changed bool, err error) {
+	if len(profileNos) == 0 {
+		return nil, false, nil
+	}
+	q, args, err := sqlx.In(`SELECT profile_no, area FROM profiles WHERE id = ? AND profile_no IN (?) ORDER BY profile_no`, id, profileNos)
+	if err != nil {
+		return nil, false, fmt.Errorf("rename area %s: build query: %w", id, err)
+	}
+	var rows []struct {
+		ProfileNo int            `db:"profile_no"`
+		Area      sql.NullString `db:"area"`
+	}
+	if err = s.db.Select(&rows, s.db.Rebind(q), args...); err != nil {
+		return nil, false, fmt.Errorf("rename area %s: select profiles: %w", id, err)
+	}
+	for _, r := range rows {
+		out, rowChanged := editAreaList(unmarshalStringSlice(r.Area.String), from, to)
+		if !rowChanged {
+			continue
+		}
+		if !dryRun {
+			if _, err = s.db.Exec(`UPDATE profiles SET area = ? WHERE id = ? AND profile_no = ?`,
+				marshalStringSlice(out), id, r.ProfileNo); err != nil {
+				return nil, false, fmt.Errorf("rename area %s/%d: %w", id, r.ProfileNo, err)
+			}
+		}
+		renamedIn = append(renamedIn, r.ProfileNo)
+		changed = true
+	}
+
+	var cur struct {
+		ProfileNo int            `db:"current_profile_no"`
+		Area      sql.NullString `db:"area"`
+	}
+	if err = s.db.Get(&cur, `SELECT current_profile_no, area FROM humans WHERE id = ?`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return renamedIn, changed, nil
+		}
+		return nil, false, fmt.Errorf("rename area %s: select human: %w", id, err)
+	}
+	if slices.Contains(profileNos, cur.ProfileNo) {
+		if out, hc := editAreaList(unmarshalStringSlice(cur.Area.String), from, to); hc {
+			changed = true
+			if !dryRun {
+				if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(out), id); err != nil {
+					return nil, false, fmt.Errorf("rename area %s: update human: %w", id, err)
+				}
+			}
+		}
+	}
+	return renamedIn, changed, nil
 }
 
 // EditOverrideAreas implements HumanStore.

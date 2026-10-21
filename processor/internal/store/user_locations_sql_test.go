@@ -454,3 +454,48 @@ func TestEditOverrideAreas_SQL(t *testing.T) {
 		t.Errorf("rename = %v", got)
 	}
 }
+
+func TestRenameAreaInProfiles_SQL(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+
+	mustExec(t, dbx, `UPDATE humans SET current_profile_no = 1, area = ? WHERE id = 'u1'`, `["private","gent centrum"]`)
+	mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES
+		('u1', 1, 'a', '["private","gent centrum"]'),
+		('u1', 2, 'b', '["alpha","private"]'),
+		('u1', 3, 'c', '["beta"]')`)
+
+	got, ch, err := s.RenameAreaInProfiles("u1", "private", "gent_centrum", []int{1, 2, 3}, true)
+	if err != nil || !ch || !slices.Equal(got, []int{1, 2}) {
+		t.Fatalf("dry run: got=%v ch=%v err=%v", got, ch, err)
+	}
+	var area string
+	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["private","gent centrum"]` {
+		t.Fatalf("dry run wrote humans.area: %q %v", area, err)
+	}
+
+	got, _, err = s.RenameAreaInProfiles("u1", "private", "gent_centrum", []int{1, 2, 3}, false)
+	if err != nil || !slices.Equal(got, []int{1, 2}) {
+		t.Fatalf("got=%v err=%v", got, err)
+	}
+	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["gent_centrum"]` {
+		t.Errorf("humans.area = %q %v", area, err)
+	}
+	var rows []struct {
+		ProfileNo int    `db:"profile_no"`
+		Area      string `db:"area"`
+	}
+	if err := dbx.Select(&rows, `SELECT profile_no, area FROM profiles WHERE id = 'u1' ORDER BY profile_no`); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`["gent_centrum"]`, `["alpha","gent_centrum"]`, `["beta"]`}
+	for i, r := range rows {
+		if r.Area != want[i] {
+			t.Errorf("profile %d = %s, want %s", r.ProfileNo, r.Area, want[i])
+		}
+	}
+	// Idempotent.
+	if got, ch, _ = s.RenameAreaInProfiles("u1", "private", "gent_centrum", []int{1, 2, 3}, false); len(got) != 0 || ch {
+		t.Errorf("repeat: got=%v ch=%v", got, ch)
+	}
+}

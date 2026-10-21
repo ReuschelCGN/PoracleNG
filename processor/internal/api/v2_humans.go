@@ -766,6 +766,106 @@ func registerV2HumanRemoveArea(api huma.API, deps *TrackingDeps, tag []string, s
 	})
 }
 
+// --- rename one area -------------------------------------------------------
+
+type v2RenameAreaInput struct {
+	ID          string `path:"id" doc:"Human id (the owning user)"`
+	From        string `query:"from" required:"true" minLength:"1" doc:"Area name to rename. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence."`
+	To          string `query:"to" required:"true" minLength:"1" doc:"New area name. Must resolve to a loaded fence this human may hold; stored as that fence's lowercased name."`
+	Profile     int    `query:"profile" default:"-1" doc:"Profile to rename in; defaults to the active profile. Mutually exclusive with all_profiles."`
+	AllProfiles bool   `query:"all_profiles" doc:"Rename in every profile the human owns. Mutually exclusive with profile."`
+	Trusted     bool   `query:"trusted" doc:"Allow a non-userSelectable fence as the target, for a client that has already authorised the change. Unknown names are still rejected."`
+	DryRun      bool   `query:"dry_run" doc:"Report what would change without writing anything or reloading state."`
+}
+
+type v2RenameAreaOutput struct {
+	Body struct {
+		From      string `json:"from" doc:"The from name as requested"`
+		To        string `json:"to" doc:"The canonical stored form of the new name (the fence's lowercased name)"`
+		RenamedIn []int  `json:"renamed_in" doc:"Profile numbers whose area list changed. Empty when nothing held the old name (including on a repeat call)."`
+		DryRun    bool   `json:"dry_run" doc:"True when nothing was written"`
+	}
+}
+
+// registerV2HumanRenameArea registers PATCH /v2/humans/{id}/areas (#259).
+// Renames one name in each targeted profile, humans.area (current profile) and
+// override_areas on the human's rules, so a renamed fence does not leave the
+// human with stale references. The target is permission-checked before any
+// write; no transaction (per-human lock + idempotent).
+func registerV2HumanRenameArea(api huma.API, deps *TrackingDeps, tag []string, sec []map[string][]string) {
+	huma.Register(api, huma.Operation{
+		OperationID: "v2-rename-human-area", Method: "PATCH", Path: "/v2/humans/{id}/areas",
+		Summary: "Rename one area in a human's profiles and rule overrides",
+		Description: "Replaces area name `from` with `to` in the active profile, `?profile=N`, or every profile with " +
+			"`?all_profiles=true`, and in `override_areas` on the human's rules in those profiles. `to` must resolve to a " +
+			"loaded fence the human may hold (same rules as set-areas, `?trusted=true` included), otherwise 422 and nothing " +
+			"changes; `from` needs no check. The stored spelling is the fence's lowercased name, and a list already holding " +
+			"`to` in any spelling ends up with it exactly once. Names match case-insensitively with underscores and spaces " +
+			"alike. Repeating the call is a 200 with empty `renamed_in`. `?dry_run=true` reports without writing or " +
+			"reloading. Triggers a state reload when something changed. 404 if the human does not exist.",
+		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+	}, func(_ context.Context, in *v2RenameAreaInput) (*v2RenameAreaOutput, error) {
+		human, err := resolveFullHuman(deps, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if in.AllProfiles && in.Profile != profileSentinel {
+			return nil, huma.Error422UnprocessableEntity("profile and all_profiles are mutually exclusive")
+		}
+
+		var fences []geofence.Fence
+		if deps.StateMgr != nil {
+			if st := deps.StateMgr.Get(); st != nil {
+				fences = st.Fences
+			}
+		}
+		to := geofence.CanonicalAreaName(fences, in.To)
+		if !settableAreaSet(deps, human, isAdmin(deps, in.ID), in.Trusted)[to] {
+			return nil, huma.Error422UnprocessableEntity("area not permitted: " + in.To)
+		}
+
+		targets := []int{human.CurrentProfileNo}
+		switch {
+		case in.AllProfiles:
+			profiles, err := deps.Humans.GetProfiles(in.ID)
+			if err != nil {
+				log.Errorf("v2 humans: list profiles for %s: %s", in.ID, err)
+				return nil, huma.Error500InternalServerError("database error")
+			}
+			targets = make([]int, 0, len(profiles))
+			for _, p := range profiles {
+				targets = append(targets, p.ProfileNo)
+			}
+		case in.Profile != profileSentinel:
+			targets = []int{in.Profile}
+		}
+
+		renamedIn, areasChanged, err := deps.Humans.RenameAreaInProfiles(in.ID, in.From, to, targets, in.DryRun)
+		if err != nil {
+			log.Errorf("v2 humans: rename area %q for %s: %s", in.From, in.ID, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		_, overridesChanged, err := deps.Humans.EditOverrideAreas(in.ID, targets, in.From, to, in.DryRun)
+		if err != nil {
+			log.Errorf("v2 humans: rename area %q overrides for %s: %s", in.From, in.ID, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		if !in.DryRun && (areasChanged || overridesChanged) {
+			reloadState(deps)
+		}
+
+		out := &v2RenameAreaOutput{}
+		out.Body.From = in.From
+		out.Body.To = to
+		out.Body.RenamedIn = renamedIn
+		if out.Body.RenamedIn == nil {
+			out.Body.RenamedIn = []int{}
+		}
+		out.Body.DryRun = in.DryRun
+		return out, nil
+	})
+}
+
 // --- shared helpers --------------------------------------------------------
 
 // settableAreaSet keys bot.PermittedAreas for the set-areas path by the
@@ -818,4 +918,5 @@ func RegisterV2Humans(humaAPI huma.API, deps *TrackingDeps) {
 	registerV2HumanCheckLocation(humaAPI, deps, tag, sec)
 	registerV2HumanSetAreas(humaAPI, deps, tag, sec)
 	registerV2HumanRemoveArea(humaAPI, deps, tag, sec)
+	registerV2HumanRenameArea(humaAPI, deps, tag, sec)
 }

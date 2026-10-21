@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -1464,5 +1465,128 @@ func TestV2Humans_RemoveArea_PartialOverrideStillReloads(t *testing.T) {
 	}
 	if atomic.LoadInt32(reloads) == 0 {
 		t.Error("a written override must trigger a reload")
+	}
+}
+
+// --- PATCH /v2/humans/{id}/areas (#259) -------------------------------------
+
+type v2RenameAreaResult struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	RenamedIn []int  `json:"renamed_in"`
+	DryRun    bool   `json:"dry_run"`
+}
+
+func renameArea(t *testing.T, r *gin.Engine, query string) (int, v2RenameAreaResult) {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodPatch, "/api/v2/humans/u1/areas?"+query, "")
+	var got v2RenameAreaResult
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+		}
+		if !bytes.Contains(w.Body.Bytes(), []byte(`"renamed_in":[`)) {
+			t.Errorf("renamed_in must never be null: %s", w.Body.String())
+		}
+	}
+	return w.Code, got
+}
+
+func TestV2Humans_RenameArea_AllProfiles(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private", "alpha"}})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, got := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if got.To != "gent_centrum" || !slices.Equal(got.RenamedIn, []int{1, 2}) {
+		t.Errorf("result = %+v", got)
+	}
+	ps, _ := humans.GetProfiles("u1")
+	if !slices.Equal(ps[0].Area, []string{"gent_centrum", "alpha"}) || !slices.Equal(ps[1].Area, []string{"gent_centrum"}) {
+		t.Errorf("profiles = %v / %v", ps[0].Area, ps[1].Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RenameArea_ToNotLoadedIs422AndChangesNothing(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	w := v2DoReq(t, r, http.MethodPatch, "/api/v2/humans/u1/areas?from=private&to=nowhere", "")
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "area not permitted: nowhere") {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile changed: %v", ps[0].Area)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"private"}) {
+		t.Error("override changed")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("must not reload")
+	}
+}
+
+func TestV2Humans_RenameArea_Idempotent(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	if code, got := renameArea(t, r, "from=private&to=gent_centrum"); code != http.StatusOK || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("first: code=%d %+v", code, got)
+	}
+	code, got := renameArea(t, r, "from=private&to=gent_centrum")
+	if code != http.StatusOK || len(got.RenamedIn) != 0 {
+		t.Errorf("second: code=%d %+v", code, got)
+	}
+}
+
+func TestV2Humans_RenameArea_HoldsBothCollapses(t *testing.T) {
+	r, humans, _, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"gent_centrum", "private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"gent centrum", "private"}})
+
+	if code, _ := renameArea(t, r, "from=private&to=Gent_Centrum"); code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"gent_centrum"}) {
+		t.Errorf("profile = %v", ps[0].Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v", o)
+	}
+}
+
+func TestV2Humans_RenameArea_DryRunWritesNothing(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, got := renameArea(t, r, "from=private&to=gent_centrum&dry_run=true")
+	if code != http.StatusOK || !got.DryRun || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("code=%d %+v", code, got)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile written: %v", ps[0].Area)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"private"}) {
+		t.Errorf("humans.area written: %v", hh.Area)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"private"}) {
+		t.Error("override written")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("dry run must not reload")
 	}
 }

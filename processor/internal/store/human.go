@@ -273,6 +273,15 @@ type HumanStore interface {
 	// dry-run mechanism: a trailing dryRun bool parameter).
 	RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, changed bool, err error)
 
+	// RenameAreaInProfiles replaces every stored area matching from (by
+	// areaNameMatches) with to, written exactly as passed, in each listed
+	// profile row and in humans.area when current_profile_no is in
+	// profileNos. Entries already matching to by key are normalised to to and
+	// duplicates collapse, so the list ends holding to once. Returns the
+	// profile numbers whose row changed, ascending; changed and dryRun follow
+	// RemoveAreaFromProfiles.
+	RenameAreaInProfiles(id, from, to string, profileNos []int, dryRun bool) (renamedIn []int, changed bool, err error)
+
 	// EditOverrideAreas edits override_areas on the human's rules in the
 	// listed profiles (profile_no IN profileNos). An empty to removes from;
 	// otherwise every entry matching from (by areaNameMatches) is replaced by

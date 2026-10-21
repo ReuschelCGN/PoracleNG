@@ -343,3 +343,22 @@ func TestEditAreaList(t *testing.T) {
 		t.Error("no match must be unchanged")
 	}
 }
+
+func TestMockHumanStore_RenameAreaInProfiles(t *testing.T) {
+	m := NewMockHumanStore()
+	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"private", "gent centrum"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"private", "gent centrum"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 2, Area: []string{"alpha", "private"}})
+	got, ch, err := m.RenameAreaInProfiles("u1", "Private", "gent_centrum", []int{1, 2}, false)
+	if err != nil || !ch || !slices.Equal(got, []int{1, 2}) {
+		t.Fatalf("got=%v ch=%v err=%v", got, ch, err)
+	}
+	h, _ := m.Get("u1")
+	if !slices.Equal(h.Area, []string{"gent_centrum"}) {
+		t.Errorf("humans.area = %v", h.Area)
+	}
+	ps, _ := m.GetProfiles("u1")
+	if !slices.Equal(ps[0].Area, []string{"gent_centrum"}) || !slices.Equal(ps[1].Area, []string{"alpha", "gent_centrum"}) {
+		t.Errorf("profiles = %v / %v", ps[0].Area, ps[1].Area)
+	}
+}

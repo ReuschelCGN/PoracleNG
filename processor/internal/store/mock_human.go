@@ -633,6 +633,40 @@ func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []in
 	return removedFrom, changed, nil
 }
 
+// RenameAreaInProfiles mirrors SQLHumanStore.RenameAreaInProfiles.
+func (m *MockHumanStore) RenameAreaInProfiles(id, from, to string, profileNos []int, dryRun bool) ([]int, bool, error) {
+	m.record("RenameAreaInProfiles")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var renamedIn []int
+	changed := false
+	ps := m.profiles[id]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		if !slices.Contains(profileNos, ps[i].ProfileNo) {
+			continue
+		}
+		out, rowChanged := editAreaList(ps[i].Area, from, to)
+		if !rowChanged {
+			continue
+		}
+		if !dryRun {
+			ps[i].Area = out
+		}
+		renamedIn = append(renamedIn, ps[i].ProfileNo)
+		changed = true
+	}
+	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
+		if out, hc := editAreaList(h.Area, from, to); hc {
+			changed = true
+			if !dryRun {
+				h.Area = out
+			}
+		}
+	}
+	return renamedIn, changed, nil
+}
+
 // EditOverrideAreas mirrors SQLHumanStore.EditOverrideAreas over the tracking
 // mocks registered in OverrideTables.
 func (m *MockHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, bool, error) {

@@ -19981,6 +19981,41 @@
         ],
         "type": "object"
       },
+      "V2RenameAreaOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "True when nothing was written",
+            "type": "boolean"
+          },
+          "from": {
+            "description": "The from name as requested",
+            "type": "string"
+          },
+          "renamed_in": {
+            "description": "Profile numbers whose area list changed. Empty when nothing held the old name (including on a repeat call).",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "to": {
+            "description": "The canonical stored form of the new name (the fence's lowercased name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "renamed_in",
+          "dry_run"
+        ],
+        "type": "object"
+      },
       "V2RoleChangeOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -23440,6 +23475,119 @@
           }
         ],
         "summary": "List a human's available areas",
+        "tags": [
+          "v2-humans"
+        ]
+      },
+      "patch": {
+        "description": "Replaces area name `from` with `to` in the active profile, `?profile=N`, or every profile with `?all_profiles=true`, and in `override_areas` on the human's rules in those profiles. `to` must resolve to a loaded fence the human may hold (same rules as set-areas, `?trusted=true` included), otherwise 422 and nothing changes; `from` needs no check. The stored spelling is the fence's lowercased name, and a list already holding `to` in any spelling ends up with it exactly once. Names match case-insensitively with underscores and spaces alike. Repeating the call is a 200 with empty `renamed_in`. `?dry_run=true` reports without writing or reloading. Triggers a state reload when something changed. 404 if the human does not exist.",
+        "operationId": "v2-rename-human-area",
+        "parameters": [
+          {
+            "description": "Human id (the owning user)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Human id (the owning user)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Area name to rename. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence.",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "description": "Area name to rename. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "New area name. Must resolve to a loaded fence this human may hold; stored as that fence's lowercased name.",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "description": "New area name. Must resolve to a loaded fence this human may hold; stored as that fence's lowercased name.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Profile to rename in; defaults to the active profile. Mutually exclusive with all_profiles.",
+            "explode": false,
+            "in": "query",
+            "name": "profile",
+            "schema": {
+              "default": -1,
+              "description": "Profile to rename in; defaults to the active profile. Mutually exclusive with all_profiles.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rename in every profile the human owns. Mutually exclusive with profile.",
+            "explode": false,
+            "in": "query",
+            "name": "all_profiles",
+            "schema": {
+              "description": "Rename in every profile the human owns. Mutually exclusive with profile.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Allow a non-userSelectable fence as the target, for a client that has already authorised the change. Unknown names are still rejected.",
+            "explode": false,
+            "in": "query",
+            "name": "trusted",
+            "schema": {
+              "description": "Allow a non-userSelectable fence as the target, for a client that has already authorised the change. Unknown names are still rejected.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Report what would change without writing anything or reloading state.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Report what would change without writing anything or reloading state.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2RenameAreaOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "poracleSecret": []
+          }
+        ],
+        "summary": "Rename one area in a human's profiles and rule overrides",
         "tags": [
           "v2-humans"
         ]
