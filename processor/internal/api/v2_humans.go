@@ -640,20 +640,9 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 			newAreas = append(newAreas, a)
 		}
 
-		targets := []int{human.CurrentProfileNo}
-		switch {
-		case in.AllProfiles:
-			profiles, err := deps.Humans.GetProfiles(in.ID)
-			if err != nil {
-				log.Errorf("v2 humans: list profiles for %s: %s", in.ID, err)
-				return nil, huma.Error500InternalServerError("database error")
-			}
-			targets = make([]int, 0, len(profiles))
-			for _, p := range profiles {
-				targets = append(targets, p.ProfileNo)
-			}
-		case in.Profile != profileSentinel:
-			targets = []int{in.Profile}
+		targets, err := v2AreaTargets(deps, human, in.AllProfiles, in.Profile)
+		if err != nil {
+			return nil, err
 		}
 
 		for _, profileNo := range targets {
@@ -721,20 +710,9 @@ func registerV2HumanRemoveArea(api huma.API, deps *TrackingDeps, tag []string, s
 			return nil, huma.Error422UnprocessableEntity("profile and all_profiles are mutually exclusive")
 		}
 
-		targets := []int{human.CurrentProfileNo}
-		switch {
-		case in.AllProfiles:
-			profiles, err := deps.Humans.GetProfiles(in.ID)
-			if err != nil {
-				log.Errorf("v2 humans: list profiles for %s: %s", in.ID, err)
-				return nil, huma.Error500InternalServerError("database error")
-			}
-			targets = make([]int, 0, len(profiles))
-			for _, p := range profiles {
-				targets = append(targets, p.ProfileNo)
-			}
-		case in.Profile != profileSentinel:
-			targets = []int{in.Profile}
+		targets, err := v2AreaTargets(deps, human, in.AllProfiles, in.Profile)
+		if err != nil {
+			return nil, err
 		}
 
 		removedFrom, areasChanged, err := deps.Humans.RemoveAreaFromProfiles(in.ID, in.Name, targets, in.DryRun)
@@ -824,20 +802,9 @@ func registerV2HumanRenameArea(api huma.API, deps *TrackingDeps, tag []string, s
 			return nil, huma.Error422UnprocessableEntity("area not permitted: " + in.To)
 		}
 
-		targets := []int{human.CurrentProfileNo}
-		switch {
-		case in.AllProfiles:
-			profiles, err := deps.Humans.GetProfiles(in.ID)
-			if err != nil {
-				log.Errorf("v2 humans: list profiles for %s: %s", in.ID, err)
-				return nil, huma.Error500InternalServerError("database error")
-			}
-			targets = make([]int, 0, len(profiles))
-			for _, p := range profiles {
-				targets = append(targets, p.ProfileNo)
-			}
-		case in.Profile != profileSentinel:
-			targets = []int{in.Profile}
+		targets, err := v2AreaTargets(deps, human, in.AllProfiles, in.Profile)
+		if err != nil {
+			return nil, err
 		}
 
 		renamedIn, areasChanged, err := deps.Humans.RenameAreaInProfiles(in.ID, in.From, to, targets, in.DryRun)
@@ -919,4 +886,31 @@ func RegisterV2Humans(humaAPI huma.API, deps *TrackingDeps) {
 	registerV2HumanSetAreas(humaAPI, deps, tag, sec)
 	registerV2HumanRemoveArea(humaAPI, deps, tag, sec)
 	registerV2HumanRenameArea(humaAPI, deps, tag, sec)
+}
+
+// v2AreaTargets resolves the profile numbers an area endpoint writes: the
+// current profile by default, ?profile= when given, or every profile with
+// ?all_profiles=true. A human with no profiles rows (e.g. migrated from
+// PoracleJS) falls back to the current profile, so all_profiles still covers
+// humans.area and that profile's override_areas instead of writing nothing.
+func v2AreaTargets(deps *TrackingDeps, human *store.Human, allProfiles bool, profile int) ([]int, error) {
+	switch {
+	case allProfiles:
+		profiles, err := deps.Humans.GetProfiles(human.ID)
+		if err != nil {
+			log.Errorf("v2 humans: list profiles for %s: %s", human.ID, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		if len(profiles) == 0 {
+			return []int{human.CurrentProfileNo}, nil
+		}
+		targets := make([]int, 0, len(profiles))
+		for _, p := range profiles {
+			targets = append(targets, p.ProfileNo)
+		}
+		return targets, nil
+	case profile != profileSentinel:
+		return []int{profile}, nil
+	}
+	return []int{human.CurrentProfileNo}, nil
 }

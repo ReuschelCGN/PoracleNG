@@ -1590,3 +1590,63 @@ func TestV2Humans_RenameArea_DryRunWritesNothing(t *testing.T) {
 		t.Error("dry run must not reload")
 	}
 }
+
+// A legacy (PoracleJS-migrated) human can have no profiles rows at all.
+// ?all_profiles=true must still cover the current profile: humans.area and
+// that profile's override_areas.
+func TestV2Humans_RemoveArea_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"alpha", "private"}
+	humans.AddHuman(h)
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+
+	code, _ := removeArea(t, r, "name=private&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"alpha"}) {
+		t.Errorf("humans.area = %v, want [alpha]", hh.Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"alpha"}) {
+		t.Errorf("override = %v, want [alpha]", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RenameArea_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private", "alpha"}
+	humans.AddHuman(h)
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, _ := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"gent_centrum", "alpha"}) {
+		t.Errorf("humans.area = %v, want [gent_centrum alpha]", hh.Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v, want [gent_centrum]", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+// Set-areas shares the target resolution: all_profiles on a human with no
+// profiles rows still writes humans.area.
+func TestV2Humans_SetAreas_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/areas?all_profiles=true", `{"areas":["beta"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"beta"}) {
+		t.Errorf("humans.area = %v, want [beta]", hh.Area)
+	}
+}
