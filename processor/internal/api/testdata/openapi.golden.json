@@ -25787,7 +25787,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-egg",
         "parameters": [
           {
@@ -26512,7 +26512,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-fort",
         "parameters": [
           {
@@ -27237,7 +27237,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-gym",
         "parameters": [
           {
@@ -27962,7 +27962,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-incident",
         "parameters": [
           {
@@ -28687,7 +28687,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-invasion",
         "parameters": [
           {
@@ -29412,7 +29412,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-lure",
         "parameters": [
           {
@@ -30137,7 +30137,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-maxbattle",
         "parameters": [
           {
@@ -30862,7 +30862,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-nest",
         "parameters": [
           {
@@ -31587,7 +31587,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-pokemon",
         "parameters": [
           {
@@ -32312,7 +32312,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-quest",
         "parameters": [
           {
@@ -33037,7 +33037,7 @@
         ]
       },
       "put": {
-        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). Scoped by (human, uid); 404 if the uid is not owned by this human.",
+        "description": "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is returned in {unchanged} and nothing is written, reloaded or pushed. Scoped by (human, uid); 404 if the uid is not owned by this human.",
         "operationId": "v2-put-raid",
         "parameters": [
           {

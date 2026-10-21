@@ -69,7 +69,7 @@ func nullableJSONNames(t *testing.T, req any) []string {
 // TestV2_EveryNullableFieldRoundTripsNull proves, for all 11 tracking types,
 // that a rule written with only its required fields reads back with every
 // nullable field as null, and that the read body is a fixed point of both PUT
-// (byte-identical) and POST (unchanged). A field failing here has a stored
+// and POST (unchanged, rule byte-identical). A field failing here has a stored
 // wildcard the read path does not recognise.
 func TestV2_EveryNullableFieldRoundTripsNull(t *testing.T) {
 	for _, tc := range v2RoundTripCases() {
@@ -101,14 +101,15 @@ func TestV2_EveryNullableFieldRoundTripsNull(t *testing.T) {
 				}
 			}
 
-			// 3. PUT the GET result back (minus uid): updated, byte-identical.
+			// 3. PUT the GET result back (minus uid): unchanged, byte-identical.
 			putBody, _ := json.Marshal(cloneWithoutUID(got))
 			w = v2DoReq(t, r, http.MethodPut, base+"/"+itoa(uid), string(putBody))
 			if w.Code != http.StatusOK {
 				t.Fatalf("put: %d %s", w.Code, w.Body.String())
 			}
-			if n := len(v2RulesArray(t, v2DecodeBody(t, w), "updated")); n != 1 {
-				t.Fatalf("put: want 1 updated, got %d: %s", n, w.Body.String())
+			putResp := v2DecodeBody(t, w)
+			if n := len(tryRules(putResp, "unchanged")); n != 1 || len(tryRules(putResp, "updated")) != 0 {
+				t.Fatalf("put: want 1 unchanged and 0 updated, got %s", w.Body.String())
 			}
 			after, _ := json.Marshal(cloneWithoutUID(getOneRule(t, r, base, uid)))
 			if string(after) != string(putBody) {

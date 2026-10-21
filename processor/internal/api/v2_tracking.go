@@ -309,12 +309,13 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		return out, nil
 	})
 
-	// PUT full-replace → {updated:[<same uid>]}
+	// PUT full-replace → {updated:[<same uid>]} or {unchanged:[<same uid>]}
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-put-" + typ.Name, Method: "PUT", Path: base + "/{uid}",
 		Summary: "Full-replace one " + typ.Name + " tracking rule",
 		Description: "Full replace: the body fully specifies the rule; omitted filters reset to documented defaults. " +
-			"The rule keeps its uid (returned in {updated}). " +
+			"The rule keeps its uid (returned in {updated}). A body that matches the stored rule (e.g. GET -> PUT) is " +
+			"returned in {unchanged} and nothing is written, reloaded or pushed. " +
 			"Scoped by (human, uid); 404 if the uid is not owned by this human.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2PutInput[Req]) (*v2CreateOutput[Req], error) {
@@ -544,6 +545,22 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	if err != nil {
 		return nil, huma.Error500InternalServerError("database error")
 	}
+
+	// A PUT that changes nothing (GET -> PUT, also for legacy alias / spaced
+	// area spellings: existing is canonicalised and DiffTracking compares area
+	// keys) is unchanged, like POST and PATCH: no write, reload or push. This
+	// is decided before the conflict check, as PATCH does: writing nothing, it
+	// cannot squash this rule into another, even one it already near-duplicates.
+	for i := range existing {
+		if typ.GetUID(&existing[i]) != in.UID {
+			continue
+		}
+		if _, isDup, _, _ := DiffTracking(&existing[i], &row); isDup {
+			return v2PutResponse(deps, typ, human, nil, nil, []T{*stored}, in), nil
+		}
+		break
+	}
+
 	policy := store.RowDiffPolicy[T]{GetUID: typ.GetUID, SetUID: typ.SetUID}
 	if other, conflict := policy.Conflicts(existing, &row, in.UID); conflict {
 		return nil, huma.Error409Conflict(fmt.Sprintf("would duplicate rule %d", other))
@@ -551,7 +568,7 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 
 	if in.DryRun {
 		typ.SetUID(&row, in.UID)
-		return v2PutOutput(deps, typ, human, row, *stored, in), nil
+		return v2PutResponse(deps, typ, human, []T{row}, []T{*stored}, nil, in), nil
 	}
 
 	if err := v2ReplaceRow(deps, typ, human.ID, in.UID, &row); err != nil {
@@ -562,7 +579,7 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	reloadState(deps)
 	v2PushDiff(deps, typ, human, store.DiffResult[T]{Updates: []T{row}}, in.Silent)
 
-	return v2PutOutput(deps, typ, human, row, *stored, in), nil
+	return v2PutResponse(deps, typ, human, []T{row}, []T{*stored}, nil, in), nil
 }
 
 // v2ReplaceRow stores row in place of the rule at uid (PUT and PATCH): delete
@@ -591,18 +608,24 @@ func v2ReplaceRow[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T]
 	return nil
 }
 
-// v2PutOutput builds the PUT response: the edited rule with the stored rule it
-// replaced as previous.
-func v2PutOutput[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T], human *store.HumanLite, row, prior T, in *v2PutInput[Req]) *v2CreateOutput[Req] {
+// v2PutResponse builds the PUT response: the edited rule in updated with the
+// stored rule it replaced as previous, or the stored rule in unchanged. Every
+// list is an array (never null), as on POST: buildRuleEnvelopes never returns
+// nil.
+func v2PutResponse[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T], human *store.HumanLite, updated, prior, unchanged []T, in *v2PutInput[Req]) *v2CreateOutput[Req] {
 	out := &v2CreateOutput[Req]{}
 	out.Body.DryRun = in.DryRun
-	envs := buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions)
-	prev := buildRuleEnvelopes(deps, typ, human, []T{prior}, in.IncludeDescriptions)
+	out.Body.Created = []v2RuleEnvelope[Req]{}
+	envs := buildRuleEnvelopes(deps, typ, human, updated, in.IncludeDescriptions)
 	out.Body.Updated = make([]v2UpdatedRuleEnvelope[Req], len(envs))
 	for i := range envs {
 		out.Body.Updated[i].v2RuleEnvelope = envs[i]
 	}
-	attachPrevious(out.Body.Updated, prev, "PUT "+typ.Name)
+	if len(envs) > 0 {
+		prev := buildRuleEnvelopes(deps, typ, human, prior, in.IncludeDescriptions)
+		attachPrevious(out.Body.Updated, prev, "PUT "+typ.Name)
+	}
+	out.Body.Unchanged = buildRuleEnvelopes(deps, typ, human, unchanged, in.IncludeDescriptions)
 	return out
 }
 

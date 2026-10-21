@@ -67,15 +67,29 @@ func TestV2_OverrideAreas_WriteCanonicalReadCanonical(t *testing.T) {
 		t.Fatalf("re-post of legacy row: want 1 unchanged, got %d: %s", n, w.Body.String())
 	}
 
-	// 4. PUTting it back stores the canonical spelling.
+	// 4. PUTting it back is unchanged (compared by key): nothing is rewritten.
 	w = v2DoReq(t, r, http.MethodPut, base+"/"+itoa(legacyUID)+"?silent=true", string(body))
 	if w.Code != http.StatusOK {
 		t.Fatalf("put: %d %s", w.Code, w.Body.String())
 	}
-	for _, row := range ms.AllRows() {
-		if row.UID == legacyUID && !reflect.DeepEqual(row.OverrideAreas, want) {
-			t.Fatalf("PUT stored override_areas = %v, want %v", row.OverrideAreas, want)
-		}
+	if n := len(tryRules(v2DecodeBody(t, w), "unchanged")); n != 1 {
+		t.Fatalf("put of legacy row: want 1 unchanged, got %d: %s", n, w.Body.String())
+	}
+	if row := v2RowByUID(t, ms, legacyUID); !reflect.DeepEqual(row.OverrideAreas, []string{"gent centrum"}) {
+		t.Fatalf("unchanged PUT rewrote override_areas: %v", row.OverrideAreas)
+	}
+
+	// 5. A PUT that changes the rule stores the canonical spelling.
+	var changed map[string]any
+	_ = json.Unmarshal(body, &changed)
+	changed["min_iv"] = 78
+	body, _ = json.Marshal(changed)
+	w = v2DoReq(t, r, http.MethodPut, base+"/"+itoa(legacyUID)+"?silent=true", string(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	if row := v2RowByUID(t, ms, legacyUID); !reflect.DeepEqual(row.OverrideAreas, want) {
+		t.Fatalf("PUT stored override_areas = %v, want %v", row.OverrideAreas, want)
 	}
 }
 

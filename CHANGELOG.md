@@ -117,6 +117,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rule's `uid` (previously `0`), and it is matched against *every* stored rule
   before any near-duplicate update is considered, so it can no longer overwrite a
   different rule.
+- **v2 PUT of an unchanged rule reports it as `unchanged`.** A `PUT` whose body
+  matches the stored rule (e.g. GET → PUT, including legacy alias values and
+  spaced area spellings) returns the rule under `unchanged` with its uid and
+  `updated: []`; nothing is written, reloaded or pushed (also under `?dry_run`),
+  as for POST and PATCH. Previously it rewrote the row and pushed a "changed"
+  confirmation. PUT responses now always carry `created`, `updated` and
+  `unchanged` as arrays (`created` was `null`).
+- **v2 area DELETE / PATCH report the current profile when only `humans.area`
+  changed.** For a human whose current profile has no `profiles` row,
+  `removed_from` / `renamed_in` now list the current profile number instead of
+  `[]` when the call wrote `humans.area` (also under `?dry_run`).
 - **BREAKING: maxbattle edits now squash.** `clean`, `distance` and `template` are
   updatable fields for maxbattle, as for raid: re-posting a rule with one of
   them changed updates the rule in place instead of adding a copy. Within one

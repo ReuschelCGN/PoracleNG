@@ -571,8 +571,8 @@ func TestV2Pokemon_PutFullReplace_KeepsUID(t *testing.T) {
 // (PUT is full-replace: null/omitted → documented default), and GETs again. The
 // returned rule object must be byte-identical after the round-trip — proving null
 // in the response ⇔ omit in the request ⇔ engine wildcard. uid lives in the path,
-// not the body, so it is stripped before the PUT; PUT keeps the uid, so the
-// rule must come back under the same one.
+// not the body, so it is stripped before the PUT; the PUT changes nothing, so it
+// reports the rule as unchanged under the same uid.
 // It returns the rule object as GET first reported it (wildcards as null), so
 // callers can additionally assert the response shape.
 func roundTripRule(t *testing.T, r http.Handler, basePath, createBody string) map[string]any {
@@ -595,7 +595,7 @@ func roundTripRule(t *testing.T, r http.Handler, basePath, createBody string) ma
 	if w.Code != http.StatusOK {
 		t.Fatalf("put: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "updated")[0]["uid"].(float64))
+	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "unchanged")[0]["uid"].(float64))
 	if newUID != uid {
 		t.Fatalf("put changed the rule uid: %d -> %d", uid, newUID)
 	}
