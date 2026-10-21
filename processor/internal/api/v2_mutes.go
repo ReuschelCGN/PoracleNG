@@ -159,6 +159,18 @@ func muteOwnsRule(deps *TrackingDeps, human *store.Human, table string, uid int6
 	return false
 }
 
+// canonicalNumericMuteValue checks a pokemon/tracking mute value is a
+// positive integer and canonicalises it ("025" → "25"): the matcher compares
+// ScopeValue against strconv-formatted IDs, so a verbatim non-canonical value
+// would create a mute that never fires (POST) or miss a stored one (DELETE).
+func canonicalNumericMuteValue(scope, value string) (string, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return "", huma.Error422UnprocessableEntity("value for scope '" + scope + "' must be a positive integer")
+	}
+	return strconv.Itoa(n), nil
+}
+
 // validateMuteValue applies the per-scope value rules shared with the bot
 // parser: required except for everything (where it is forbidden), numeric for
 // pokemon/tracking, and a known geofence area for area (canonicalised).
@@ -175,14 +187,7 @@ func validateMuteValue(deps *TrackingDeps, human *store.Human, scope, value stri
 	}
 	switch scope {
 	case mute.ScopePokemon, mute.ScopeTracking:
-		n, err := strconv.Atoi(value)
-		if err != nil || n <= 0 {
-			return "", huma.Error422UnprocessableEntity("value for scope '" + scope + "' must be a positive integer")
-		}
-		// Canonicalise ("025" → "25"): the matcher and the DELETE lookup
-		// compare ScopeValue against strconv-formatted IDs, so a verbatim
-		// non-canonical value would create a mute that never fires.
-		return strconv.Itoa(n), nil
+		return canonicalNumericMuteValue(scope, value)
 	case mute.ScopeArea:
 		// Prefer AreaLogic (community-aware, like the bot); fall back to the
 		// live state's fences — production trackingDeps carries no AreaLogic,
@@ -332,9 +337,18 @@ func registerV2MutesDelete(api huma.API, deps *TrackingDeps, tag []string, sec [
 			return nil, err
 		}
 
+		// Same value canonicalisation as POST, but none of POST's existence
+		// checks: a mute whose rule or fence is gone must still be deletable.
+		value := in.Value
+		if in.Scope == mute.ScopePokemon || in.Scope == mute.ScopeTracking {
+			if value, err = canonicalNumericMuteValue(in.Scope, value); err != nil {
+				return nil, err
+			}
+		}
+
 		// Snapshot the entry first so the response can carry it. Find uses the
 		// store's own identity rule (case-insensitive areas, table for tracking).
-		e, ok := deps.Mutes.Find(in.ID, in.Scope, table, in.Value)
+		e, ok := deps.Mutes.Find(in.ID, in.Scope, table, value)
 		if !ok || !deps.Mutes.Remove(in.ID, in.Scope, table, e.ScopeValue) {
 			return nil, huma.Error404NotFound("mute not found")
 		}

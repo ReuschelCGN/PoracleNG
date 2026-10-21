@@ -531,3 +531,22 @@ func TestV2Mutes_DeleteAreaCaseInsensitive(t *testing.T) {
 		t.Fatalf("area mute survived delete")
 	}
 }
+
+// DELETE canonicalises numeric values like POST ("025" → "25"), without the
+// rule-ownership check: a mute whose rule is gone must still be deletable.
+func TestV2Mutes_DeleteCanonicalisesNumericValue(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	now := time.Now().Unix()
+	mutes.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopePokemon, ScopeValue: "25", ExpiresAt: now + 600})
+	mutes.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "raid", ScopeValue: "7", ExpiresAt: now + 600})
+
+	for _, q := range []string{"scope=pokemon&value=025", "scope=tracking&tracking_type=raid&value=007"} {
+		w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/mutes?"+q, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d: %s", q, w.Code, w.Body.String())
+		}
+	}
+	if n := len(mutes.List("u1")); n != 0 {
+		t.Fatalf("mutes survived delete: %+v", mutes.List("u1"))
+	}
+}
