@@ -1220,3 +1220,25 @@ func TestV2Humans_SetAreas_EitherSpelling(t *testing.T) {
 		t.Fatalf("stored humans.area = %v, want [gent_centrum]", h.Area)
 	}
 }
+
+// POST /v2/humans stores area as the fences' own spelling, deduped by key.
+// area_restriction keeps a spaced allowed_areas entry's fence.
+func TestV2Humans_Create_CanonicalAreas(t *testing.T) {
+	cfg := &config.Config{General: config.GeneralConfig{Locale: "en"}}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{{Name: "be", AllowedAreas: []string{"gent centrum"}}}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans",
+		`{"id":"new1","name":"New","area":["Gent Centrum","gent_centrum","Alpha"],"community":["be"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	stored, _ := humans.Get("new1")
+	if stored == nil || !slices.Equal(stored.Area, []string{"gent_centrum", "alpha"}) {
+		t.Fatalf("stored area = %v, want [gent_centrum alpha]", stored)
+	}
+	if !slices.Equal(stored.AreaRestriction, []string{"gent_centrum"}) {
+		t.Fatalf("area_restriction = %v, want [gent_centrum]", stored.AreaRestriction)
+	}
+}

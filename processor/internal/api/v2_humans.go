@@ -107,12 +107,31 @@ func registerV2HumanCreate(api huma.API, deps *TrackingDeps, tag []string, sec [
 			return nil, huma.Error409Conflict("human already exists")
 		}
 
+		// Store each area as its fence's own spelling, deduped by key keeping
+		// the first occurrence. (Names are not validated here.)
+		var fences []geofence.Fence
+		if deps.StateMgr != nil {
+			if st := deps.StateMgr.Get(); st != nil {
+				fences = st.Fences
+			}
+		}
+		var areas []string
+		seenArea := make(map[string]bool, len(b.Area))
+		for _, a := range b.Area {
+			key := geofence.NormalizeAreaKey(a)
+			if seenArea[key] {
+				continue
+			}
+			seenArea[key] = true
+			areas = append(areas, geofence.CanonicalAreaName(fences, a))
+		}
+
 		human := &store.Human{
 			ID:               b.ID,
 			Name:             b.Name,
 			Type:             b.Type,
 			Enabled:          true,
-			Area:             b.Area,
+			Area:             areas,
 			Latitude:         b.Latitude,
 			Longitude:        b.Longitude,
 			CurrentProfileNo: 1,
