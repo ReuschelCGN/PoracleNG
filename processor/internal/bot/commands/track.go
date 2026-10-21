@@ -69,6 +69,20 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*formReply}
 	}
 
+	// "myshiny": only spawns that are shiny for the target's linked player id.
+	// The id is synced into humans.shiny_player_id for permitted roles only, so
+	// an empty id means the feature is not available to this target.
+	myShiny := parsed.HasKeyword("arg.myshiny")
+	if myShiny {
+		var playerID string
+		if err := ctx.DB.Get(&playerID, "SELECT COALESCE(shiny_player_id, '') FROM humans WHERE id = ?", ctx.TargetID); err != nil || playerID == "" {
+			return []bot.Reply{{React: "🙅", Text: tr.T("msg.track.myshiny_not_linked")}}
+		}
+		if len(monsterList) == 0 && len(parsed.Pokemon) == 0 && len(parsed.Types) == 0 && parsed.Singles["gen"] == 0 {
+			monsterList = []bot.ResolvedPokemon{{PokemonID: 0, Form: 0}}
+		}
+	}
+
 	// Resolve costume filter: 9000 = any (default when the arg is absent),
 	// 0 = no costume, N = specific costume. Mirrors applyFormFilter's
 	// not-found path for an unresolved name.
@@ -93,7 +107,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	if parsed.HasKeyword("arg.everything") && !ctx.IsAdmin {
 		hasFilters := len(parsed.Singles) > 0 || narrowingRanges(parsed.Ranges) ||
 			len(parsed.Types) > 0 || parsed.Gender != 0 || len(parsed.PVP) > 0 ||
-			costume != 9000
+			costume != 9000 || myShiny
 		if !hasFilters {
 			return []bot.Reply{{React: "🙅", Text: tr.T("msg.track.everything_no_filters")}}
 		}
@@ -212,6 +226,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 				PVPRankingMinCP:       pe.MinCP,
 				PVPRankingCap:         pe.Cap,
 				PVPRankingEvolution:   pe.Evolution,
+				ShinyPredict:          boolToInt(myShiny),
 				OverrideLocationLabel: override.LocationLabel,
 				OverrideAreas:         override.Areas,
 			})
@@ -310,6 +325,7 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamPrefixSingle, Key: "arg.prefix.cap"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.mega"},
 		{Type: bot.ParamKeyword, Key: "arg.mega"},
+		{Type: bot.ParamKeyword, Key: "arg.myshiny"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.form"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.costume"},
 		{Type: bot.ParamPrefixString, Key: "arg.prefix.template"},
@@ -671,6 +687,13 @@ func speciesHasTempEvo(gd *gamedata.GameData, pokemonID, tempEvoID int) bool {
 		}
 	}
 	return false
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // modalClass names the class that holds the bulk of spawns for each class-style
