@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -247,18 +247,17 @@ func (f flexInt) isSet() bool {
 // validateOverrideFields for every row.
 type overrideContext struct {
 	human *store.Human
-	// permitted is the set of areas this human may scope a rule to, keyed the
-	// same way normalizeOverrideAreas keys what it stores (lowercased,
-	// underscores as spaces) so validation and storage cannot disagree about
-	// whether "North_Side" is the fence "north side".
+	// permitted is the set of areas this human may scope a rule to, keyed by
+	// geofence.NormalizeAreaKey (lowercased, underscores as spaces) so either
+	// spelling of a fence name is judged the same, whichever form is stored.
 	//
 	// Nil means "could not determine" — no fences loaded — and the check is
 	// skipped rather than rejecting everything.
 	permitted map[string]bool
 }
 
-// normalizeAreaKey keys an area name for permission comparison, matching
-// normalizeOverrideAreas' storage normalisation exactly.
+// normalizeAreaKey keys an area name for permission comparison
+// (geofence.NormalizeAreaKey).
 func normalizeAreaKey(s string) string {
 	return geofence.NormalizeAreaKey(s)
 }
@@ -367,22 +366,73 @@ func validateOverrideFields(
 	return "", 0
 }
 
-// normalizeOverrideAreas converts an empty slice to nil (so an incoming
-// "override_areas":[] round-trips identically to a NULL DB column for diff
-// purposes) and normalizes each remaining area name to lowercase with
-// underscores replaced by spaces. This matches the convention used by
-// human.Area (parseAndNormalizeAreas) and the geofence NormalizedName keys,
-// so area comparisons in the matcher's areaOverlap will always find a match
-// regardless of the original case or underscore usage in the request body.
-func normalizeOverrideAreas(in []string) []string {
+// v1NormalizeOverrideAreas is the frozen v1 write form: an empty slice becomes
+// nil (so "override_areas":[] round-trips identically to a NULL column for the
+// diff) and each name becomes its comparison key (lowercase, underscores as
+// spaces). Only the v1 tracking<Type>.go handlers use it; v2 and the bot store
+// the fence's own spelling (canonicalOverrideAreas). Either form matches,
+// because the matcher state loaders key what they load.
+func v1NormalizeOverrideAreas(in []string) []string {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make([]string, len(in))
 	for i, a := range in {
-		out[i] = strings.ToLower(strings.ReplaceAll(a, "_", " "))
+		out[i] = geofence.NormalizeAreaKey(a)
 	}
 	return out
+}
+
+// trackingFences returns the loaded fences used to resolve area names: the
+// AreaLogic's when set (tests), else the live state's (production, #211).
+func trackingFences(deps *TrackingDeps) []geofence.Fence {
+	if deps.AreaLogic != nil {
+		return deps.AreaLogic.Fences()
+	}
+	if deps.StateMgr != nil {
+		if st := deps.StateMgr.Get(); st != nil {
+			return st.Fences
+		}
+	}
+	return nil
+}
+
+// canonicalOverrideAreas is the v2 write form of override_areas: each name
+// becomes the loaded fence's own spelling (geofence.CanonicalAreaName), and
+// names that are the same area under another spelling are dropped, keeping
+// first-seen order. Empty input gives nil, the NULL column.
+func canonicalOverrideAreas(deps *TrackingDeps, in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	fences := trackingFences(deps)
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, a := range in {
+		key := geofence.NormalizeAreaKey(a)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, geofence.CanonicalAreaName(fences, a))
+	}
+	return out
+}
+
+// canonicalizeRowOverrideAreas rewrites row's OverrideAreas field (if it has
+// one) to the canonical fence spelling, so v2 reads show fence names even for
+// legacy rows stored spaced. The SQL read path (parseOverrideAreas) returns
+// the spaced key form, which v1, !tracked and rowtext keep using.
+func canonicalizeRowOverrideAreas[T any](deps *TrackingDeps, row *T) {
+	f := reflect.ValueOf(row).Elem().FieldByName("OverrideAreas")
+	if !f.IsValid() || !f.CanSet() {
+		return
+	}
+	areas, ok := f.Interface().([]string)
+	if !ok || len(areas) == 0 {
+		return
+	}
+	f.Set(reflect.ValueOf(canonicalOverrideAreas(deps, areas)))
 }
 
 // DiffTracking compares two tracking structs using `diff` struct tags.

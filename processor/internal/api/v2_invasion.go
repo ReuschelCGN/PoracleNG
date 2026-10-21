@@ -244,7 +244,7 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 		GruntType:             gruntType,
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }

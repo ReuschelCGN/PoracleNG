@@ -869,10 +869,9 @@ func TestV2Pokemon_AcceptsKnownOverrideArea(t *testing.T) {
 	}
 }
 
-// Storage normalises underscores to spaces (normalizeOverrideAreas) while the
-// permitted set is keyed on raw lowercased fence names. Validating without the
-// same normalisation would reject a name that would have stored and matched
-// perfectly well.
+// Case and underscore/space variants of a fence name must be permitted (the
+// permitted set is keyed by NormalizeAreaKey) and stored as the fence's own
+// spelling (canonicalOverrideAreas).
 func TestV2Pokemon_OverrideAreaNormalisationMatchesStorage(t *testing.T) {
 	r, monsterStore, _, restore := newV2PokemonTestAPI(t)
 	defer restore()
@@ -885,7 +884,7 @@ func TestV2Pokemon_OverrideAreaNormalisationMatchesStorage(t *testing.T) {
 	}
 	rows := monsterStore.AllRows()
 	if len(rows) != 1 || len(rows[0].OverrideAreas) != 1 || rows[0].OverrideAreas[0] != "alpha" {
-		t.Errorf("stored override_areas = %+v, want normalised [alpha]", rows)
+		t.Errorf("stored override_areas = %+v, want canonical [alpha]", rows)
 	}
 }
 

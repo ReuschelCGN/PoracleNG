@@ -29,12 +29,12 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// parseOverrideAreas decodes the raw JSON column into []string and normalizes
-// each area name to lowercase with underscores replaced by spaces. This matches
-// the normalization applied to human.Area (via parseAndNormalizeAreas) and the
-// geofence NormalizedName keys produced by rtree.go, so override area comparisons
-// in the matcher's areaOverlap function will find correct matches regardless of
-// how the area name was originally stored.
+// parseOverrideAreas decodes the raw JSON column into []string for the
+// *TrackingAPI read path (v1 GET, !tracked, rowtext, the diff), keying each
+// name with geofence.NormalizeAreaKey (lowercase, underscores as spaces). v1
+// output is frozen on that spaced form; v2 rewrites it to the fence's own
+// spelling on read (api.canonicalizeRowOverrideAreas). The diff compares by
+// key either way, so a canonical incoming rule equals a spaced stored one.
 func parseOverrideAreas(raw string) []string {
 	if raw == "" {
 		return nil

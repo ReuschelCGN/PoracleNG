@@ -105,7 +105,7 @@ func translateV2Fort(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		IncludeEmpty:          includeEmpty,
 		ChangeTypes:           changeTypes,
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }

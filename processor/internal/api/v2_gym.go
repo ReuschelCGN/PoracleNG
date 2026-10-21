@@ -73,7 +73,7 @@ func translateV2Gym(deps *TrackingDeps, humanID string, profileNo int, oc overri
 		GymID:                 gymID,
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }

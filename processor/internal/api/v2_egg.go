@@ -82,7 +82,7 @@ func translateV2Egg(deps *TrackingDeps, humanID string, profileNo int, oc overri
 		RSVPChanges:           rsvp,
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }

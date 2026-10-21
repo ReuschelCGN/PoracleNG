@@ -665,9 +665,13 @@ func buildRuleEnvelopes[Req any, T any](deps *TrackingDeps, typ v2TrackingType[R
 	}
 	out := make([]v2RuleEnvelope[Req], len(rows))
 	for i := range rows {
+		// v2 shows override_areas as fence names; canonicalise a copy so the
+		// caller's row (and the spaced rowtext description) is untouched.
+		shown := rows[i]
+		canonicalizeRowOverrideAreas(deps, &shown)
 		env := v2RuleEnvelope[Req]{
 			UID:  typ.GetUID(&rows[i]),
-			Rule: typ.ToRule(&rows[i]),
+			Rule: typ.ToRule(&shown),
 		}
 		if includeDesc {
 			env.Description = typ.RowText(deps, tr, &rows[i])

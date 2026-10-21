@@ -220,7 +220,7 @@ func HandleCreateLure(deps *TrackingDeps) gin.HandlerFunc {
 				Clean:                 clean,
 				LureID:                lureID,
 				OverrideLocationLabel: req.OverrideLocationLabel,
-				OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+				OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 			})
 		}
 

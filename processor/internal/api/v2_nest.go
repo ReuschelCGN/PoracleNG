@@ -55,7 +55,7 @@ func translateV2Nest(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		Form:                  valueOr(req.Form, wcForm),
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
