@@ -326,7 +326,7 @@ var knownKeywordKeys = []string{
 	"arg.all_pokemon", "arg.all_items",
 	"arg.clean", "arg.edit", "arg.summary", "arg.shiny", "arg.ex",
 	"arg.rsvp", "arg.no_rsvp", "arg.rsvp_only",
-	"arg.gmax", "arg.mega",
+	"arg.gmax", "arg.mega", "arg.myshiny",
 	"arg.pokestop", "arg.gym", "arg.station", "arg.location", "arg.new", "arg.removal", "arg.photo", "arg.name", "arg.description", "arg.include_empty",
 	"arg.stardust", "arg.pokecoin", "arg.energy", "arg.candy",
 	"arg.slot_changes", "arg.battle_changes",
