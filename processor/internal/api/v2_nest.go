@@ -37,7 +37,7 @@ func translateV2Nest(deps *TrackingDeps, humanID string, profileNo int, oc overr
 	if err := rejectEdit("nest", req.Edit); err != nil {
 		return db.NestTrackingAPI{}, err
 	}
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -50,12 +50,12 @@ func translateV2Nest(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		Ping:                  valueOr(req.Ping, ""),
 		Template:              valueOr(req.Template, ""),
 		Distance:              distance,
-		PokemonID:             valueOr(req.PokemonID, 0),
-		MinSpawnAvg:           valueOr(req.MinSpawnAvg, 0),
-		Form:                  valueOr(req.Form, 0),
+		PokemonID:             valueOr(req.PokemonID, wcAnyPokemonID),
+		MinSpawnAvg:           valueOr(req.MinSpawnAvg, wcNestMinSpawnAvg),
+		Form:                  valueOr(req.Form, wcForm),
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -64,10 +64,10 @@ func translateV2Nest(deps *TrackingDeps, humanID string, profileNo int, oc overr
 // shape for responses.
 func nestRowToRule(row *db.NestTrackingAPI) v2NestRule {
 	return v2NestRule{
-		PokemonID:             ptrUnless(row.PokemonID, 0),
-		Form:                  ptrUnless(row.Form, 0),
-		MinSpawnAvg:           ptrUnless(row.MinSpawnAvg, 0),
-		Distance:              ptrUnless(row.Distance, 0),
+		PokemonID:             ptrUnless(row.PokemonID, wcAnyPokemonID),
+		Form:                  ptrUnless(row.Form, wcForm),
+		MinSpawnAvg:           ptrUnless(row.MinSpawnAvg, wcNestMinSpawnAvg),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

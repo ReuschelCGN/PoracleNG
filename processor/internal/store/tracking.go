@@ -2,8 +2,6 @@ package store
 
 import (
 	log "github.com/sirupsen/logrus"
-
-	"github.com/pokemon/poracleng/processor/internal/db"
 )
 
 // TrackingStore provides typed CRUD operations over a single tracking table.
@@ -36,15 +34,15 @@ type DiffResult[T any] struct {
 	AlreadyPresent []T // unchanged duplicates
 	Updates        []T // rows that differ only in updatable fields (UID set)
 	Inserts        []T // genuinely new rows
+	// Replaced[i] is a copy of the stored row that Updates[i] replaces (same uid).
+	Replaced []T
 }
 
-// DiffAndClassify runs the standard diff loop: for each insert candidate,
-// compare against all existing rows using db.DiffTracking (struct-tag-driven).
-// Returns classified results. The caller decides what to do with them.
+// DiffAndClassify classifies insert candidates against existing rows using
+// RowDiffPolicy (db.DiffTracking, struct-tag-driven). The caller decides what
+// to do with the result.
 //
-// WARNING: This function modifies the candidates slice in place (removes
-// elements classified as duplicates or updates). Callers must not read the
-// original slice after this call; use the returned DiffResult instead.
+// candidates is no longer modified in place; use the returned DiffResult.
 //
 // getUID and setUID access the UID field on the tracking struct. These are
 // needed because generics can't access struct fields directly.
@@ -54,32 +52,7 @@ func DiffAndClassify[T any](
 	getUID func(*T) int64,
 	setUID func(*T, int64),
 ) DiffResult[T] {
-	var result DiffResult[T]
-
-	for i := len(candidates) - 1; i >= 0; i-- {
-		for j := range existing {
-			noMatch, isDup, uid, isUpd := db.DiffTracking(&existing[j], &candidates[i])
-			if noMatch {
-				continue
-			}
-			if isDup {
-				result.AlreadyPresent = append(result.AlreadyPresent, candidates[i])
-				candidates = append(candidates[:i], candidates[i+1:]...)
-				break
-			}
-			if isUpd {
-				update := candidates[i]
-				setUID(&update, uid)
-				result.Updates = append(result.Updates, update)
-				candidates = append(candidates[:i], candidates[i+1:]...)
-				break
-			}
-		}
-	}
-
-	// Unmatched candidates stay in the slice and become new inserts.
-	result.Inserts = candidates
-	return result
+	return RowDiffPolicy[T]{GetUID: getUID, SetUID: setUID}.Classify(existing, candidates)
 }
 
 // ApplyDiff performs the full diff+delete+insert cycle for tracking mutations.

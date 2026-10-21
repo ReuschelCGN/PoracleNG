@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -17,9 +18,27 @@ type MockHumanStore struct {
 	// Calls records method names called (for assertion).
 	Calls []string
 
-	Locations       map[string][]UserLocation
-	LocationRefs    map[string][]ReferencingRule // keyed by id|lowercased-label
-	PrunedAreaCalls map[string]map[string]bool   // humanID → permitted set, for test assertions
+	// UpdateCalls records a copy of each Update call's arguments.
+	UpdateCalls []MockUpdateCall
+
+	// StripUserAreasErr / StripOverrideAreasErr, when non-nil, are returned
+	// by the corresponding methods.
+	StripUserAreasErr     error
+	StripOverrideAreasErr error
+
+	// OverrideTables are the tracking mocks EditOverrideAreas acts on, keyed
+	// by SQL table name (see trackingTablesWithOverrideAreas).
+	OverrideTables map[string]OverrideTable
+
+	Locations         map[string][]UserLocation
+	LocationRefs      map[string][]ReferencingRule // keyed by id|lowercased-label
+	StrippedAreaCalls map[string]map[string]bool   // humanID → denied set, for test assertions
+}
+
+// MockUpdateCall is a copy of one Update call's arguments.
+type MockUpdateCall struct {
+	ID     string
+	Fields map[string]any
 }
 
 // NewMockHumanStore creates a new empty MockHumanStore.
@@ -232,6 +251,11 @@ func (m *MockHumanStore) Update(id string, fields map[string]any) error {
 	m.record("Update")
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cp := make(map[string]any, len(fields))
+	for k, v := range fields {
+		cp[k] = v
+	}
+	m.UpdateCalls = append(m.UpdateCalls, MockUpdateCall{ID: id, Fields: cp})
 	if h, ok := m.humans[id]; ok {
 		for k, v := range fields {
 			switch k {
@@ -524,13 +548,143 @@ func (m *MockHumanStore) CountLocationReferences(id, label string) ([]Referencin
 	return append([]ReferencingRule(nil), m.LocationRefs[key]...), nil
 }
 
-func (m *MockHumanStore) PruneOverrideAreas(humanID string, permitted map[string]bool) error {
-	m.record("PruneOverrideAreas")
+func (m *MockHumanStore) StripOverrideAreas(humanID string, denied map[string]bool) error {
+	m.record("StripOverrideAreas")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.PrunedAreaCalls == nil {
-		m.PrunedAreaCalls = map[string]map[string]bool{}
+	if m.StripOverrideAreasErr != nil {
+		return m.StripOverrideAreasErr
 	}
-	m.PrunedAreaCalls[humanID] = permitted
+	if m.StrippedAreaCalls == nil {
+		m.StrippedAreaCalls = map[string]map[string]bool{}
+	}
+	m.StrippedAreaCalls[humanID] = denied
 	return nil
+}
+
+// StripUserAreas mirrors SQLHumanStore.StripUserAreas: humans row first, then
+// profiles by profile_no; an all-stripped list becomes empty non-nil.
+func (m *MockHumanStore) StripUserAreas(humanID string, denied map[string]bool) ([]string, error) {
+	m.record("StripUserAreas")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.StripUserAreasErr != nil {
+		return nil, m.StripUserAreasErr
+	}
+	var removed []string
+	seen := map[string]bool{}
+	prune := func(areas []string) []string {
+		kept := make([]string, 0, len(areas))
+		for _, a := range areas {
+			low := strings.ToLower(a)
+			if !denied[low] {
+				kept = append(kept, a)
+			} else if !seen[low] {
+				seen[low] = true
+				removed = append(removed, low)
+			}
+		}
+		return kept
+	}
+	h, ok := m.humans[humanID]
+	if !ok {
+		return nil, nil // SQL: no humans row means profiles are not touched
+	}
+	h.Area = prune(h.Area)
+	ps := m.profiles[humanID]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		ps[i].Area = prune(ps[i].Area)
+	}
+	return removed, nil
+}
+
+// RemoveAreaFromProfiles mirrors SQLHumanStore.RemoveAreaFromProfiles.
+func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) ([]int, bool, error) {
+	m.record("RemoveAreaFromProfiles")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var removedFrom []int
+	changed := false
+	ps := m.profiles[id]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		if !slices.Contains(profileNos, ps[i].ProfileNo) {
+			continue
+		}
+		kept, rowChanged := removeAreaName(ps[i].Area, name)
+		if !rowChanged {
+			continue
+		}
+		if !dryRun {
+			ps[i].Area = kept
+		}
+		removedFrom = append(removedFrom, ps[i].ProfileNo)
+		changed = true
+	}
+	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
+		if kept, hc := removeAreaName(h.Area, name); hc {
+			changed = true
+			removedFrom = withProfileNo(removedFrom, h.CurrentProfileNo)
+			if !dryRun {
+				h.Area = kept
+			}
+		}
+	}
+	return removedFrom, changed, nil
+}
+
+// RenameAreaInProfiles mirrors SQLHumanStore.RenameAreaInProfiles.
+func (m *MockHumanStore) RenameAreaInProfiles(id, from, to string, profileNos []int, dryRun bool) ([]int, bool, error) {
+	m.record("RenameAreaInProfiles")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var renamedIn []int
+	changed := false
+	ps := m.profiles[id]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		if !slices.Contains(profileNos, ps[i].ProfileNo) {
+			continue
+		}
+		out, rowChanged := editAreaList(ps[i].Area, from, to)
+		if !rowChanged {
+			continue
+		}
+		if !dryRun {
+			ps[i].Area = out
+		}
+		renamedIn = append(renamedIn, ps[i].ProfileNo)
+		changed = true
+	}
+	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
+		if out, hc := editAreaList(h.Area, from, to); hc {
+			changed = true
+			renamedIn = withProfileNo(renamedIn, h.CurrentProfileNo)
+			if !dryRun {
+				h.Area = out
+			}
+		}
+	}
+	return renamedIn, changed, nil
+}
+
+// EditOverrideAreas mirrors SQLHumanStore.EditOverrideAreas over the tracking
+// mocks registered in OverrideTables.
+func (m *MockHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, bool, error) {
+	m.record("EditOverrideAreas")
+	broadened := map[string][]int64{}
+	anyChanged := false
+	for _, table := range trackingTablesWithOverrideAreas {
+		t, ok := m.OverrideTables[table]
+		if !ok {
+			continue
+		}
+		emptied, ch := t.editOverrides(id, profileNos, from, to, dryRun)
+		anyChanged = anyChanged || ch
+		if len(emptied) > 0 {
+			broadened[trackingTypePathMap[table]] = emptied
+		}
+	}
+	return broadened, anyChanged, nil
 }

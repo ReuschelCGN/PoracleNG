@@ -1,8 +1,6 @@
 package db
 
 import (
-	"encoding/json"
-
 	"github.com/jmoiron/sqlx"
 )
 
@@ -113,9 +111,7 @@ func LoadMonsters(db *sqlx.DB) (*MonsterIndex, error) {
 	}
 
 	for i := range monsters {
-		if monsters[i].OverrideAreasRaw != "" {
-			_ = json.Unmarshal([]byte(monsters[i].OverrideAreasRaw), &monsters[i].OverrideAreas)
-		}
+		monsters[i].OverrideAreas = loadOverrideKeys(monsters[i].OverrideAreasRaw)
 	}
 
 	return BuildMonsterIndexFromRules(monsters), nil

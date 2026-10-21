@@ -341,6 +341,9 @@ func main() {
 	// Authenticated API group
 	apiGroup := r.Group("/api")
 	apiGroup.Use(api.RequireSecretGin(cfg.Processor.APISecret))
+	// Per-human write lock: after auth, before huma and v1 groups are created
+	// so it covers /api/v2/humans/{id}/* and the v1 /:id routes alike.
+	apiGroup.Use(api.HumanLock())
 	if cfg.Processor.BlankAPISecretExposed() {
 		log.Warnf("[processor] api_secret is empty and the API listens on %q (not loopback): every /api endpoint, including writes (users, tracking, config, DTS, commands), is open to anyone who can reach port %d. Set api_secret or bind host to 127.0.0.1.", cfg.Processor.Host, cfg.Processor.Port)
 	}
@@ -387,7 +390,7 @@ func main() {
 	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 
 	// Weather, stats, geocode (migrated to huma, in place — same paths, same
-	// success JSON, problem+json errors). test stays on gin below.
+	// success JSON, problem+json errors).
 	api.RegisterWeather(humaAPI, proc.weather)
 	api.RegisterStatsRarity(humaAPI, proc.stats.ExportGroups)
 	api.RegisterStatsShiny(humaAPI, proc.stats.ExportShinyStats)
@@ -408,7 +411,7 @@ func main() {
 	}
 	// Geofence data reads (migrated to huma, in place — same paths, same
 	// {status, X} bodies, problem+json errors). Registered at full paths
-	// relative to /api. The tile routes below stay on gin.
+	// relative to /api.
 	api.RegisterGeofenceHash(humaAPI, stateMgr)
 	api.RegisterGeofenceGeoJSON(humaAPI, stateMgr)
 	api.RegisterGeofenceAll(humaAPI, stateMgr)

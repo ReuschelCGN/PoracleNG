@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 )
 
@@ -14,6 +15,10 @@ type EnableCommand struct{}
 
 func (c *EnableCommand) Name() string      { return "cmd.enable" }
 func (c *EnableCommand) Aliases() []string { return nil }
+
+// ExemptFromTargetLock: !enable writes the humans it names, not its own
+// target; it locks each of them around its write (spec §3.6).
+func (c *EnableCommand) ExemptFromTargetLock() {}
 
 func (c *EnableCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
@@ -38,13 +43,14 @@ func (c *EnableCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply 
 				id = webhookID
 			}
 		}
-		if !humanRegistered(ctx, id) {
+		// Clears admin_disable and also sets enabled = 1, so this lifts a
+		// rate-limit soft ban (enabled = 0) as well as a hard one.
+		registered, err := setAdminDisableLocked(ctx, id, false)
+		if !registered {
 			unknown = append(unknown, id)
 			continue
 		}
-		// Clears admin_disable and also sets enabled = 1, so this lifts a
-		// rate-limit soft ban (enabled = 0) as well as a hard one.
-		if err := ctx.Humans.SetAdminDisable(id, false); err != nil {
+		if err != nil {
 			log.Errorf("enable: %v", err)
 			continue
 		}
@@ -63,6 +69,9 @@ type DisableCommand struct{}
 
 func (c *DisableCommand) Name() string      { return "cmd.disable" }
 func (c *DisableCommand) Aliases() []string { return nil }
+
+// ExemptFromTargetLock: see EnableCommand.
+func (c *DisableCommand) ExemptFromTargetLock() {}
 
 func (c *DisableCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
@@ -86,11 +95,12 @@ func (c *DisableCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply
 				id = webhookID
 			}
 		}
-		if !humanRegistered(ctx, id) {
+		registered, err := setAdminDisableLocked(ctx, id, true)
+		if !registered {
 			unknown = append(unknown, id)
 			continue
 		}
-		if err := ctx.Humans.SetAdminDisable(id, true); err != nil {
+		if err != nil {
 			log.Errorf("disable: %v", err)
 			continue
 		}
@@ -101,6 +111,17 @@ func (c *DisableCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply
 		ctx.TriggerReload()
 	}
 	return adminTargetsReply(tr, "msg.disable.success", disabled, unknown)
+}
+
+// setAdminDisableLocked sets admin_disable on id while holding id's write
+// lock. registered is false (and nothing is written) when id has no humans row.
+func setAdminDisableLocked(ctx *bot.CommandContext, id string, disable bool) (registered bool, err error) {
+	unlock := humanlock.Lock(id)
+	defer unlock()
+	if !humanRegistered(ctx, id) {
+		return false, nil
+	}
+	return true, ctx.Humans.SetAdminDisable(id, disable)
 }
 
 // humanRegistered reports whether id has a humans row.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"time"
 
@@ -8,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/state"
@@ -27,6 +30,15 @@ import (
 func privateFence(name string, lat, lon, half float64) geofence.Fence {
 	f := humanSquareFence(name, lat, lon, half)
 	f.UserSelectable = false
+	return f
+}
+
+// drawnFence is the shape PoracleWeb.NET serves for a user-drawn geofence
+// once #243 ships: userSelectable:false to keep it out of the picker, and
+// exemptFromAreaSecurity because no community publishes a user's own fence.
+func drawnFence(name string, lat, lon, half float64) geofence.Fence {
+	f := privateFence(name, lat, lon, half)
+	f.ExemptFromAreaSecurity = true
 	return f
 }
 
@@ -56,6 +68,15 @@ func humanSquareFence(name string, lat, lon, half float64) geofence.Fence {
 // pointer to a reload counter (incremented by ReloadFunc).
 func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.MockHumanStore, *int32) {
 	t.Helper()
+	r, humans, reloads, _, _ := newV2HumansTestAPIRules(t, cfg)
+	return r, humans, reloads
+}
+
+// newV2HumansTestAPIRules is newV2HumansTestAPI plus pokemon and raid tracking
+// mocks wired both into deps.Tracking and into the human mock's
+// OverrideTables, so EditOverrideAreas acts on real rows.
+func newV2HumansTestAPIRules(t *testing.T, cfg *config.Config) (*gin.Engine, *store.MockHumanStore, *int32, *store.MockTrackingStore[db.MonsterTrackingAPI], *store.MockTrackingStore[db.RaidTrackingAPI]) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
@@ -72,7 +93,9 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 		humanSquareFence("gamma", 40, 40, 1),
 		// A user-drawn private fence: served by the client, deliberately kept
 		// out of the bot's !area picker (#215).
-		privateFence("private", 30, 30, 1),
+		drawnFence("private", 30, 30, 1),
+		privateFence("lone", 50, 50, 1),
+		humanSquareFence("Gent_Centrum", 60, 60, 1),
 	}
 	idx := geofence.NewSpatialIndex(fences) // mutates fences in place (NormalizedName)
 	mgr := state.NewManager()
@@ -89,10 +112,26 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 		bundle.AddTranslator(i18n.NewTranslator(code, map[string]string{"x": "y"}))
 	}
 
+	mons := store.NewMockTrackingStore[db.MonsterTrackingAPI](store.MonsterGetUID, store.MonsterSetUID).
+		WithIDScope(func(m *db.MonsterTrackingAPI) string { return m.ID }).
+		WithProfileScope(func(m *db.MonsterTrackingAPI) int { return m.ProfileNo })
+	raids := store.NewMockTrackingStore[db.RaidTrackingAPI](store.RaidGetUID, store.RaidSetUID).
+		WithIDScope(func(m *db.RaidTrackingAPI) string { return m.ID }).
+		WithProfileScope(func(m *db.RaidTrackingAPI) int { return m.ProfileNo })
+	humans.OverrideTables = map[string]store.OverrideTable{
+		"monsters": store.NewMockOverrideTable(mons,
+			func(m *db.MonsterTrackingAPI) []string { return m.OverrideAreas },
+			func(m *db.MonsterTrackingAPI, a []string) { m.OverrideAreas = a }),
+		"raid": store.NewMockOverrideTable(raids,
+			func(m *db.RaidTrackingAPI) []string { return m.OverrideAreas },
+			func(m *db.RaidTrackingAPI, a []string) { m.OverrideAreas = a }),
+	}
+
 	var reloads int32
 	deps := &TrackingDeps{
 		Translations: bundle,
 		Humans:       humans,
+		Tracking:     &store.TrackingStores{Monsters: mons, Raids: raids},
 		StateMgr:     mgr,
 		Config:       cfg,
 		ReloadFunc: func() {
@@ -101,7 +140,7 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 	}
 
 	RegisterV2Humans(humaAPI, deps)
-	return r, humans, &reloads
+	return r, humans, &reloads, mons, raids
 }
 
 // --- create -----------------------------------------------------------------
@@ -205,8 +244,8 @@ func TestV2Humans_AreasGet_AllWhenUnrestricted(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	areas := v2RulesArray(t, v2DecodeBody(t, w), "areas")
-	if len(areas) != 4 {
-		t.Fatalf("expected 4 available areas, got %d: %v", len(areas), areas)
+	if len(areas) != 6 {
+		t.Fatalf("expected 6 available areas, got %d: %v", len(areas), areas)
 	}
 	// The listing reports every fence with its userSelectable flag, so a
 	// client can tell which ones need trusted:true to set (#215).
@@ -1047,5 +1086,583 @@ func TestV2Humans_SetAreas_ProfileAndAllProfilesConflict(t *testing.T) {
 		"/api/v2/humans/u1/areas?profile=2&all_profiles=true", `{"areas":["alpha"]}`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for profile + all_profiles, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// A user-drawn fence appears in NO community's allowed_areas — that is what
+// makes it user-drawn. So trusted adds it to the permitted set and
+// community.FilterAreas then strips it straight back out, making trusted a
+// no-op under area_security for precisely the fences it exists to allow.
+//
+// The #228 fixture masked this by listing "private" in the community's
+// allowed_areas, which a real drawn fence never is.
+func TestV2Humans_SetAreas_TrustedLiftsFenceInNoCommunity(t *testing.T) {
+	// RED test for #243, committed skipped in 808bf0e7. The gamma assertion is #228's guard.
+
+	cfg := &config.Config{}
+	cfg.Area.Enabled = true
+	// "drawn" is deliberately absent: no community publishes a user's fence.
+	cfg.Area.Communities = []config.CommunityConfig{
+		{Name: "coast", AllowedAreas: []string{"alpha", "beta"}},
+	}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+	h, _ := humans.Get("u1")
+	h.CommunityMembership = []string{"coast"}
+	h.AreaRestriction = []string{"alpha", "beta"}
+	humans.AddHuman(h)
+
+	// The mixed request a client actually sends: an admin area the user may
+	// have, an admin area from another community, and the user's own fence.
+	code, got := setAreas(t, r, `{"areas":["alpha","gamma","private"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+
+	stored := map[string]bool{}
+	for _, a := range got.Areas {
+		stored[a] = true
+	}
+	if !stored["alpha"] {
+		t.Errorf("alpha should be stored: areas=%v rejected=%v", got.Areas, got.Rejected)
+	}
+	// Another community's admin fence must still be refused — that is #228.
+	if stored["gamma"] {
+		t.Errorf("gamma is another community's area and must stay rejected: %v", got.Areas)
+	}
+	// And the user's own fence must be allowed — that is what trusted is for.
+	if !stored["private"] {
+		t.Errorf("trusted did not lift the user-drawn fence under area_security; "+
+			"areas=%v rejected=%v", got.Areas, got.Rejected)
+	}
+}
+
+// The exempt flag lifts the community filter, not userSelectable: without
+// trusted, a drawn fence is still refused under area_security.
+func TestV2Humans_SetAreas_ExemptStillNeedsTrustedWhenNotSelectable(t *testing.T) {
+	r, _ := newCoastOnlyAPI(t)
+	code, got := setAreas(t, r, `{"areas":["private"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 0 || len(got.Rejected) != 1 {
+		t.Fatalf("areas=%v rejected=%v, want private rejected without trusted", got.Areas, got.Rejected)
+	}
+}
+
+// Without the flag, trusted cannot reach a fence outside the community: the
+// flag, not trusted, is what makes the drawn fence settable (#243).
+func TestV2Humans_SetAreas_TrustedDoesNotLiftUnflaggedFenceInNoCommunity(t *testing.T) {
+	r, _ := newCoastOnlyAPI(t)
+	code, got := setAreas(t, r, `{"areas":["lone"],"trusted":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 0 || len(got.Rejected) != 1 || got.Rejected[0] != "lone" {
+		t.Fatalf("areas=%v rejected=%v, want lone rejected", got.Areas, got.Rejected)
+	}
+}
+
+// Gate decision (see plan): a community member is community-filtered even
+// when area_restriction is nil, which reconciliation writes for communities
+// with no location_fence. Before #243 such a member could set any fence.
+func TestV2Humans_SetAreas_MemberWithoutRestrictionIsCommunityFiltered(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{{Name: "coast", AllowedAreas: []string{"alpha"}}}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+	h, _ := humans.Get("u1")
+	h.CommunityMembership = []string{"coast"}
+	h.AreaRestriction = nil
+	humans.AddHuman(h)
+
+	code, got := setAreas(t, r, `{"areas":["alpha","beta"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "alpha" {
+		t.Fatalf("areas=%v rejected=%v, want only alpha", got.Areas, got.Rejected)
+	}
+}
+
+// D4: the listing reports exemptFromAreaSecurity, and under area_security
+// includes exempt fences so a client can explain why they behave differently.
+func TestV2Humans_AreasGet_ReportsExempt(t *testing.T) {
+	r, _ := newCoastOnlyAPI(t) // private is drawn+exempt, in no community
+	w := v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/areas", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	exempt := map[string]bool{}
+	for _, m := range v2RulesArray(t, v2DecodeBody(t, w), "areas") {
+		name, _ := m["name"].(string)
+		ex, ok := m["exemptFromAreaSecurity"].(bool)
+		if !ok {
+			t.Fatalf("area %q has no exemptFromAreaSecurity field: %v", name, m)
+		}
+		exempt[name] = ex
+	}
+	if _, listed := exempt["private"]; !listed || !exempt["private"] {
+		t.Errorf("private must be listed and exempt: %v", exempt)
+	}
+	if _, listed := exempt["gamma"]; listed {
+		t.Errorf("gamma is another community's fence and must not be listed: %v", exempt)
+	}
+	if _, listed := exempt["lone"]; listed {
+		t.Errorf("lone is in no community and not exempt; must not be listed: %v", exempt)
+	}
+	if exempt["alpha"] {
+		t.Errorf("alpha is not exempt: %v", exempt)
+	}
+}
+
+// newCoastOnlyAPI: area_security on, u1 in "coast" (alpha, beta), and the
+// drawn "private" fence in NO community, as a real drawn fence is.
+func newCoastOnlyAPI(t *testing.T) (*gin.Engine, *store.MockHumanStore) {
+	t.Helper()
+	cfg := &config.Config{}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{
+		{Name: "coast", AllowedAreas: []string{"alpha", "beta"}},
+	}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+	h, _ := humans.Get("u1")
+	h.CommunityMembership = []string{"coast"}
+	h.AreaRestriction = []string{"alpha", "beta"}
+	humans.AddHuman(h)
+	return r, humans
+}
+
+// TestV2Humans_SetAreas_EitherSpelling: a requested name resolves to the fence
+// whatever its underscore/space spelling, and the fence's own spelling is
+// stored.
+func TestV2Humans_SetAreas_EitherSpelling(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	code, got := setAreas(t, r, `{"areas":["Gent Centrum","gent_centrum"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "gent_centrum" || len(got.Rejected) != 0 {
+		t.Fatalf("got %+v, want areas [gent_centrum], rejected []", got)
+	}
+	if h, _ := humans.Get("u1"); len(h.Area) != 1 || h.Area[0] != "gent_centrum" {
+		t.Fatalf("stored humans.area = %v, want [gent_centrum]", h.Area)
+	}
+}
+
+// POST /v2/humans stores area as the fences' own spelling, deduped by key.
+// area_restriction keeps a spaced allowed_areas entry's fence.
+func TestV2Humans_Create_CanonicalAreas(t *testing.T) {
+	cfg := &config.Config{General: config.GeneralConfig{Locale: "en"}}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{{Name: "be", AllowedAreas: []string{"gent centrum"}}}
+	r, humans, _ := newV2HumansTestAPI(t, cfg)
+
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans",
+		`{"id":"new1","name":"New","area":["Gent Centrum","gent_centrum","Alpha"],"community":["be"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	stored, _ := humans.Get("new1")
+	if stored == nil || !slices.Equal(stored.Area, []string{"gent_centrum", "alpha"}) {
+		t.Fatalf("stored area = %v, want [gent_centrum alpha]", stored)
+	}
+	if !slices.Equal(stored.AreaRestriction, []string{"gent_centrum"}) {
+		t.Fatalf("area_restriction = %v, want [gent_centrum]", stored.AreaRestriction)
+	}
+}
+
+// --- DELETE /v2/humans/{id}/areas (#252, #253) ------------------------------
+
+type v2RemoveAreaResult struct {
+	Name        string             `json:"name"`
+	RemovedFrom []int              `json:"removed_from"`
+	Broadened   map[string][]int64 `json:"broadened"`
+	DryRun      bool               `json:"dry_run"`
+}
+
+func removeArea(t *testing.T, r *gin.Engine, query string) (int, v2RemoveAreaResult) {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/areas?"+query, "")
+	var got v2RemoveAreaResult
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+		}
+		if !json.Valid(w.Body.Bytes()) || !bytes.Contains(w.Body.Bytes(), []byte(`"broadened":{`)) || !bytes.Contains(w.Body.Bytes(), []byte(`"removed_from":[`)) {
+			t.Errorf("removed_from/broadened must never be null: %s", w.Body.String())
+		}
+	}
+	return w.Code, got
+}
+
+// #253: drop one fence from every profile, leaving each profile's other
+// areas intact — what ?all_profiles= on POST cannot do (#252).
+func TestV2Humans_RemoveArea_AllProfiles(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"alpha", "private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha", "private"}})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Area: []string{"beta", "private"}})
+
+	code, got := removeArea(t, r, "name=private&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1, 2}) {
+		t.Errorf("removed_from = %v, want [1 2]", got.RemovedFrom)
+	}
+	ps, _ := humans.GetProfiles("u1")
+	for _, p := range ps {
+		if slices.Contains(p.Area, "private") || len(p.Area) != 1 {
+			t.Errorf("profile %d = %v, want one surviving area", p.ProfileNo, p.Area)
+		}
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a state reload")
+	}
+}
+
+// No permission check: removing can't widen alerts, and the fence is often
+// already gone from the geofence feed.
+func TestV2Humans_RemoveArea_UnknownFenceStillRemoved(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"deleted_fence"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"deleted_fence"}})
+
+	code, got := removeArea(t, r, "name=deleted_fence")
+	if code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Fatalf("code=%d removed_from=%v, want 200 [1]", code, got.RemovedFrom)
+	}
+}
+
+func TestV2Humans_RemoveArea_NotHeldIsIdempotent(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	code, got := removeArea(t, r, "name=beta")
+	if code != http.StatusOK || len(got.RemovedFrom) != 0 || got.RemovedFrom == nil {
+		t.Fatalf("code=%d removed_from=%#v, want 200 and an empty (non-null) list", code, got.RemovedFrom)
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("nothing changed, so no reload expected")
+	}
+}
+
+func TestV2Humans_RemoveArea_Validation(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+	if c, _ := removeArea(t, r, "name=a&profile=2&all_profiles=true"); c != http.StatusUnprocessableEntity {
+		t.Errorf("profile+all_profiles: got %d, want 422", c)
+	}
+	if c, _ := removeArea(t, r, ""); c != http.StatusUnprocessableEntity {
+		t.Errorf("missing name: got %d, want 422", c)
+	}
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/nobody/areas?name=a", "")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("unknown human: got %d, want 404", w.Code)
+	}
+}
+
+func seedOverrideRules(mons *store.MockTrackingStore[db.MonsterTrackingAPI], raids *store.MockTrackingStore[db.RaidTrackingAPI]) {
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+	_, _ = raids.Insert(&db.RaidTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+}
+
+func TestV2Humans_RemoveArea_StripsOverridesAndReportsBroadened(t *testing.T) {
+	r, humans, reloads, mons, raids := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	seedOverrideRules(mons, raids)
+
+	code, got := removeArea(t, r, "name=private")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if len(got.Broadened) != 2 || !slices.Equal(got.Broadened["pokemon"], []int64{1}) || !slices.Equal(got.Broadened["raid"], []int64{1}) {
+		t.Errorf("broadened = %v, want pokemon:[1] raid:[1]", got.Broadened)
+	}
+	rows := mons.AllRows()
+	if rows[0].OverrideAreas != nil {
+		t.Errorf("rule 1 override = %v, want nil", rows[0].OverrideAreas)
+	}
+	if !slices.Equal(rows[1].OverrideAreas, []string{"alpha"}) {
+		t.Errorf("rule 2 override = %v, want [alpha]", rows[1].OverrideAreas)
+	}
+	if got := raids.AllRows()[0].OverrideAreas; got != nil {
+		t.Errorf("raid override = %v, want nil", got)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RemoveArea_DryRunWritesNothing(t *testing.T) {
+	r, humans, reloads, mons, raids := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	seedOverrideRules(mons, raids)
+
+	code, got := removeArea(t, r, "name=private&dry_run=true")
+	if code != http.StatusOK || !got.DryRun {
+		t.Fatalf("code=%d dry_run=%v", code, got.DryRun)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1}) || !slices.Equal(got.Broadened["pokemon"], []int64{1}) {
+		t.Errorf("dry run result = %+v", got)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile written: %v", ps[0].Area)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"private"}) {
+		t.Errorf("humans.area written: %v", hh.Area)
+	}
+	if !slices.Equal(mons.AllRows()[1].OverrideAreas, []string{"private", "alpha"}) {
+		t.Error("override written")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("dry run must not reload")
+	}
+}
+
+func TestV2Humans_RemoveArea_SpellingVariants(t *testing.T) {
+	for _, q := range []string{"Private", "PRIVATE", "private"} {
+		r, humans, _ := newV2HumansTestAPI(t, nil)
+		humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private", "alpha"}})
+		if code, got := removeArea(t, r, "name="+q); code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+			t.Errorf("%s: code=%d removed_from=%v", q, code, got.RemovedFrom)
+		}
+	}
+	for _, q := range []string{"Gent_Centrum", "gent%20centrum", "GENT+CENTRUM"} {
+		r, humans, _ := newV2HumansTestAPI(t, nil)
+		humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"gent_centrum", "alpha"}})
+		if code, got := removeArea(t, r, "name="+q); code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+			t.Errorf("%s: code=%d removed_from=%v", q, code, got.RemovedFrom)
+		}
+	}
+}
+
+// A real write that touches neither a profile list nor broadens a rule (an
+// override shrinks but keeps another area) must still reload; dry run must not.
+func TestV2Humans_RemoveArea_PartialOverrideStillReloads(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+
+	code, got := removeArea(t, r, "name=private&dry_run=true")
+	if code != http.StatusOK || len(got.RemovedFrom) != 0 || len(got.Broadened) != 0 {
+		t.Fatalf("dry run: code=%d %+v", code, got)
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Fatal("dry run must not reload")
+	}
+	if code, _ = removeArea(t, r, "name=private"); code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"alpha"}) {
+		t.Errorf("override = %v", mons.AllRows()[0].OverrideAreas)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("a written override must trigger a reload")
+	}
+}
+
+// --- PATCH /v2/humans/{id}/areas (#259) -------------------------------------
+
+type v2RenameAreaResult struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	RenamedIn []int  `json:"renamed_in"`
+	DryRun    bool   `json:"dry_run"`
+}
+
+func renameArea(t *testing.T, r *gin.Engine, query string) (int, v2RenameAreaResult) {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodPatch, "/api/v2/humans/u1/areas?"+query, "")
+	var got v2RenameAreaResult
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+		}
+		if !bytes.Contains(w.Body.Bytes(), []byte(`"renamed_in":[`)) {
+			t.Errorf("renamed_in must never be null: %s", w.Body.String())
+		}
+	}
+	return w.Code, got
+}
+
+func TestV2Humans_RenameArea_AllProfiles(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private", "alpha"}})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, got := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if got.To != "gent_centrum" || !slices.Equal(got.RenamedIn, []int{1, 2}) {
+		t.Errorf("result = %+v", got)
+	}
+	ps, _ := humans.GetProfiles("u1")
+	if !slices.Equal(ps[0].Area, []string{"gent_centrum", "alpha"}) || !slices.Equal(ps[1].Area, []string{"gent_centrum"}) {
+		t.Errorf("profiles = %v / %v", ps[0].Area, ps[1].Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RenameArea_ToNotLoadedIs422AndChangesNothing(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	w := v2DoReq(t, r, http.MethodPatch, "/api/v2/humans/u1/areas?from=private&to=nowhere", "")
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "area not permitted: nowhere") {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile changed: %v", ps[0].Area)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"private"}) {
+		t.Error("override changed")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("must not reload")
+	}
+}
+
+func TestV2Humans_RenameArea_Idempotent(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	if code, got := renameArea(t, r, "from=private&to=gent_centrum"); code != http.StatusOK || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("first: code=%d %+v", code, got)
+	}
+	code, got := renameArea(t, r, "from=private&to=gent_centrum")
+	if code != http.StatusOK || len(got.RenamedIn) != 0 {
+		t.Errorf("second: code=%d %+v", code, got)
+	}
+}
+
+func TestV2Humans_RenameArea_HoldsBothCollapses(t *testing.T) {
+	r, humans, _, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"gent_centrum", "private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"gent centrum", "private"}})
+
+	if code, _ := renameArea(t, r, "from=private&to=Gent_Centrum"); code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"gent_centrum"}) {
+		t.Errorf("profile = %v", ps[0].Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v", o)
+	}
+}
+
+func TestV2Humans_RenameArea_DryRunWritesNothing(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, got := renameArea(t, r, "from=private&to=gent_centrum&dry_run=true")
+	if code != http.StatusOK || !got.DryRun || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("code=%d %+v", code, got)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile written: %v", ps[0].Area)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"private"}) {
+		t.Errorf("humans.area written: %v", hh.Area)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"private"}) {
+		t.Error("override written")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("dry run must not reload")
+	}
+}
+
+// A legacy (PoracleJS-migrated) human can have no profiles rows at all.
+// ?all_profiles=true must still cover the current profile: humans.area and
+// that profile's override_areas.
+func TestV2Humans_RemoveArea_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"alpha", "private"}
+	humans.AddHuman(h)
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+
+	// The current profile has no profiles row; its humans.area still changes,
+	// so it is reported, under dry_run too.
+	code, got := removeArea(t, r, "name=private&all_profiles=true&dry_run=true")
+	if code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Fatalf("dry run: code=%d removed_from=%v, want [1]", code, got.RemovedFrom)
+	}
+	code, got = removeArea(t, r, "name=private&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Errorf("removed_from = %v, want [1]", got.RemovedFrom)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"alpha"}) {
+		t.Errorf("humans.area = %v, want [alpha]", hh.Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"alpha"}) {
+		t.Errorf("override = %v, want [alpha]", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RenameArea_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private", "alpha"}
+	humans.AddHuman(h)
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+
+	code, got := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true&dry_run=true")
+	if code != http.StatusOK || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("dry run: code=%d renamed_in=%v, want [1]", code, got.RenamedIn)
+	}
+	code, got = renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Errorf("renamed_in = %v, want [1]", got.RenamedIn)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"gent_centrum", "alpha"}) {
+		t.Errorf("humans.area = %v, want [gent_centrum alpha]", hh.Area)
+	}
+	if o := mons.AllRows()[0].OverrideAreas; !slices.Equal(o, []string{"gent_centrum"}) {
+		t.Errorf("override = %v, want [gent_centrum]", o)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+// Set-areas shares the target resolution: all_profiles on a human with no
+// profiles rows still writes humans.area.
+func TestV2Humans_SetAreas_AllProfilesNoProfileRows(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/areas?all_profiles=true", `{"areas":["beta"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"beta"}) {
+		t.Errorf("humans.area = %v, want [beta]", hh.Area)
 	}
 }

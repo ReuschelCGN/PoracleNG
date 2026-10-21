@@ -205,7 +205,7 @@ func HandleCreateInvasion(deps *TrackingDeps) gin.HandlerFunc {
 				Gender:                gender,
 				GruntType:             *req.GruntType,
 				OverrideLocationLabel: req.OverrideLocationLabel,
-				OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+				OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 			})
 		}
 

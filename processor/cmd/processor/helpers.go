@@ -14,6 +14,7 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/delivery"
 	"github.com/pokemon/poracleng/processor/internal/gamedata"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 	"github.com/pokemon/poracleng/processor/internal/metrics"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/state"
@@ -258,6 +259,7 @@ func (ps *ProcessorService) filterMuted(matched []webhook.MatchedUser, areas []w
 		// scopes use the event-level fields (gym_id, pokemon_id, etc.)
 		// from the caller's ev.
 		ev.MatchedRuleUID = m.RuleUID
+		ev.MatchedRuleTable = m.RuleTable
 		if ps.muteStore.Match(m.ID, ev, now) {
 			metrics.MuteHitsTotal.WithLabelValues(m.Type).Inc()
 			log.Debugf("Mute filter: dropping %s %s %s (active mute matches event)", m.Type, m.ID, m.Name)
@@ -395,22 +397,26 @@ func (ps *ProcessorService) notifySummaryRateBreach(target, typ, name, language 
 // triggers a debounced state reload so the user is removed from matching.
 func (ps *ProcessorService) OnBan(target, typ, name, language string) {
 	tr := ps.translations.For(language)
-	var msg string
-	if ps.cfg.AlertLimits.DisableOnStop {
-		if ps.humans != nil {
-			if err := ps.humans.SetAdminDisable(target, true); err != nil {
-				log.Errorf("Rate limit: failed to admin_disable user %s: %s", target, err)
+	// Hold the per-human lock only around the disable write, not the
+	// notifications below. Deferred so a panic in the write can't leave the
+	// human's lock held.
+	msg := func() string {
+		defer humanlock.Lock(target)()
+		if ps.cfg.AlertLimits.DisableOnStop {
+			if ps.humans != nil {
+				if err := ps.humans.SetAdminDisable(target, true); err != nil {
+					log.Errorf("Rate limit: failed to admin_disable user %s: %s", target, err)
+				}
 			}
+			return tr.T("rate_limit.banned_hard")
 		}
-		msg = tr.T("rate_limit.banned_hard")
-	} else {
 		if ps.humans != nil {
 			if err := ps.humans.SetEnabled(target, false); err != nil {
 				log.Errorf("Rate limit: failed to disable user %s: %s", target, err)
 			}
 		}
-		msg = tr.Tf("rate_limit.banned_soft", bot.CommandPrefixForType(ps.cfg, typ))
-	}
+		return tr.Tf("rate_limit.banned_soft", bot.CommandPrefixForType(ps.cfg, typ))
+	}()
 
 	ps.dispatchBypass(target, typ, name, msg, "RateLimit")
 
@@ -442,7 +448,11 @@ func (ps *ProcessorService) disableUserForDeliveryFailure(target, name, jobType 
 	if ps.humans == nil {
 		return
 	}
-	if err := ps.humans.SetEnabled(target, false); err != nil {
+	err := func() error {
+		defer humanlock.Lock(target)()
+		return ps.humans.SetEnabled(target, false)
+	}()
+	if err != nil {
 		log.Errorf("Delivery failure: failed to disable user %s: %s", target, err)
 		return
 	}

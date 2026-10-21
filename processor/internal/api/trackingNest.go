@@ -204,7 +204,7 @@ func HandleCreateNest(deps *TrackingDeps) gin.HandlerFunc {
 				MinSpawnAvg:           minSpawnAvg,
 				Form:                  form,
 				OverrideLocationLabel: req.OverrideLocationLabel,
-				OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+				OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 			})
 		}
 

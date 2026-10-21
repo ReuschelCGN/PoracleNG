@@ -191,7 +191,7 @@ func New(cfg Config) (*Bot, error) {
 
 	// Initialize reconciliation if check_role is enabled.
 	if cfg.Cfg.Discord.CheckRole && cfg.DTS != nil {
-		b.reconciliation = NewReconciliation(session, cfg.Humans, cfg.Cfg, cfg.Translations, cfg.DTS)
+		b.reconciliation = NewReconciliation(session, cfg.Humans, cfg.Cfg, cfg.Translations, cfg.DTS, b.StateMgr)
 		go b.reconciliationLoop()
 	}
 
@@ -716,7 +716,7 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 			}
 		}
 
-		replies := handler.Run(ctx, remainingArgs)
+		replies := bot.RunLocked(handler, ctx, remainingArgs)
 		replies = bot.ApplyMaintenanceSuffix(replies, b.Dispatcher, tr.T("cmd.maintenance.active_suffix"))
 		b.sendReplies(s, m, replies)
 	}

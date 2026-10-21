@@ -254,7 +254,7 @@ func HandleCreateRaid(deps *TrackingDeps) gin.HandlerFunc {
 						Costume:               costume,
 						Level:                 9000,
 						OverrideLocationLabel: req.OverrideLocationLabel,
-						OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+						OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 					})
 				}
 				continue
@@ -294,7 +294,7 @@ func HandleCreateRaid(deps *TrackingDeps) gin.HandlerFunc {
 					Costume:               costume,
 					Level:                 level,
 					OverrideLocationLabel: req.OverrideLocationLabel,
-					OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+					OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 				})
 			}
 		}

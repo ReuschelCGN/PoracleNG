@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -13,6 +14,37 @@ import (
 	"github.com/pokemon/poracleng/processor/internal/metrics"
 )
 
+// isV1Path reports whether path is served by the frozen v1 surface
+// (/api/tracking, /api/humans, /api/profiles and anything beneath them).
+// /api/v2/humans is not v1.
+func isV1Path(path string) bool {
+	for _, p := range []string{"/api/tracking", "/api/humans", "/api/profiles"} {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// abortUnauthorized sends the 401: v1 keeps its legacy body, everything else
+// (huma-served routes) gets an RFC 9457 problem+json body.
+func abortUnauthorized(c *gin.Context) {
+	if isV1Path(c.Request.URL.Path) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"status": "authError",
+			"reason": "incorrect or missing api secret",
+		})
+		return
+	}
+	body, _ := json.Marshal(map[string]any{
+		"status": http.StatusUnauthorized,
+		"title":  "Unauthorized",
+		"detail": "incorrect or missing api secret",
+	})
+	c.Abort()
+	c.Data(http.StatusUnauthorized, "application/problem+json", body)
+}
+
 // RequireSecretGin returns a Gin middleware that validates X-Poracle-Secret.
 // If apiSecret is empty, all requests are allowed.
 func RequireSecretGin(apiSecret string) gin.HandlerFunc {
@@ -22,10 +54,7 @@ func RequireSecretGin(apiSecret string) gin.HandlerFunc {
 			return
 		}
 		if c.GetHeader("X-Poracle-Secret") != apiSecret {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"status": "authError",
-				"reason": "incorrect or missing api secret",
-			})
+			abortUnauthorized(c)
 			return
 		}
 		c.Next()

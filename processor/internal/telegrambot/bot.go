@@ -68,7 +68,7 @@ func New(cfg Config) (*Bot, error) {
 	// Initialize reconciliation — needed for check_role periodic sync AND
 	// for /start DM registration (verifies channel membership via API).
 	if cfg.DTS != nil {
-		b.reconciliation = NewTelegramReconciliation(api, cfg.Humans, cfg.Cfg, cfg.Translations, cfg.DTS)
+		b.reconciliation = NewTelegramReconciliation(api, cfg.Humans, cfg.Cfg, cfg.Translations, cfg.DTS, b.StateMgr)
 		if cfg.Cfg.Telegram.CheckRole {
 			go b.reconciliationLoop()
 		}
@@ -458,7 +458,7 @@ func (b *Bot) handleMessage(m *models.Message) {
 			}
 		}
 
-		replies := handler.Run(ctx, remainingArgs)
+		replies := bot.RunLocked(handler, ctx, remainingArgs)
 		replies = bot.ApplyMaintenanceSuffix(replies, b.Dispatcher, b.Translations.For(userLang).T("cmd.maintenance.active_suffix"))
 		b.sendReplies(chatID, threadID, m.From.ID, replies)
 	}

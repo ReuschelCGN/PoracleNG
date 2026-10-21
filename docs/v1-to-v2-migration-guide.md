@@ -37,15 +37,19 @@ source of truth. Design rationale: [`v2-api-design.md`](v2-api-design.md).
 | `GET /api/tracking/{type}/{id}` | `GET /api/v2/humans/{id}/tracking/{type}` | `?profile=` defaults to the active profile. Returns `{rules:[…]}` |
 | `POST /api/tracking/{type}/{id}` | `POST /api/v2/humans/{id}/tracking/{type}` | Body is an **array** of rules. Returns `{created, updated, unchanged}` |
 | — | `GET /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — fetch one rule |
-| — | `PUT /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — full replace (omitted fields reset to defaults; no PATCH); the rule keeps its `uid` |
+| — | `PUT /api/v2/humans/{id}/tracking/{type}/{uid}` | NEW — full replace (omitted fields reset to defaults); the rule keeps its `uid`. `409` if the edit would duplicate or near-duplicate another rule |
+| — | `PATCH /api/v2/humans/{id}/tracking/{type}` | NEW — bulk-set `distance`, `clean`, `edit`, `summary` (quest), `template`, `ping` on `uids`; per-rule `updated` / `unchanged` / `refused` |
 | `DELETE /api/tracking/{type}/{id}/byUid/{uid}` | `DELETE /api/v2/humans/{id}/tracking/{type}/{uid}` | Returns `{deleted:[…]}` |
-| `POST /api/tracking/{type}/{id}/delete` (body `[uids]`) | `DELETE /api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete via query |
+| `POST /api/tracking/{type}/{id}/delete` (body `[uids]`) | `DELETE /api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete via query, or body `{"uids":[…]}` (not both) |
 | `GET /api/tracking/all/{id}` | `GET /api/v2/humans/{id}/tracking` | Full snapshot: `{human, tracking:{<type>:[…]}, profiles, locations, summaries}` |
 | `GET /api/tracking/allProfiles/{id}` | `GET /api/v2/humans/{id}/tracking?all_profiles=true` | |
 | `GET /api/tracking/pokemon/refresh` | `GET`/`POST /api/reload` | Reload alias; the documented reload endpoint |
 
 Item operations are scoped by `(human, uid)` exactly like v1's `byUid` — you cannot touch a uid
 that doesn't belong to the addressed human.
+
+Every tracking mutation also accepts `?dry_run=true` (same validation, nothing written; created
+rules have `uid` 0, response has `"dry_run": true`), and rules in `updated` carry `previous`.
 
 ## Endpoint mapping — humans
 
@@ -62,6 +66,9 @@ that doesn't belong to the addressed human.
 | — | `DELETE /api/v2/humans/{id}/location` | **NEW** — clear the location (`?profile=` as for set). Not subject to the area-restriction check |
 | `GET /api/humans/{id}/checkLocation/{lat}/{lon}` | `GET /api/v2/humans/{id}/check-location?latitude=&longitude=` | |
 | `POST /api/humans/{id}/setAreas` | `POST /api/v2/humans/{id}/areas` | Body `{areas: []string}` |
+| — | `DELETE /api/v2/humans/{id}/areas?name=` | **NEW** — remove one area name from the human, profile(s) and every rule's `override_areas`. Returns `broadened` rules. `?profile=`, `?all_profiles=`, `?dry_run=` |
+| — | `PATCH /api/v2/humans/{id}/areas?from=&to=` | **NEW** — rename one area name everywhere; `to` must be permitted (`422`). `?dry_run=` |
+| — | `GET/POST/DELETE /api/v2/humans/{id}/mutes` | **NEW** — in-memory alert mutes. `scope=tracking` requires `tracking_type` (the rule's table); delete via `?scope=&tracking_type=&value=` |
 | `POST /api/humans/{id}/switchProfile/{n}` | `POST /api/v2/humans/{id}/profile` | Body `{profile_no: int}` |
 | `GET /api/humans/{id}/locations` | `GET /api/v2/humans/{id}/locations` | |
 | `GET /api/humans/{id}/locations/{label}` | `GET /api/v2/humans/{id}/locations/{label}` | |
@@ -114,6 +121,10 @@ Game-master dictionary IDs stay **integers** (`pokemon_id`, `form`, `move`, `rew
 `pvp_ranking_evolution`).
 
 ### Sentinels → omit / null
+
+**`null` means unconstrained.** A v2 client never needs to know how that is stored, and the stored representation may change without notice. Read `null`, write `null` (or omit the field); a GET followed by a PUT or POST of any stored rule is `unchanged`. Do not convert `null` back into a number.
+
+The table below is internal and for v1 readers only: it explains what the v1 API and the database hold. It is not part of the v2 contract.
 
 Stop sending these v1 magic values; omit the field instead (and expect `null` on read):
 

@@ -741,7 +741,7 @@ func (b *Bot) runOneAutocreateCommand(s *discordgo.Session, actor *autocreateAct
 			ctx.AreaLogic = bot.NewAreaLogic(st.Fences, b.Cfg)
 		}
 
-		replies := handler.Run(ctx, pc.Args)
+		replies := bot.RunLocked(handler, ctx, pc.Args)
 		reportCommandFailures(rep, expanded, replies)
 		// For the interactive path (actor has a ChannelID) send the
 		// remaining (non-failure) replies back to the originating channel —
