@@ -384,3 +384,38 @@ func TestAreaFindFence_UnderscoreInName(t *testing.T) {
 		t.Errorf("underscore-form FindFence failed: %+v", f)
 	}
 }
+
+// TestAreaLogic_EitherSpellingBothDirections: lookups and dedupe go by
+// NormalizeAreaKey, so a space-named fence is reachable by an underscored
+// name as well as the reverse, and the fence's own spelling is stored.
+func TestAreaLogic_EitherSpellingBothDirections(t *testing.T) {
+	under := NewAreaLogic([]geofence.Fence{{Name: "Gent_Centrum", UserSelectable: true}}, noSecurityConfig())
+	if _, nf, list := under.AddAreas(nil, nil, []string{"gent centrum"}, false); len(nf) != 0 || !slices.Equal(list, []string{"gent_centrum"}) {
+		t.Errorf("underscore fence via spaced name: list=%v notFound=%v, want [gent_centrum]", list, nf)
+	}
+
+	spaced := NewAreaLogic([]geofence.Fence{{Name: "Gent Centrum", UserSelectable: true}}, noSecurityConfig())
+	added, nf, list := spaced.AddAreas(nil, nil, []string{"gent_centrum"}, false)
+	if len(nf) != 0 || !slices.Equal(list, []string{"gent centrum"}) || !slices.Equal(added, []string{"Gent Centrum"}) {
+		t.Errorf("spaced fence via quoted underscored name: added=%v list=%v notFound=%v, want stored [gent centrum]", added, list, nf)
+	}
+	if name, ok := spaced.ResolveAvailableArea("gent_centrum", nil, false); !ok || name != "Gent Centrum" {
+		t.Errorf("ResolveAvailableArea(gent_centrum) = %q, %v; want Gent Centrum", name, ok)
+	}
+
+	// Already held under the other spelling: not added again.
+	added, nf, list = under.AddAreas([]string{"gent centrum"}, nil, []string{"gent_centrum"}, false)
+	if len(nf) != 0 || len(added) != 0 || !slices.Equal(list, []string{"gent centrum"}) {
+		t.Errorf("held under other spelling: added=%v list=%v notFound=%v, want no duplicate", added, list, nf)
+	}
+
+	// Remove by either spelling, whichever spelling is stored.
+	for _, stored := range []string{"gent_centrum", "gent centrum"} {
+		for _, typed := range []string{"gent centrum", "gent_centrum", "GENT_CENTRUM"} {
+			removed, rest := under.RemoveAreas([]string{stored, "other"}, []string{typed})
+			if !slices.Equal(removed, []string{stored}) || !slices.Equal(rest, []string{"other"}) {
+				t.Errorf("RemoveAreas(stored %q, typed %q) removed=%v rest=%v", stored, typed, removed, rest)
+			}
+		}
+	}
+}

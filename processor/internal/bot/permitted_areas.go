@@ -41,8 +41,8 @@ func PermittedAreas(fences []geofence.Fence, cfg *config.Config,
 }
 
 // PermittedAreaKeys turns PermittedAreas output into a lookup set holding
-// both storage spellings: humans.area keeps underscores, override_areas
-// stores them as spaces (geofence.NormalizeAreaKey).
+// both spellings of each name: the fence name (what v2 and the bot store) and
+// its geofence.NormalizeAreaKey form (what v1 and legacy rows store).
 func PermittedAreaKeys(names []string) map[string]bool {
 	keys := make(map[string]bool, 2*len(names))
 	for _, n := range names {
@@ -65,15 +65,16 @@ func subjectToCommunityFilter(cfg *config.Config, human *store.Human, admin bool
 	return human.AreaRestriction != nil || len(human.CommunityMembership) > 0
 }
 
-// communityAllowedSet is the lowercase union of allowed_areas across the
-// communities memberOf names (case-insensitive).
+// communityAllowedSet is the union of allowed_areas across the communities
+// memberOf names (case-insensitive), keyed by geofence.NormalizeAreaKey so an
+// allowed_areas entry matches its fence whatever its underscore/space spelling.
 func communityAllowedSet(communities []config.CommunityConfig, memberOf []string) map[string]bool {
 	allowed := make(map[string]bool)
 	for _, comm := range communities {
 		for _, m := range memberOf {
 			if strings.EqualFold(comm.Name, m) {
 				for _, a := range comm.AllowedAreas {
-					allowed[strings.ToLower(a)] = true
+					allowed[geofence.NormalizeAreaKey(a)] = true
 				}
 			}
 		}
@@ -85,5 +86,5 @@ func communityAllowedSet(communities []config.CommunityConfig, memberOf []string
 // is in one of the human's communities, or it declares itself outside the
 // community system.
 func communityPermits(f geofence.Fence, allowed map[string]bool) bool {
-	return f.ExemptFromAreaSecurity || allowed[strings.ToLower(f.Name)]
+	return f.ExemptFromAreaSecurity || allowed[geofence.NormalizeAreaKey(f.Name)]
 }

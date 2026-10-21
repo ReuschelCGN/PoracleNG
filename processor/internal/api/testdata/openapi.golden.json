@@ -23309,7 +23309,7 @@
         ]
       },
       "post": {
-        "description": "Stores the requested areas, lowercased and deduped, after matching them against the fences this human may select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` writes every profile the human owns (the two are mutually exclusive). Triggers a state reload. 404 if the human does not exist.",
+        "description": "Stores the requested areas as the matching fences' names (lowercased; underscores and spaces are interchangeable in the request), deduped, after matching them against the fences this human may select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` writes every profile the human owns (the two are mutually exclusive). Triggers a state reload. 404 if the human does not exist.",
         "operationId": "v2-set-human-areas",
         "parameters": [
           {

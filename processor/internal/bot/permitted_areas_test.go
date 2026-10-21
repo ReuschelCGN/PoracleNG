@@ -99,3 +99,40 @@ func TestPermittedAreaKeys_BothStorageConventions(t *testing.T) {
 		t.Fatalf("keys = %v, want both the humans.area and override_areas spellings", keys)
 	}
 }
+
+// TestPermittedAreas_CommunityAllowedAreasEitherSpelling: allowed_areas and
+// fence names compare by NormalizeAreaKey, so a config entry written with a
+// space permits the underscored fence — and the prune never denies it.
+func TestPermittedAreas_CommunityAllowedAreasEitherSpelling(t *testing.T) {
+	fences := []geofence.Fence{
+		{Name: "Gent_Centrum", UserSelectable: true},
+		{Name: "beta", UserSelectable: true},
+	}
+	cfg := &config.Config{}
+	cfg.Area.Enabled = true
+	cfg.Area.Communities = []config.CommunityConfig{{Name: "coast", AllowedAreas: []string{"gent centrum"}}}
+	member := &store.Human{ID: "u1", CommunityMembership: []string{"coast"}}
+
+	if got := PermittedAreas(fences, cfg, member, false, false); !slices.Equal(got, []string{"gent_centrum"}) {
+		t.Fatalf("PermittedAreas = %v, want [gent_centrum]", got)
+	}
+	al := NewAreaLogic(fences, cfg)
+	if got := al.GetAvailableAreas([]string{"coast"}, false); len(got) != 1 || got[0].Name != "Gent_Centrum" {
+		t.Fatalf("GetAvailableAreas = %+v, want [Gent_Centrum]", got)
+	}
+
+	hs := store.NewMockHumanStore()
+	hs.AddHuman(&store.Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"gent_centrum", "beta"}, CommunityMembership: []string{"coast"}})
+	if _, err := PruneForMembership(hs, fences, cfg, member, false, PruneOptions{Overrides: true}); err != nil {
+		t.Fatal(err)
+	}
+	d := hs.StrippedAreaCalls["u1"]
+	for _, k := range []string{"gent_centrum", "gent centrum"} {
+		if d[k] {
+			t.Errorf("denied set must not hold %q: %v", k, d)
+		}
+	}
+	if !d["beta"] {
+		t.Errorf("denied set should hold beta: %v", d)
+	}
+}

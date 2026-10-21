@@ -83,6 +83,7 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 		// out of the bot's !area picker (#215).
 		drawnFence("private", 30, 30, 1),
 		privateFence("lone", 50, 50, 1),
+		humanSquareFence("Gent_Centrum", 60, 60, 1),
 	}
 	idx := geofence.NewSpatialIndex(fences) // mutates fences in place (NormalizedName)
 	mgr := state.NewManager()
@@ -215,8 +216,8 @@ func TestV2Humans_AreasGet_AllWhenUnrestricted(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	areas := v2RulesArray(t, v2DecodeBody(t, w), "areas")
-	if len(areas) != 5 {
-		t.Fatalf("expected 5 available areas, got %d: %v", len(areas), areas)
+	if len(areas) != 6 {
+		t.Fatalf("expected 6 available areas, got %d: %v", len(areas), areas)
 	}
 	// The listing reports every fence with its userSelectable flag, so a
 	// client can tell which ones need trusted:true to set (#215).
@@ -1201,4 +1202,21 @@ func newCoastOnlyAPI(t *testing.T) (*gin.Engine, *store.MockHumanStore) {
 	h.AreaRestriction = []string{"alpha", "beta"}
 	humans.AddHuman(h)
 	return r, humans
+}
+
+// TestV2Humans_SetAreas_EitherSpelling: a requested name resolves to the fence
+// whatever its underscore/space spelling, and the fence's own spelling is
+// stored.
+func TestV2Humans_SetAreas_EitherSpelling(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	code, got := setAreas(t, r, `{"areas":["Gent Centrum","gent_centrum"]}`)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if len(got.Areas) != 1 || got.Areas[0] != "gent_centrum" || len(got.Rejected) != 0 {
+		t.Fatalf("got %+v, want areas [gent_centrum], rejected []", got)
+	}
+	if h, _ := humans.Get("u1"); len(h.Area) != 1 || h.Area[0] != "gent_centrum" {
+		t.Fatalf("stored humans.area = %v, want [gent_centrum]", h.Area)
+	}
 }

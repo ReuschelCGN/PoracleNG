@@ -574,7 +574,8 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 	huma.Register(api, huma.Operation{
 		OperationID: "v2-set-human-areas", Method: "POST", Path: "/v2/humans/{id}/areas",
 		Summary: "Set a human's selected areas",
-		Description: "Stores the requested areas, lowercased and deduped, after matching them against the fences this human may " +
+		Description: "Stores the requested areas as the matching fences' names (lowercased; underscores and spaces are " +
+			"interchangeable in the request), deduped, after matching them against the fences this human may " +
 			"select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match " +
 			"come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable " +
 			"fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. " +
@@ -594,11 +595,20 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 
 		allowedSet := settableAreaSet(deps, human, isAdmin(deps, in.ID), in.Body.Trusted)
 
+		// Resolve each name to its fence's own spelling first, so either
+		// underscore/space spelling of a fence is accepted and the fence name
+		// is what gets stored.
+		var fences []geofence.Fence
+		if deps.StateMgr != nil {
+			if st := deps.StateMgr.Get(); st != nil {
+				fences = st.Fences
+			}
+		}
 		seen := make(map[string]bool)
 		newAreas := []string{}
 		rejected := []string{}
 		for _, raw := range in.Body.Areas {
-			a := strings.ToLower(raw)
+			a := geofence.CanonicalAreaName(fences, raw)
 			if !allowedSet[a] {
 				rejected = append(rejected, raw)
 				continue
@@ -643,9 +653,11 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 
 // --- shared helpers --------------------------------------------------------
 
-// settableAreaSet keys bot.PermittedAreas for the set-areas path, which
-// stores names lowercased. (The per-rule override path keys the same policy
-// with normalizeAreaKey instead, because that is how it stores.)
+// settableAreaSet keys bot.PermittedAreas for the set-areas path by the
+// lowercased fence name, which is what set-areas stores; requested names are
+// resolved to that form with geofence.CanonicalAreaName before the lookup.
+// (The per-rule override validation keys the same policy with
+// normalizeAreaKey.)
 func settableAreaSet(deps *TrackingDeps, human *store.Human, admin, trusted bool) map[string]bool {
 	set := make(map[string]bool)
 	if deps.StateMgr == nil {

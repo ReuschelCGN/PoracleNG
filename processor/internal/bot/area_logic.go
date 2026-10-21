@@ -86,36 +86,45 @@ func (a *AreaLogic) GetAvailableAreas(communities []string, isAdmin bool) []Area
 }
 
 // GetAvailableAreasMarked returns available areas with IsActive set for areas
-// present in the user's current area list.
+// present in the user's current area list (compared by NormalizeAreaKey, so a
+// stored spelling that differs from the fence's still marks it active).
 func (a *AreaLogic) GetAvailableAreasMarked(communities []string, currentAreas []string, isAdmin bool) []AreaInfo {
 	areas := a.GetAvailableAreas(communities, isAdmin)
 
 	currentSet := make(map[string]bool, len(currentAreas))
 	for _, ca := range currentAreas {
-		currentSet[strings.ToLower(ca)] = true
+		currentSet[geofence.NormalizeAreaKey(ca)] = true
 	}
 
 	for i := range areas {
-		if currentSet[strings.ToLower(areas[i].Name)] {
+		if currentSet[geofence.NormalizeAreaKey(areas[i].Name)] {
 			areas[i].IsActive = true
 		}
 	}
 	return areas
 }
 
+// availableByKey maps each available area's NormalizeAreaKey to its display
+// name, for matchAvailableArea.
+func availableByKey(available []AreaInfo) map[string]string {
+	m := make(map[string]string, len(available))
+	for _, ai := range available {
+		m[geofence.NormalizeAreaKey(ai.Name)] = ai.Name
+	}
+	return m
+}
+
 // AddAreas validates and adds areas to the user's current list.
 // It returns the display names of areas that were added, names that were not found
-// in the available set, and the new full area list (lowercase).
+// in the available set, and the new full area list. Added names are stored as
+// the fence's own spelling, lowercased; a name already held under another
+// spelling of the same area is not added again.
 func (a *AreaLogic) AddAreas(currentAreas []string, communities []string, toAdd []string, isAdmin bool) (added []string, notFound []string, newList []string) {
-	available := a.GetAvailableAreas(communities, isAdmin)
-	availableMap := make(map[string]string, len(available)) // lowercase -> display name
-	for _, ai := range available {
-		availableMap[strings.ToLower(ai.Name)] = ai.Name
-	}
+	availableMap := availableByKey(a.GetAvailableAreas(communities, isAdmin))
 
 	currentSet := make(map[string]bool, len(currentAreas))
 	for _, ca := range currentAreas {
-		currentSet[strings.ToLower(ca)] = true
+		currentSet[geofence.NormalizeAreaKey(ca)] = true
 	}
 
 	newList = append(newList, currentAreas...)
@@ -126,9 +135,10 @@ func (a *AreaLogic) AddAreas(currentAreas []string, communities []string, toAdd 
 			notFound = append(notFound, name)
 			continue
 		}
-		if !currentSet[canonical] {
+		key := geofence.NormalizeAreaKey(canonical)
+		if !currentSet[key] {
 			newList = append(newList, canonical)
-			currentSet[canonical] = true
+			currentSet[key] = true
 			added = append(added, displayName)
 		}
 	}
@@ -142,55 +152,42 @@ func (a *AreaLogic) AddAreas(currentAreas []string, communities []string, toAdd 
 // this user. Used by `!mute area` and similar one-name validators that
 // don't want the full AddAreas/RemoveAreas flow.
 func (a *AreaLogic) ResolveAvailableArea(name string, communities []string, isAdmin bool) (string, bool) {
-	available := a.GetAvailableAreas(communities, isAdmin)
-	availableMap := make(map[string]string, len(available))
-	for _, ai := range available {
-		availableMap[strings.ToLower(ai.Name)] = ai.Name
-	}
+	availableMap := availableByKey(a.GetAvailableAreas(communities, isAdmin))
 	_, displayName, ok := matchAvailableArea(availableMap, name)
 	return displayName, ok
 }
 
 // matchAvailableArea looks up a user-supplied area name against the available
-// set, trying the underscore-restored form as a fallback. The bot parser
-// converts unquoted underscores to spaces, so an area genuinely named
-// "gent_centrum" arrives here as "gent centrum"; we try both so the user
-// doesn't have to know to wrap the name in quotes.
+// set (keyed by NormalizeAreaKey), so underscores and spaces are
+// interchangeable in both directions: the bot parser turns unquoted
+// underscores into spaces, so "gent_centrum" typed bare arrives as
+// "gent centrum", and a quoted "gent_centrum" must still reach a fence named
+// "Gent Centrum".
 //
-// Returns the canonical lowercase key (matches availableMap) and the
-// proper display name. ok=false when neither form matches.
+// Returns the canonical stored form (the fence name, lowercased) and the
+// proper display name. ok=false when nothing matches.
 func matchAvailableArea(availableMap map[string]string, name string) (canonical, displayName string, ok bool) {
-	lower := strings.ToLower(name)
-	if dn, found := availableMap[lower]; found {
-		return lower, dn, true
+	dn, found := availableMap[geofence.NormalizeAreaKey(name)]
+	if !found {
+		return "", "", false
 	}
-	underForm := strings.ReplaceAll(lower, " ", "_")
-	if underForm != lower {
-		if dn, found := availableMap[underForm]; found {
-			return underForm, dn, true
-		}
-	}
-	return "", "", false
+	return strings.ToLower(dn), dn, true
 }
 
 // RemoveAreas removes named areas from the current list.
 // It returns the display names of areas that were actually removed and the remaining list.
 //
-// User input is matched against stored names tolerantly: an area stored as
-// "gent_centrum" matches when the user typed "gent_centrum" (parser strips
-// the underscore to a space) or quoted "\"gent_centrum\"" (preserved as-is).
+// User input is matched against stored names by NormalizeAreaKey, so either
+// spelling removes a stored entry: "gent_centrum" typed bare (parser →
+// "gent centrum"), quoted "\"gent_centrum\"", or a stored legacy spaced name.
 func (a *AreaLogic) RemoveAreas(currentAreas []string, toRemove []string) (removed []string, newList []string) {
 	removeSet := make(map[string]bool, len(toRemove))
 	for _, name := range toRemove {
-		lower := strings.ToLower(name)
-		removeSet[lower] = true
-		// Add the underscore-restored form so a stored "gent_centrum"
-		// matches when the user typed it unquoted (parser → "gent centrum").
-		removeSet[strings.ReplaceAll(lower, " ", "_")] = true
+		removeSet[geofence.NormalizeAreaKey(name)] = true
 	}
 
 	for _, ca := range currentAreas {
-		if removeSet[strings.ToLower(ca)] {
+		if removeSet[geofence.NormalizeAreaKey(ca)] {
 			removed = append(removed, ca)
 		} else {
 			newList = append(newList, ca)
