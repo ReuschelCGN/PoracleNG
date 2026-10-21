@@ -84,6 +84,7 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 | `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule (the rule keeps its `uid`) |
 | `DELETE` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Delete one rule |
 | `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete |
+| `PATCH` | `/api/v2/humans/{id}/tracking/{type}` | Bulk-set delivery settings on listed rules |
 
 - `{id}` (the human) is **always in the path** — required, and the ownership scope for every op. `profile` is a query param (`?profile={n}`, defaults to the human's active profile).
 - **Create** body is an **array** of rule objects (a single rule is a one-element array); the owner is the path `{id}`, not repeated per rule.
@@ -91,8 +92,9 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 - **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour; a rule in `updated` keeps its `uid`). Delete returns `{ "deleted": [<rule>] }`.
 - **PUT** (full replace) returns `{ "updated": [<rule>] }`. The rule **keeps its `uid`**, so ids held by clients, tracking mutes and `id:N` bot commands stay valid.
 - **`?include_descriptions=true`** works uniformly on **every** tracking endpoint — reads **and** mutations. When set, each rule object in the response (in `rules`, or `created`/`updated`/`unchanged`/`deleted`) carries a `description` (its human-readable rowtext, in the human's language). The status (added/updated/removed) is conveyed by which array the rule is in, so there is **no** separate assembled `message` field. (The prefixed, assembled confirmation message remains purely the Discord/Telegram push, gated by `?silent`.)
-- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. (No `PATCH`/partial-update in v2.)
-- Mutations (`POST`/`PUT`/`DELETE`) accept **`?silent=true`** (default false) — apply without notifying the user. (Single param; replaces v1's `silent`+`suppressMessage`.)
+- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. Tracking has no per-rule partial update.
+- **PATCH** on the collection is a **bulk settings update**: body `{"uids":[…],"set":{…}}`, where `set` names any of `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`; filter fields are not settable. Each listed rule keeps its uid and every field not named, and goes through the PUT path (translate, validate, squash check). The response gives one outcome per rule, never all-or-nothing: `{ "updated": [<rule with previous>], "unchanged": [<rule>], "refused": [{"uid", "reason": "invalid"|"conflict"|"not_found", "detail", "conflicts_with"?}] }`. Rules are processed in `uids` order (a repeated uid once, at its first position); when two listed rules would collide, the first wins and the second is refused as `conflict`. An empty `set`, or a setting the type does not support (e.g. `clean` on fort, `edit` on gym), is a `422` for the whole request. Supports `?dry_run`, `?silent`, `?trusted`, `?include_descriptions`.
+- Mutations (`POST`/`PUT`/`PATCH`/`DELETE`) accept **`?silent=true`** (default false) — apply without notifying the user. (Single param; replaces v1's `silent`+`suppressMessage`.)
 - Unknown body **and** query params are rejected (`422`) — v2 is strict. Every rule carries its `uid` (int) in responses.
 - **Consistency note:** humans/profiles/locations are likewise under `/api/v2/humans/{id}/…` (see §2b), so everything user-scoped shares one prefix.
 
@@ -308,7 +310,7 @@ Done on this branch for the (now-superseded) in-place approach; triage:
 - [ ] **Pagination/filtering** on list endpoints — out of scope for v1 parity, but the `{rules:[…]}` wrapper reserves room.
 
 **Decided (no longer open):**
-- **Update verb** — `PUT` full-replace only; no `PATCH` in v2 scope.
+- **Update verb** — `PUT` full-replace for one rule; tracking `PATCH` exists only as the bulk settings update on the collection (see above). (`PATCH /v2/humans/{id}/profiles/{profile_no}` is a separate, profile-only partial update.)
 - **Strictness** — strict throughout: unknown body and query params both rejected (`422`).
 - **v1 deprecation** — v1 stays fully supported with no sunset date yet; add a `Deprecation` marker + link to v2 on v1 responses once v2 is established; set a hard sunset date later.
 - **quest / nest / invasion fields** — quest (`reward_type`,`reward`,`amount`,`form`,`shiny`), nest `min_spawn_avg` = int, invasion exactly-one-mode (`type_id`|`grunt_id`|`everything`|`boss`).

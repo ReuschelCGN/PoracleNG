@@ -87,6 +87,8 @@ func newV2PokemonTestAPIWithConfig(t *testing.T, cfg *config.Config, setup func(
 		// the bot picker, so not selectable without an explicit assertion.
 		drawnFence("drawn", 30, 30, 1),
 		privateFence("lone", 40, 40, 1),
+		// Underscored fence name, for rules stored with the legacy spaced spelling.
+		humanSquareFence("Gent_Centrum", 50, 50, 1),
 	}
 	mgr := state.NewManager()
 	mgr.Set(&state.State{Fences: fences, Geofence: geofence.NewSpatialIndex(fences)})

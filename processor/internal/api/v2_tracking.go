@@ -249,7 +249,7 @@ func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2
 	registerV2TrackingOps(api, deps, typ)
 }
 
-// registerV2TrackingOps wires the six strict endpoints for one tracking type.
+// registerV2TrackingOps wires the strict endpoints for one tracking type.
 func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ v2TrackingType[Req, T]) {
 	base := "/v2/humans/{id}/tracking/" + typ.Name
 	tag := []string{"v2-tracking"}
@@ -319,6 +319,20 @@ func registerV2TrackingOps[Req any, T any](api huma.API, deps *TrackingDeps, typ
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2PutInput[Req]) (*v2CreateOutput[Req], error) {
 		return v2HandlePut(deps, typ, in)
+	})
+
+	// PATCH bulk settings → {updated, unchanged, refused}
+	huma.Register(api, huma.Operation{
+		OperationID: "v2-patch-" + typ.Name, Method: "PATCH", Path: base,
+		Summary: "Bulk-set delivery settings on " + typ.Name + " tracking rules",
+		Description: "Sets distance/clean/edit/summary/template/ping on each listed rule, keeping its uid and every " +
+			"other field. Each rule takes the PUT path (translate, validate, squash check) and gets its own outcome: " +
+			"{updated (with previous), unchanged, refused (invalid|conflict|not_found)}; there is no all-or-nothing. " +
+			"Rules are processed in uids order, a repeated uid once; when two listed rules would collide, the first wins. " +
+			"A setting this type does not support, or an empty set, is a 422 for the whole request.",
+		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+	}, func(_ context.Context, in *v2PatchInput) (*v2PatchOutput[Req], error) {
+		return v2HandlePatch(deps, typ, in)
 	})
 
 	// DELETE by uid → {deleted:[...]}
@@ -545,34 +559,41 @@ func v2HandlePut[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 		return v2PutOutput(deps, typ, human, row, *stored, in), nil
 	}
 
-	// Full replace = delete the old row and insert the fully-specified body,
-	// then move the new row back onto the old uid so the rule keeps its id
-	// (mutes, `id:N` commands and clients all hold on to it).
-	st := typ.Store(deps)
-	if err := st.DeleteByUID(human.ID, in.UID); err != nil {
-		log.Errorf("v2 tracking %s put delete: %s", typ.Name, err)
+	if err := v2ReplaceRow(deps, typ, human.ID, in.UID, &row); err != nil {
+		log.Errorf("v2 tracking %s put: %s", typ.Name, err)
 		return nil, huma.Error500InternalServerError("database error")
 	}
-	newUID, err := st.Insert(&row)
-	if err != nil {
-		log.Errorf("v2 tracking %s put insert: %s", typ.Name, err)
-		return nil, huma.Error500InternalServerError("database error")
-	}
-	if r, ok := st.(store.UIDReassigner); ok {
-		if err := r.ReassignUID(human.ID, newUID, in.UID); err != nil {
-			// The replacement is stored under newUID; report that rather
-			// than fail the request.
-			log.Errorf("v2 tracking %s put keep uid %d: %s", typ.Name, in.UID, err)
-		} else {
-			newUID = in.UID
-		}
-	}
-	typ.SetUID(&row, newUID)
 
 	reloadState(deps)
 	v2PushDiff(deps, typ, human, store.DiffResult[T]{Updates: []T{row}}, in.Silent)
 
 	return v2PutOutput(deps, typ, human, row, *stored, in), nil
+}
+
+// v2ReplaceRow stores row in place of the rule at uid (PUT and PATCH): delete
+// the old row and insert the replacement, then move the new row back onto the
+// old uid so the rule keeps its id (mutes, `id:N` commands and clients all hold
+// on to it). row's uid is set to the uid it ended up under: if the store cannot
+// reassign, the replacement keeps its fresh uid and that is reported rather
+// than failing the request.
+func v2ReplaceRow[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T], humanID string, uid int64, row *T) error {
+	st := typ.Store(deps)
+	if err := st.DeleteByUID(humanID, uid); err != nil {
+		return fmt.Errorf("delete %d: %w", uid, err)
+	}
+	newUID, err := st.Insert(row)
+	if err != nil {
+		return fmt.Errorf("insert replacement for %d: %w", uid, err)
+	}
+	if r, ok := st.(store.UIDReassigner); ok {
+		if err := r.ReassignUID(humanID, newUID, uid); err != nil {
+			log.Errorf("v2 tracking %s keep uid %d: %s", typ.Name, uid, err)
+		} else {
+			newUID = uid
+		}
+	}
+	typ.SetUID(row, newUID)
+	return nil
 }
 
 // v2PutOutput builds the PUT response: the edited rule with the stored rule it
