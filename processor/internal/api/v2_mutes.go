@@ -3,12 +3,12 @@ package api
 import (
 	"context"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/store"
 )
@@ -197,8 +197,11 @@ func validateMuteValue(deps *TrackingDeps, human *store.Human, scope, value stri
 		}
 		if deps.StateMgr != nil {
 			if st := deps.StateMgr.Get(); st != nil {
+				// Compare by NormalizeAreaKey like every other area path, so
+				// "animal kingdom" finds fence Animal_Kingdom; store the fence name.
+				key := geofence.NormalizeAreaKey(value)
 				for _, f := range st.Fences {
-					if strings.EqualFold(f.Name, value) {
+					if geofence.NormalizeAreaKey(f.Name) == key {
 						return f.Name, nil
 					}
 				}

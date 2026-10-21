@@ -147,6 +147,38 @@ func TestV2Mutes_Create_Area_CanonicalisesName(t *testing.T) {
 	}
 }
 
+// Production deps carry no AreaLogic, so area values validate against the
+// live state's fences. They must compare by NormalizeAreaKey like every other
+// area path (the bot accepts "animal kingdom" for fence Animal_Kingdom).
+func TestV2Mutes_Create_Area_StateMgrMatchesByKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
+	humans := store.NewMockHumanStore()
+	humans.AddHuman(&store.Human{ID: "u1", Type: "discord:user", Name: "U1", Enabled: true, CurrentProfileNo: 1})
+	mgr := state.NewManager()
+	mgr.Set(&state.State{Fences: []geofence.Fence{{Name: "Animal_Kingdom"}}})
+	mutes := mute.NewStore()
+	RegisterV2Mutes(humaAPI, &TrackingDeps{Humans: humans, Config: &config.Config{}, Mutes: mutes, StateMgr: mgr})
+
+	for _, v := range []string{"animal kingdom", "ANIMAL_KINGDOM"} {
+		w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes", `{"scope":"area","value":"`+v+`"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%q: expected 200, got %d: %s", v, w.Code, w.Body.String())
+		}
+	}
+	if !mutes.Match("u1", mute.Event{Area: []string{"Animal_Kingdom"}}, time.Now().Unix()) {
+		t.Fatal("area mute does not match the fence")
+	}
+	if n := len(mutes.ListActive("u1", time.Now().Unix())); n != 1 {
+		t.Fatalf("both spellings should store one canonical mute, got %d", n)
+	}
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes", `{"scope":"area","value":"nowhere"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown area: expected 422, got %d", w.Code)
+	}
+}
+
 func TestV2Mutes_Create_Validation(t *testing.T) {
 	r, _ := newV2MutesTestAPI(t)
 	cases := []struct {

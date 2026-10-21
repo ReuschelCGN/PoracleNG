@@ -507,12 +507,7 @@ func v2HandleCreate[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, 
 	// a separate read), so a commit reports the truth even if the stored rule
 	// changed after a dry-run preview.
 	prev := buildRuleEnvelopes(deps, typ, human, diff.Replaced, in.IncludeDescriptions)
-	for i := range out.Body.Updated {
-		if i < len(prev) {
-			p := prev[i]
-			out.Body.Updated[i].Previous = &p
-		}
-	}
+	attachPrevious(out.Body.Updated, prev, "POST "+typ.Name)
 	out.Body.Unchanged = buildRuleEnvelopes(deps, typ, human, diff.AlreadyPresent, in.IncludeDescriptions)
 	return out, nil
 }
@@ -603,15 +598,27 @@ func v2PutOutput[Req any, T any](deps *TrackingDeps, typ v2TrackingType[Req, T],
 	out.Body.DryRun = in.DryRun
 	envs := buildRuleEnvelopes(deps, typ, human, []T{row}, in.IncludeDescriptions)
 	prev := buildRuleEnvelopes(deps, typ, human, []T{prior}, in.IncludeDescriptions)
-	for i, env := range envs {
-		u := v2UpdatedRuleEnvelope[Req]{v2RuleEnvelope: env}
-		if i < len(prev) {
-			p := prev[i]
-			u.Previous = &p
-		}
-		out.Body.Updated = append(out.Body.Updated, u)
+	out.Body.Updated = make([]v2UpdatedRuleEnvelope[Req], len(envs))
+	for i := range envs {
+		out.Body.Updated[i].v2RuleEnvelope = envs[i]
 	}
+	attachPrevious(out.Body.Updated, prev, "PUT "+typ.Name)
 	return out
+}
+
+// attachPrevious pairs each updated rule with the stored rule it replaced.
+// The two slices come from one diff and must be the same length; a mismatch
+// is a diff bug, so it is logged and the response goes out without previous
+// rather than pairing rules positionally with the wrong originals.
+func attachPrevious[Req any](updated []v2UpdatedRuleEnvelope[Req], prev []v2RuleEnvelope[Req], where string) {
+	if len(prev) != len(updated) {
+		log.Errorf("v2 tracking %s: %d updated rules but %d replaced rules; responding without previous", where, len(updated), len(prev))
+		return
+	}
+	for i := range updated {
+		p := prev[i]
+		updated[i].Previous = &p
+	}
 }
 
 // --- helpers --------------------------------------------------------------

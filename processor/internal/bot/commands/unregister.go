@@ -4,6 +4,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/humanlock"
 )
 
 // UnregisterCommand implements !unregister -- delete user registration and tracking.
@@ -13,6 +14,10 @@ type UnregisterCommand struct{}
 
 func (c *UnregisterCommand) Name() string      { return "cmd.unregister" }
 func (c *UnregisterCommand) Aliases() []string { return nil }
+
+// ExemptFromTargetLock: an admin !unregister deletes the humans it names, not
+// its own target, so Run locks each deleted human itself (spec §3.6).
+func (c *UnregisterCommand) ExemptFromTargetLock() {}
 
 func (c *UnregisterCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	tr := ctx.Tr()
@@ -50,11 +55,12 @@ func (c *UnregisterCommand) Run(ctx *bot.CommandContext, args []string) []bot.Re
 
 	var unregistered, unknown []string
 	for _, id := range targets {
-		if !humanRegistered(ctx, id) {
+		registered, err := deleteHumanLocked(ctx, id)
+		if !registered {
 			unknown = append(unknown, id)
 			continue
 		}
-		if err := ctx.Humans.Delete(id); err != nil {
+		if err != nil {
 			log.Errorf("unregister: delete %s: %v", id, err)
 			continue
 		}
@@ -75,4 +81,15 @@ func (c *UnregisterCommand) Run(ctx *bot.CommandContext, args []string) []bot.Re
 	}
 	// Admin unregistering others: show IDs
 	return adminTargetsReply(tr, "msg.unregister.success", unregistered, unknown)
+}
+
+// deleteHumanLocked deletes id (and its tracking) while holding id's write
+// lock. registered is false (and nothing is deleted) when id has no humans row.
+func deleteHumanLocked(ctx *bot.CommandContext, id string) (registered bool, err error) {
+	unlock := humanlock.Lock(id)
+	defer unlock()
+	if !humanRegistered(ctx, id) {
+		return false, nil
+	}
+	return true, ctx.Humans.Delete(id)
 }

@@ -10,7 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/pokemon/poracleng/processor/internal/config"
 	"github.com/pokemon/poracleng/processor/internal/humanlock"
+	"github.com/pokemon/poracleng/processor/internal/mute"
+	"github.com/pokemon/poracleng/processor/internal/store"
 )
 
 func TestHumanLockMiddleware_SerialisesSameHuman(t *testing.T) {
@@ -63,5 +66,43 @@ func TestHumanLockMiddleware_GetNotLocked(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("GET blocked on human lock")
+	}
+}
+
+// HumanLock reads the human id from gin's ":id" param. The huma routes are
+// declared as {id} and converted by humagin, so exercise the real huma
+// instance mounted on a group that carries the middleware, exactly as main.go
+// wires it.
+func TestHumanLockMiddleware_CoversRealHumaRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	apiGroup := r.Group("/api")
+	apiGroup.Use(HumanLock())
+	humaAPI := NewHumaAPI(r, apiGroup, "test")
+
+	humans := store.NewMockHumanStore()
+	humans.AddHuman(&store.Human{ID: "u1", Type: "discord:user", Name: "U1", Enabled: true, CurrentProfileNo: 1})
+	RegisterV2Mutes(humaAPI, &TrackingDeps{Humans: humans, Config: &config.Config{}, Mutes: mute.NewStore()})
+
+	unlock := humanlock.Lock("u1")
+	done := make(chan int, 1)
+	go func() {
+		w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes", `{"scope":"gym","value":"g1"}`)
+		done <- w.Code
+	}()
+	select {
+	case code := <-done:
+		unlock()
+		t.Fatalf("POST completed (%d) while u1's lock was held: middleware did not see the huma {id} param", code)
+	case <-time.After(150 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case code := <-done:
+		if code != http.StatusOK {
+			t.Fatalf("code %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("POST did not finish after unlock")
 	}
 }
