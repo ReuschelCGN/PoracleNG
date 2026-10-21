@@ -206,3 +206,20 @@ func TestUnmutedSummaryRows_OtherTableMuteIgnored(t *testing.T) {
 		t.Errorf("raid mute dropped a quest row: %v", got)
 	}
 }
+
+// A typed tracking mute must drop a MatchedUser carrying the same
+// (RuleTable, RuleUID) through filterMuted, and only that table.
+func TestFilterMutedTypedTrackingMute(t *testing.T) {
+	ms := mute.NewStore()
+	ms.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "raid", ScopeValue: "7", ExpiresAt: time.Now().Unix() + 600})
+	ps := &ProcessorService{muteStore: ms}
+
+	got := ps.filterMuted([]webhook.MatchedUser{{ID: "u1", Type: "discord:user", RuleUID: 7, RuleTable: "raid"}}, nil, mute.Event{})
+	if len(got) != 0 {
+		t.Fatalf("raid/7 should be dropped, got %+v", got)
+	}
+	got = ps.filterMuted([]webhook.MatchedUser{{ID: "u1", Type: "discord:user", RuleUID: 7, RuleTable: "pokemon"}}, nil, mute.Event{})
+	if len(got) != 1 {
+		t.Fatalf("pokemon/7 must not be dropped by a raid mute, got %+v", got)
+	}
+}

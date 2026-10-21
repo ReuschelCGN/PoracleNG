@@ -9,6 +9,7 @@ import (
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
 	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/mute"
 	"github.com/pokemon/poracleng/processor/internal/state"
@@ -33,11 +34,20 @@ func newV2MutesTestAPI(t *testing.T) (*gin.Engine, *mute.Store) {
 	cfg := &config.Config{}
 	fences := []geofence.Fence{{Name: "london", UserSelectable: true}}
 	mutes := mute.NewStore()
+	// u1 owns raid uid 1 and invasion uid 1; u2 owns raid uid 2.
+	raids := store.NewMockTrackingStore[db.RaidTrackingAPI](store.RaidGetUID, store.RaidSetUID).
+		WithIDScope(func(r *db.RaidTrackingAPI) string { return r.ID })
+	_, _ = raids.Insert(&db.RaidTrackingAPI{ID: "u1"})
+	_, _ = raids.Insert(&db.RaidTrackingAPI{ID: "u2"})
+	invasions := store.NewMockTrackingStore[db.InvasionTrackingAPI](store.InvasionGetUID, store.InvasionSetUID).
+		WithIDScope(func(r *db.InvasionTrackingAPI) string { return r.ID })
+	_, _ = invasions.Insert(&db.InvasionTrackingAPI{ID: "u1"})
 	deps := &TrackingDeps{
 		Humans:    humans,
 		Config:    cfg,
 		AreaLogic: bot.NewAreaLogic(fences, cfg),
 		Mutes:     mutes,
+		Tracking:  &store.TrackingStores{Raids: raids, Invasions: invasions},
 	}
 
 	RegisterV2Mutes(humaAPI, deps)
@@ -389,5 +399,103 @@ func TestV2Mutes_Create_CanonicalisesNumericValue(t *testing.T) {
 	}
 	if !mutes.Match("u1", mute.Event{PokemonID: 25}, time.Now().Unix()) {
 		t.Fatalf("store does not match pokemon 25 — value stored verbatim instead of canonicalised")
+	}
+}
+
+// --- typed tracking mutes (#323) ------------------------------------------------
+
+func TestV2Mutes_TrackingTyped(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes",
+		`{"scope":"tracking","tracking_type":"raid","value":"1"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	item := v2DecodeBody(t, w)["mute"].(map[string]any)
+	if item["tracking_type"] != "raid" {
+		t.Fatalf("tracking_type = %v, want raid", item["tracking_type"])
+	}
+	now := time.Now().Unix()
+	if !mutes.Match("u1", mute.Event{MatchedRuleUID: 1, MatchedRuleTable: "raid"}, now) {
+		t.Fatalf("typed mute does not match raid/1")
+	}
+	if mutes.Match("u1", mute.Event{MatchedRuleUID: 1, MatchedRuleTable: "pokemon"}, now) {
+		t.Fatalf("typed mute must not match another table")
+	}
+	w = v2DoReq(t, r, http.MethodGet, "/api/v2/humans/u1/mutes", "")
+	list := v2DecodeBody(t, w)["mutes"].([]any)
+	if len(list) != 1 || list[0].(map[string]any)["tracking_type"] != "raid" {
+		t.Fatalf("GET = %v, want one raid mute", list)
+	}
+}
+
+func TestV2Mutes_TrackingIncidentStoredAsInvasion(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes",
+		`{"scope":"tracking","tracking_type":"incident","value":"1"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := v2DecodeBody(t, w)["mute"].(map[string]any)["tracking_type"]; got != "invasion" {
+		t.Fatalf("tracking_type = %v, want invasion", got)
+	}
+	if e := mutes.List("u1"); len(e) != 1 || e[0].RuleTable != "invasion" {
+		t.Fatalf("stored %+v, want table invasion", e)
+	}
+}
+
+func TestV2Mutes_TrackingTypeValidation(t *testing.T) {
+	r, _ := newV2MutesTestAPI(t)
+	cases := []struct{ name, body string }{
+		{"missing tracking_type", `{"scope":"tracking","value":"1"}`},
+		{"tracking_type with gym", `{"scope":"gym","tracking_type":"raid","value":"g1"}`},
+		{"unknown tracking_type", `{"scope":"tracking","tracking_type":"bogus","value":"1"}`},
+		{"other user's uid", `{"scope":"tracking","tracking_type":"raid","value":"2"}`},
+		{"uid in another table", `{"scope":"tracking","tracking_type":"egg","value":"1"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/mutes", tc.body)
+			if w.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestV2Mutes_DeleteTrackingByType(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	now := time.Now().Unix()
+	mutes.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "raid", ScopeValue: "1", ExpiresAt: now + 600})
+	mutes.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeTracking, RuleTable: "pokemon", ScopeValue: "1", ExpiresAt: now + 600})
+
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/mutes?scope=tracking&tracking_type=pokemon&value=1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	deleted := v2DecodeBody(t, w)["deleted"].([]any)
+	if len(deleted) != 1 || deleted[0].(map[string]any)["tracking_type"] != "pokemon" {
+		t.Fatalf("deleted = %v, want the pokemon entry", deleted)
+	}
+	if e := mutes.List("u1"); len(e) != 1 || e[0].RuleTable != "raid" {
+		t.Fatalf("remaining %+v, want only raid", e)
+	}
+	// Missing type on a tracking delete is a 422.
+	w = v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/mutes?scope=tracking&value=1", "")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 without tracking_type, got %d", w.Code)
+	}
+}
+
+// DELETE uses the store's identity rule: area names are case-insensitive.
+func TestV2Mutes_DeleteAreaCaseInsensitive(t *testing.T) {
+	r, mutes := newV2MutesTestAPI(t)
+	mutes.Add(mute.Entry{HumanID: "u1", ScopeType: mute.ScopeArea, ScopeValue: "London", ExpiresAt: time.Now().Unix() + 600})
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/mutes?scope=area&value=london", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if n := len(mutes.List("u1")); n != 0 {
+		t.Fatalf("area mute survived delete")
 	}
 }

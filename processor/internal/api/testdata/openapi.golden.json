@@ -2807,6 +2807,23 @@
             ],
             "type": "string"
           },
+          "tracking_type": {
+            "description": "Required for scope=tracking (rule uids are per table), forbidden for other scopes. The uid must be one of the human's rules in that table (any profile). incident is stored as invasion.",
+            "enum": [
+              "pokemon",
+              "raid",
+              "egg",
+              "quest",
+              "invasion",
+              "incident",
+              "lure",
+              "nest",
+              "gym",
+              "fort",
+              "maxbattle"
+            ],
+            "type": "string"
+          },
           "value": {
             "description": "Scope identifier: gym/pokestop/station id, pokemon dex id or tracking-rule uid (numeric string), or area name (matched case-insensitively against loaded geofences).",
             "type": "string"
@@ -13880,6 +13897,26 @@
             ],
             "type": "string"
           },
+          "tracking_type": {
+            "description": "For scope=tracking: the rule table the uid belongs to (rule uids are per table; incident rules live in the invasion table and report as invasion). Null for every other scope.",
+            "enum": [
+              "pokemon",
+              "raid",
+              "egg",
+              "quest",
+              "invasion",
+              "incident",
+              "lure",
+              "nest",
+              "gym",
+              "fort",
+              "maxbattle"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "value": {
             "description": "Scope-specific identifier (gym/pokestop/station id, dex id or rule uid as a numeric string, canonical area name). Null for scope=everything.",
             "type": [
@@ -13891,6 +13928,7 @@
         "required": [
           "scope",
           "value",
+          "tracking_type",
           "expires_at",
           "remaining_secs"
         ],
@@ -24040,6 +24078,29 @@
             "name": "value",
             "schema": {
               "description": "Value of the mute to remove, as returned by the list endpoint. Required with scope, except scope=everything which takes none.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required with scope=tracking (identifies which table's rule uid), forbidden otherwise.",
+            "explode": false,
+            "in": "query",
+            "name": "tracking_type",
+            "schema": {
+              "description": "Required with scope=tracking (identifies which table's rule uid), forbidden otherwise.",
+              "enum": [
+                "pokemon",
+                "raid",
+                "egg",
+                "quest",
+                "invasion",
+                "incident",
+                "lure",
+                "nest",
+                "gym",
+                "fort",
+                "maxbattle"
+              ],
               "type": "string"
             }
           }

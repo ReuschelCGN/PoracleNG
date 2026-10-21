@@ -37,6 +37,7 @@ const (
 type v2MuteItem struct {
 	Scope         string  `json:"scope" enum:"gym,pokemon,area,pokestop,station,tracking,everything" doc:"What the mute suppresses: a specific gym/pokestop/station (by id), a pokemon species (by dex id), a geofence area (by name), one tracking rule (by uid), or everything."`
 	Value         *string `json:"value" doc:"Scope-specific identifier (gym/pokestop/station id, dex id or rule uid as a numeric string, canonical area name). Null for scope=everything."`
+	TrackingType  *string `json:"tracking_type" enum:"pokemon,raid,egg,quest,invasion,incident,lure,nest,gym,fort,maxbattle" doc:"For scope=tracking: the rule table the uid belongs to (rule uids are per table; incident rules live in the invasion table and report as invasion). Null for every other scope."`
 	ExpiresAt     int64   `json:"expires_at" doc:"Unix seconds when the mute lapses."`
 	RemainingSecs int64   `json:"remaining_secs" doc:"Seconds until expiry at response time (UI convenience, derived from expires_at)."`
 }
@@ -52,9 +53,10 @@ type v2MutesOutput struct {
 type v2CreateMuteInput struct {
 	ID   string `path:"id" doc:"Human id (the owning user)"`
 	Body struct {
-		Scope       string `json:"scope" enum:"gym,pokemon,area,pokestop,station,tracking,everything" doc:"Mute scope. value is required for every scope except 'everything', where it must be absent."`
-		Value       string `json:"value,omitempty" required:"false" doc:"Scope identifier: gym/pokestop/station id, pokemon dex id or tracking-rule uid (numeric string), or area name (matched case-insensitively against loaded geofences)."`
-		DurationMin int    `json:"duration_min,omitempty" required:"false" minimum:"1" maximum:"10080" doc:"Mute length in minutes. Defaults to 60; maximum one week (10080)."`
+		Scope        string  `json:"scope" enum:"gym,pokemon,area,pokestop,station,tracking,everything" doc:"Mute scope. value is required for every scope except 'everything', where it must be absent."`
+		Value        string  `json:"value,omitempty" required:"false" doc:"Scope identifier: gym/pokestop/station id, pokemon dex id or tracking-rule uid (numeric string), or area name (matched case-insensitively against loaded geofences)."`
+		TrackingType *string `json:"tracking_type,omitempty" required:"false" enum:"pokemon,raid,egg,quest,invasion,incident,lure,nest,gym,fort,maxbattle" doc:"Required for scope=tracking (rule uids are per table), forbidden for other scopes. The uid must be one of the human's rules in that table (any profile). incident is stored as invasion."`
+		DurationMin  int     `json:"duration_min,omitempty" required:"false" minimum:"1" maximum:"10080" doc:"Mute length in minutes. Defaults to 60; maximum one week (10080)."`
 	}
 }
 
@@ -69,9 +71,10 @@ type v2CreateMuteOutput struct {
 // v2DeleteMutesInput addresses one entry (scope+value), one everything-mute
 // (scope only), or — with no params — every mute the human has.
 type v2DeleteMutesInput struct {
-	ID    string `path:"id" doc:"Human id (the owning user)"`
-	Scope string `query:"scope" enum:"gym,pokemon,area,pokestop,station,tracking,everything" required:"false" doc:"Scope of the mute to remove. Omit (together with value) to remove all mutes."`
-	Value string `query:"value" required:"false" doc:"Value of the mute to remove, as returned by the list endpoint. Required with scope, except scope=everything which takes none."`
+	ID           string `path:"id" doc:"Human id (the owning user)"`
+	Scope        string `query:"scope" enum:"gym,pokemon,area,pokestop,station,tracking,everything" required:"false" doc:"Scope of the mute to remove. Omit (together with value) to remove all mutes."`
+	Value        string `query:"value" required:"false" doc:"Value of the mute to remove, as returned by the list endpoint. Required with scope, except scope=everything which takes none."`
+	TrackingType string `query:"tracking_type" enum:"pokemon,raid,egg,quest,invasion,incident,lure,nest,gym,fort,maxbattle" required:"false" doc:"Required with scope=tracking (identifies which table's rule uid), forbidden otherwise."`
 }
 
 // v2DeletedMutesOutput mirrors v2 tracking's delete shape: {deleted:[…]}.
@@ -88,6 +91,10 @@ func muteEntryToItem(e mute.Entry, now int64) v2MuteItem {
 	if e.ScopeType != mute.ScopeEverything {
 		v := e.ScopeValue
 		item.Value = &v
+	}
+	if e.ScopeType == mute.ScopeTracking && e.RuleTable != "" {
+		t := e.RuleTable
+		item.TrackingType = &t
 	}
 	if rem := e.ExpiresAt - now; rem > 0 {
 		item.RemainingSecs = rem
@@ -107,6 +114,49 @@ func muteResolveHuman(deps *TrackingDeps, id string) (*store.Human, error) {
 		return nil, huma.Error404NotFound("human not found")
 	}
 	return human, nil
+}
+
+// muteRuleTable validates the tracking_type/scope pairing and returns the
+// canonical rule table ("" for non-tracking scopes). Tracking requires a
+// known type; every other scope forbids one.
+func muteRuleTable(scope, trackingType string) (string, error) {
+	if scope != mute.ScopeTracking {
+		if trackingType != "" {
+			return "", huma.Error422UnprocessableEntity("tracking_type is only valid with scope 'tracking'")
+		}
+		return "", nil
+	}
+	if trackingType == "" {
+		return "", huma.Error422UnprocessableEntity("tracking_type is required for scope 'tracking'")
+	}
+	table, ok := mute.CanonicalRuleTable(trackingType)
+	if !ok {
+		return "", huma.Error422UnprocessableEntity("unknown tracking_type: " + trackingType)
+	}
+	return table, nil
+}
+
+// muteOwnsRule reports whether the human has a rule with this uid in the
+// table. Profile-agnostic: mutes are not per profile, so every profile the
+// human has (plus the current one) is searched.
+func muteOwnsRule(deps *TrackingDeps, human *store.Human, table string, uid int64) bool {
+	if deps.Tracking == nil {
+		return false
+	}
+	profiles := map[int]bool{human.CurrentProfileNo: true}
+	if ps, err := deps.Humans.GetProfiles(human.ID); err == nil {
+		for _, p := range ps {
+			profiles[p.ProfileNo] = true
+		}
+	}
+	for p := range profiles {
+		for _, t := range deps.Tracking.TablesWithUID(human.ID, p, uid) {
+			if t == table {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // validateMuteValue applies the per-scope value rules shared with the bot
@@ -201,9 +251,23 @@ func registerV2MutesCreate(api huma.API, deps *TrackingDeps, tag []string, sec [
 		if err != nil {
 			return nil, err
 		}
+		trackingType := ""
+		if in.Body.TrackingType != nil {
+			trackingType = *in.Body.TrackingType
+		}
+		table, err := muteRuleTable(in.Body.Scope, trackingType)
+		if err != nil {
+			return nil, err
+		}
 		value, err := validateMuteValue(deps, human, in.Body.Scope, in.Body.Value)
 		if err != nil {
 			return nil, err
+		}
+		if table != "" {
+			uid, _ := strconv.ParseInt(value, 10, 64)
+			if !muteOwnsRule(deps, human, table, uid) {
+				return nil, huma.Error422UnprocessableEntity("no " + trackingType + " rule " + value + " for this human")
+			}
 		}
 		duration := in.Body.DurationMin
 		if duration == 0 {
@@ -213,6 +277,7 @@ func registerV2MutesCreate(api huma.API, deps *TrackingDeps, tag []string, sec [
 		entry := mute.Entry{
 			HumanID:    in.ID,
 			ScopeType:  in.Body.Scope,
+			RuleTable:  table,
 			ScopeValue: value,
 			ExpiresAt:  now + int64(duration)*60,
 		}
@@ -236,6 +301,9 @@ func registerV2MutesDelete(api huma.API, deps *TrackingDeps, tag []string, sec [
 		}
 		now := time.Now().Unix()
 		out := &v2DeletedMutesOutput{}
+		if in.Scope == "" && in.TrackingType != "" {
+			return nil, huma.Error422UnprocessableEntity("tracking_type requires scope")
+		}
 		out.Body.Deleted = make([]v2MuteItem, 0)
 
 		// Delete-all: no scope, no value.
@@ -256,18 +324,18 @@ func registerV2MutesDelete(api huma.API, deps *TrackingDeps, tag []string, sec [
 			return nil, huma.Error422UnprocessableEntity("value is required for scope '" + in.Scope + "'")
 		}
 
-		// Snapshot the entry first so the response can carry it.
-		var found *mute.Entry
-		for _, e := range deps.Mutes.List(in.ID) {
-			if e.ScopeType == in.Scope && e.ScopeValue == in.Value {
-				cp := e
-				found = &cp
-				break
-			}
+		table, err := muteRuleTable(in.Scope, in.TrackingType)
+		if err != nil {
+			return nil, err
 		}
-		if found == nil || !deps.Mutes.Remove(in.ID, in.Scope, found.RuleTable, in.Value) {
+
+		// Snapshot the entry first so the response can carry it. Find uses the
+		// store's own identity rule (case-insensitive areas, table for tracking).
+		e, ok := deps.Mutes.Find(in.ID, in.Scope, table, in.Value)
+		if !ok || !deps.Mutes.Remove(in.ID, in.Scope, table, e.ScopeValue) {
 			return nil, huma.Error404NotFound("mute not found")
 		}
+		found := &e
 		out.Body.Deleted = append(out.Body.Deleted, muteEntryToItem(*found, now))
 		return out, nil
 	})

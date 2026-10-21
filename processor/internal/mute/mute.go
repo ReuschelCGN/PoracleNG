@@ -144,6 +144,20 @@ func (s *Store) Remove(humanID, scopeType, ruleTable, scopeValue string) bool {
 	return false
 }
 
+// Find returns a copy of the entry Remove would delete for the same
+// arguments (same identity rule: scope, table and, case-insensitively for
+// areas, value), so callers can report what is removed.
+func (s *Store) Find(humanID, scopeType, ruleTable, scopeValue string) (Entry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, e := range s.entries[humanID] {
+		if e.ScopeType == scopeType && e.RuleTable == ruleTable && sameScopeValue(scopeType, e.ScopeValue, scopeValue) {
+			return e, true
+		}
+	}
+	return Entry{}, false
+}
+
 // sameScopeValue compares two scope values for identity. Area names are
 // case-insensitive (as in matchScope): !mute area stores the display-cased
 // name while !unmute area arrives lowercased from the tokenizer. Every
