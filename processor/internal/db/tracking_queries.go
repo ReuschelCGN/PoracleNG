@@ -7,6 +7,8 @@ import (
 
 	"github.com/guregu/null/v6"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 )
 
 // marshalOverrideAreas encodes []string to a JSON string for DB storage.
@@ -43,6 +45,25 @@ func parseOverrideAreas(raw string) []string {
 	}
 	for i, a := range areas {
 		areas[i] = strings.ToLower(strings.ReplaceAll(a, "_", " "))
+	}
+	return areas
+}
+
+// loadOverrideKeys decodes an override_areas column for the matcher state
+// loaders and keys every entry with geofence.NormalizeAreaKey, the form
+// areaOverlap compares against (Fence.NormalizedName). The column stores the
+// lowercase fence name (underscores intact) for v2/bot writes and spaced names
+// for v1 and legacy rows; keying here makes both spellings match.
+func loadOverrideKeys(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var areas []string
+	if err := json.Unmarshal([]byte(raw), &areas); err != nil {
+		return nil
+	}
+	for i, a := range areas {
+		areas[i] = geofence.NormalizeAreaKey(a)
 	}
 	return areas
 }
@@ -112,7 +133,7 @@ type LureTrackingAPI struct {
 	// removed explicitly. Same semantics as template/distance.
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectLuresByIDProfile returns all lure trackings for a given human and profile.
@@ -165,7 +186,7 @@ type FortTrackingAPI struct {
 	ChangeTypes           string   `db:"change_types"            json:"change_types"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                     json:"override_areas"          diff:""`
+	OverrideAreas         []string `db:"-"                     json:"override_areas"          diff:"" areakey:"true"`
 }
 
 // SelectFortsByIDProfile returns all fort trackings for a given human and profile.
@@ -221,7 +242,7 @@ type InvasionTrackingAPI struct {
 	GruntType             string   `db:"grunt_type"              json:"grunt_type"             diff:"match"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectInvasionsByIDProfile returns all invasion trackings for a given human and profile.
@@ -275,7 +296,7 @@ type NestTrackingAPI struct {
 	Form                  int      `db:"form"                    json:"form"                   diff:"match"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectNestsByIDProfile returns all nest trackings for a given human and profile.
@@ -332,7 +353,7 @@ type QuestTrackingAPI struct {
 	Amount                int      `db:"amount"                  json:"amount"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectQuestsByIDProfile returns all quest trackings for a given human and profile.
@@ -415,7 +436,7 @@ type MonsterTrackingAPI struct {
 	PVPRankingEvolution   int      `db:"pvp_ranking_evolution"   json:"pvp_ranking_evolution"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // UnmarshalJSON pre-seeds Costume to the 9000 wildcard ("any") before decoding,
@@ -545,7 +566,7 @@ type RaidTrackingAPI struct {
 	RSVPChanges           int         `db:"rsvp_changes"            json:"rsvp_changes"`
 	OverrideLocationLabel string      `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string      `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string    `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string    `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectRaidsByIDProfile returns all raid trackings for a given human and profile.
@@ -604,7 +625,7 @@ type EggTrackingAPI struct {
 	RSVPChanges           int         `db:"rsvp_changes"            json:"rsvp_changes"`
 	OverrideLocationLabel string      `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string      `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string    `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string    `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectEggsByIDProfile returns all egg trackings for a given human and profile.
@@ -661,7 +682,7 @@ type GymTrackingAPI struct {
 	GymID                 *string  `db:"gym_id"                  json:"gym_id"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectGymsByIDProfile returns all gym trackings for a given human and profile.
@@ -724,7 +745,7 @@ type MaxbattleTrackingAPI struct {
 	StationID             *string  `db:"station_id"              json:"station_id"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"         json:"-"                      diff:"-"`
-	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:""`
+	OverrideAreas         []string `db:"-"                      json:"override_areas"         diff:"" areakey:"true"`
 }
 
 // SelectMaxbattlesByIDProfile returns all maxbattle trackings for a given human and profile.
