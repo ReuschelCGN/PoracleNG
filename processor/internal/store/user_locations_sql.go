@@ -4,10 +4,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 )
 
 const mysqlErrDuplicate = 1062
@@ -190,4 +193,144 @@ func dropDeniedAreas(areas []string, denied map[string]bool) []string {
 		}
 	}
 	return kept
+}
+
+// areaNameMatches compares a stored area name with a requested one by
+// geofence.NormalizeAreaKey, so case and underscore/space spellings are
+// interchangeable (humans.area keeps fence spelling, legacy override_areas
+// may hold spaced forms).
+func areaNameMatches(stored, requested string) bool {
+	return geofence.NormalizeAreaKey(stored) == geofence.NormalizeAreaKey(requested)
+}
+
+// removeAreaName returns areas without entries matching name; kept entries are
+// returned exactly as stored. The result is never nil.
+func removeAreaName(areas []string, name string) (kept []string, changed bool) {
+	kept = make([]string, 0, len(areas))
+	for _, a := range areas {
+		if !areaNameMatches(a, name) {
+			kept = append(kept, a)
+		}
+	}
+	return kept, len(kept) != len(areas)
+}
+
+// editAreaList applies an EditOverrideAreas edit to one list. Empty to removes
+// from (other entries untouched); otherwise matching entries become to and
+// duplicates by key collapse, keeping the first.
+func editAreaList(areas []string, from, to string) (out []string, changed bool) {
+	if to == "" {
+		return removeAreaName(areas, from)
+	}
+	out = make([]string, 0, len(areas))
+	seen := map[string]bool{}
+	for _, a := range areas {
+		if areaNameMatches(a, from) {
+			a = to
+		}
+		k := geofence.NormalizeAreaKey(a)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, a)
+	}
+	return out, !slices.Equal(out, areas)
+}
+
+// RemoveAreaFromProfiles implements HumanStore.
+func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, err error) {
+	if len(profileNos) == 0 {
+		return nil, nil
+	}
+	q, args, err := sqlx.In(`SELECT profile_no, area FROM profiles WHERE id = ? AND profile_no IN (?) ORDER BY profile_no`, id, profileNos)
+	if err != nil {
+		return nil, fmt.Errorf("remove area %s: build query: %w", id, err)
+	}
+	var rows []struct {
+		ProfileNo int            `db:"profile_no"`
+		Area      sql.NullString `db:"area"`
+	}
+	if err = s.db.Select(&rows, s.db.Rebind(q), args...); err != nil {
+		return nil, fmt.Errorf("remove area %s: select profiles: %w", id, err)
+	}
+	for _, r := range rows {
+		kept, changed := removeAreaName(unmarshalStringSlice(r.Area.String), name)
+		if !changed {
+			continue
+		}
+		if !dryRun {
+			if _, err = s.db.Exec(`UPDATE profiles SET area = ? WHERE id = ? AND profile_no = ?`,
+				marshalStringSlice(kept), id, r.ProfileNo); err != nil {
+				return nil, fmt.Errorf("remove area %s/%d: %w", id, r.ProfileNo, err)
+			}
+		}
+		removedFrom = append(removedFrom, r.ProfileNo)
+	}
+
+	var cur struct {
+		ProfileNo int            `db:"current_profile_no"`
+		Area      sql.NullString `db:"area"`
+	}
+	if err = s.db.Get(&cur, `SELECT current_profile_no, area FROM humans WHERE id = ?`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return removedFrom, nil
+		}
+		return nil, fmt.Errorf("remove area %s: select human: %w", id, err)
+	}
+	if slices.Contains(profileNos, cur.ProfileNo) {
+		if kept, changed := removeAreaName(unmarshalStringSlice(cur.Area.String), name); changed && !dryRun {
+			if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), id); err != nil {
+				return nil, fmt.Errorf("remove area %s: update human: %w", id, err)
+			}
+		}
+	}
+	return removedFrom, nil
+}
+
+// EditOverrideAreas implements HumanStore.
+func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, error) {
+	broadened := map[string][]int64{}
+	if len(profileNos) == 0 {
+		return broadened, nil
+	}
+	type row struct {
+		UID           int64  `db:"uid"`
+		OverrideAreas string `db:"override_areas"`
+	}
+	for _, table := range trackingTablesWithOverrideAreas {
+		q, args, err := sqlx.In(fmt.Sprintf(
+			"SELECT uid, COALESCE(override_areas, '') AS override_areas FROM `%s` WHERE id = ? AND profile_no IN (?) AND override_areas IS NOT NULL AND override_areas != ''",
+			table), id, profileNos)
+		if err != nil {
+			return nil, fmt.Errorf("edit override areas %s: build query: %w", table, err)
+		}
+		var rows []row
+		if err := s.db.Select(&rows, s.db.Rebind(q), args...); err != nil {
+			return nil, fmt.Errorf("edit override areas %s: %w", table, err)
+		}
+		for _, r := range rows {
+			areas := unmarshalStringSlice(r.OverrideAreas)
+			if areas == nil {
+				continue // malformed JSON: skip rather than corrupt the row
+			}
+			out, changed := editAreaList(areas, from, to)
+			if !changed {
+				continue
+			}
+			var newVal any
+			if len(out) > 0 {
+				newVal = nullStringSlice(out)
+			} else {
+				broadened[trackingTypePathMap[table]] = append(broadened[trackingTypePathMap[table]], r.UID)
+			}
+			if dryRun {
+				continue
+			}
+			if _, err := s.db.Exec(fmt.Sprintf("UPDATE `%s` SET override_areas = ? WHERE uid = ?", table), newVal, r.UID); err != nil {
+				return nil, fmt.Errorf("edit override areas %s uid %d: %w", table, r.UID, err)
+			}
+		}
+	}
+	return broadened, nil
 }

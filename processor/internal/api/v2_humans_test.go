@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/pokemon/poracleng/processor/internal/config"
+	"github.com/pokemon/poracleng/processor/internal/db"
 	"github.com/pokemon/poracleng/processor/internal/geofence"
 	"github.com/pokemon/poracleng/processor/internal/i18n"
 	"github.com/pokemon/poracleng/processor/internal/state"
@@ -65,6 +67,15 @@ func humanSquareFence(name string, lat, lon, half float64) geofence.Fence {
 // pointer to a reload counter (incremented by ReloadFunc).
 func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.MockHumanStore, *int32) {
 	t.Helper()
+	r, humans, reloads, _, _ := newV2HumansTestAPIRules(t, cfg)
+	return r, humans, reloads
+}
+
+// newV2HumansTestAPIRules is newV2HumansTestAPI plus pokemon and raid tracking
+// mocks wired both into deps.Tracking and into the human mock's
+// OverrideTables, so EditOverrideAreas acts on real rows.
+func newV2HumansTestAPIRules(t *testing.T, cfg *config.Config) (*gin.Engine, *store.MockHumanStore, *int32, *store.MockTrackingStore[db.MonsterTrackingAPI], *store.MockTrackingStore[db.RaidTrackingAPI]) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	humaAPI := NewHumaAPI(r, r.Group("/api"), "test")
@@ -100,10 +111,26 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 		bundle.AddTranslator(i18n.NewTranslator(code, map[string]string{"x": "y"}))
 	}
 
+	mons := store.NewMockTrackingStore[db.MonsterTrackingAPI](store.MonsterGetUID, store.MonsterSetUID).
+		WithIDScope(func(m *db.MonsterTrackingAPI) string { return m.ID }).
+		WithProfileScope(func(m *db.MonsterTrackingAPI) int { return m.ProfileNo })
+	raids := store.NewMockTrackingStore[db.RaidTrackingAPI](store.RaidGetUID, store.RaidSetUID).
+		WithIDScope(func(m *db.RaidTrackingAPI) string { return m.ID }).
+		WithProfileScope(func(m *db.RaidTrackingAPI) int { return m.ProfileNo })
+	humans.OverrideTables = map[string]store.OverrideTable{
+		"monsters": store.NewMockOverrideTable(mons,
+			func(m *db.MonsterTrackingAPI) []string { return m.OverrideAreas },
+			func(m *db.MonsterTrackingAPI, a []string) { m.OverrideAreas = a }),
+		"raid": store.NewMockOverrideTable(raids,
+			func(m *db.RaidTrackingAPI) []string { return m.OverrideAreas },
+			func(m *db.RaidTrackingAPI, a []string) { m.OverrideAreas = a }),
+	}
+
 	var reloads int32
 	deps := &TrackingDeps{
 		Translations: bundle,
 		Humans:       humans,
+		Tracking:     &store.TrackingStores{Monsters: mons, Raids: raids},
 		StateMgr:     mgr,
 		Config:       cfg,
 		ReloadFunc: func() {
@@ -112,7 +139,7 @@ func newV2HumansTestAPI(t *testing.T, cfg *config.Config) (*gin.Engine, *store.M
 	}
 
 	RegisterV2Humans(humaAPI, deps)
-	return r, humans, &reloads
+	return r, humans, &reloads, mons, raids
 }
 
 // --- create -----------------------------------------------------------------
@@ -1240,5 +1267,177 @@ func TestV2Humans_Create_CanonicalAreas(t *testing.T) {
 	}
 	if !slices.Equal(stored.AreaRestriction, []string{"gent_centrum"}) {
 		t.Fatalf("area_restriction = %v, want [gent_centrum]", stored.AreaRestriction)
+	}
+}
+
+// --- DELETE /v2/humans/{id}/areas (#252, #253) ------------------------------
+
+type v2RemoveAreaResult struct {
+	Name        string             `json:"name"`
+	RemovedFrom []int              `json:"removed_from"`
+	Broadened   map[string][]int64 `json:"broadened"`
+	DryRun      bool               `json:"dry_run"`
+}
+
+func removeArea(t *testing.T, r *gin.Engine, query string) (int, v2RemoveAreaResult) {
+	t.Helper()
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/u1/areas?"+query, "")
+	var got v2RemoveAreaResult
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v; raw: %s", err, w.Body.String())
+		}
+		if !json.Valid(w.Body.Bytes()) || !bytes.Contains(w.Body.Bytes(), []byte(`"broadened":{`)) || !bytes.Contains(w.Body.Bytes(), []byte(`"removed_from":[`)) {
+			t.Errorf("removed_from/broadened must never be null: %s", w.Body.String())
+		}
+	}
+	return w.Code, got
+}
+
+// #253: drop one fence from every profile, leaving each profile's other
+// areas intact — what ?all_profiles= on POST cannot do (#252).
+func TestV2Humans_RemoveArea_AllProfiles(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"alpha", "private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha", "private"}})
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 2, Area: []string{"beta", "private"}})
+
+	code, got := removeArea(t, r, "name=private&all_profiles=true")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1, 2}) {
+		t.Errorf("removed_from = %v, want [1 2]", got.RemovedFrom)
+	}
+	ps, _ := humans.GetProfiles("u1")
+	for _, p := range ps {
+		if slices.Contains(p.Area, "private") || len(p.Area) != 1 {
+			t.Errorf("profile %d = %v, want one surviving area", p.ProfileNo, p.Area)
+		}
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a state reload")
+	}
+}
+
+// No permission check: removing can't widen alerts, and the fence is often
+// already gone from the geofence feed.
+func TestV2Humans_RemoveArea_UnknownFenceStillRemoved(t *testing.T) {
+	r, humans, _ := newV2HumansTestAPI(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"deleted_fence"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"deleted_fence"}})
+
+	code, got := removeArea(t, r, "name=deleted_fence")
+	if code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Fatalf("code=%d removed_from=%v, want 200 [1]", code, got.RemovedFrom)
+	}
+}
+
+func TestV2Humans_RemoveArea_NotHeldIsIdempotent(t *testing.T) {
+	r, humans, reloads := newV2HumansTestAPI(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	code, got := removeArea(t, r, "name=beta")
+	if code != http.StatusOK || len(got.RemovedFrom) != 0 || got.RemovedFrom == nil {
+		t.Fatalf("code=%d removed_from=%#v, want 200 and an empty (non-null) list", code, got.RemovedFrom)
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("nothing changed, so no reload expected")
+	}
+}
+
+func TestV2Humans_RemoveArea_Validation(t *testing.T) {
+	r, _, _ := newV2HumansTestAPI(t, nil)
+	if c, _ := removeArea(t, r, "name=a&profile=2&all_profiles=true"); c != http.StatusUnprocessableEntity {
+		t.Errorf("profile+all_profiles: got %d, want 422", c)
+	}
+	if c, _ := removeArea(t, r, ""); c != http.StatusUnprocessableEntity {
+		t.Errorf("missing name: got %d, want 422", c)
+	}
+	w := v2DoReq(t, r, http.MethodDelete, "/api/v2/humans/nobody/areas?name=a", "")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("unknown human: got %d, want 404", w.Code)
+	}
+}
+
+func seedOverrideRules(mons *store.MockTrackingStore[db.MonsterTrackingAPI], raids *store.MockTrackingStore[db.RaidTrackingAPI]) {
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+	_, _ = raids.Insert(&db.RaidTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
+}
+
+func TestV2Humans_RemoveArea_StripsOverridesAndReportsBroadened(t *testing.T) {
+	r, humans, reloads, mons, raids := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	seedOverrideRules(mons, raids)
+
+	code, got := removeArea(t, r, "name=private")
+	if code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if len(got.Broadened) != 2 || !slices.Equal(got.Broadened["pokemon"], []int64{1}) || !slices.Equal(got.Broadened["raid"], []int64{1}) {
+		t.Errorf("broadened = %v, want pokemon:[1] raid:[1]", got.Broadened)
+	}
+	rows := mons.AllRows()
+	if rows[0].OverrideAreas != nil {
+		t.Errorf("rule 1 override = %v, want nil", rows[0].OverrideAreas)
+	}
+	if !slices.Equal(rows[1].OverrideAreas, []string{"alpha"}) {
+		t.Errorf("rule 2 override = %v, want [alpha]", rows[1].OverrideAreas)
+	}
+	if got := raids.AllRows()[0].OverrideAreas; got != nil {
+		t.Errorf("raid override = %v, want nil", got)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("expected a reload")
+	}
+}
+
+func TestV2Humans_RemoveArea_DryRunWritesNothing(t *testing.T) {
+	r, humans, reloads, mons, raids := newV2HumansTestAPIRules(t, nil)
+	h, _ := humans.Get("u1")
+	h.Area = []string{"private"}
+	humans.AddHuman(h)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	seedOverrideRules(mons, raids)
+
+	code, got := removeArea(t, r, "name=private&dry_run=true")
+	if code != http.StatusOK || !got.DryRun {
+		t.Fatalf("code=%d dry_run=%v", code, got.DryRun)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1}) || !slices.Equal(got.Broadened["pokemon"], []int64{1}) {
+		t.Errorf("dry run result = %+v", got)
+	}
+	if ps, _ := humans.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"private"}) {
+		t.Errorf("profile written: %v", ps[0].Area)
+	}
+	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"private"}) {
+		t.Errorf("humans.area written: %v", hh.Area)
+	}
+	if !slices.Equal(mons.AllRows()[1].OverrideAreas, []string{"private", "alpha"}) {
+		t.Error("override written")
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Error("dry run must not reload")
+	}
+}
+
+func TestV2Humans_RemoveArea_SpellingVariants(t *testing.T) {
+	for _, q := range []string{"Private", "PRIVATE", "private"} {
+		r, humans, _ := newV2HumansTestAPI(t, nil)
+		humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"private", "alpha"}})
+		if code, got := removeArea(t, r, "name="+q); code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+			t.Errorf("%s: code=%d removed_from=%v", q, code, got.RemovedFrom)
+		}
+	}
+	for _, q := range []string{"Gent_Centrum", "gent%20centrum", "GENT+CENTRUM"} {
+		r, humans, _ := newV2HumansTestAPI(t, nil)
+		humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"gent_centrum", "alpha"}})
+		if code, got := removeArea(t, r, "name="+q); code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+			t.Errorf("%s: code=%d removed_from=%v", q, code, got.RemovedFrom)
+		}
 	}
 }

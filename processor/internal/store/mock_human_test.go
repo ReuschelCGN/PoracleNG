@@ -266,3 +266,77 @@ func TestMockHumanStore_StripUserAreas_NoHuman(t *testing.T) {
 		t.Errorf("profiles = %+v, want unchanged", ps)
 	}
 }
+
+func TestMockHumanStore_RemoveAreaFromProfiles(t *testing.T) {
+	m := NewMockHumanStore()
+	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha", "gent_centrum"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha", "gent_centrum"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 2, Area: []string{"gent_centrum", "beta"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 3, Area: []string{"beta"}})
+
+	// Different spelling of the same fence.
+	got, err := m.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []int{1, 2}) {
+		t.Errorf("removedFrom = %v, want [1 2]", got)
+	}
+	h, _ := m.Get("u1")
+	if !slices.Equal(h.Area, []string{"alpha"}) {
+		t.Errorf("humans.area = %v, want [alpha]", h.Area)
+	}
+	ps, _ := m.GetProfiles("u1")
+	want := map[int][]string{1: {"alpha"}, 2: {"beta"}, 3: {"beta"}}
+	for _, p := range ps {
+		if !slices.Equal(p.Area, want[p.ProfileNo]) {
+			t.Errorf("profile %d = %v, want %v", p.ProfileNo, p.Area, want[p.ProfileNo])
+		}
+	}
+}
+
+// Targeting a non-current profile leaves the live humans.area alone.
+func TestMockHumanStore_RemoveAreaFromProfiles_InactiveLeavesLive(t *testing.T) {
+	m := NewMockHumanStore()
+	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 2, Area: []string{"alpha"}})
+	if _, err := m.RemoveAreaFromProfiles("u1", "alpha", []int{2}, false); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := m.Get("u1"); !slices.Equal(h.Area, []string{"alpha"}) {
+		t.Errorf("live humans.area changed: %v", h.Area)
+	}
+}
+
+func TestMockHumanStore_RemoveAreaFromProfiles_DryRun(t *testing.T) {
+	m := NewMockHumanStore()
+	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	got, _ := m.RemoveAreaFromProfiles("u1", "alpha", []int{1}, true)
+	if !slices.Equal(got, []int{1}) {
+		t.Errorf("dry run removedFrom = %v, want [1]", got)
+	}
+	if h, _ := m.Get("u1"); !slices.Equal(h.Area, []string{"alpha"}) {
+		t.Errorf("dry run wrote humans.area: %v", h.Area)
+	}
+	if ps, _ := m.GetProfiles("u1"); !slices.Equal(ps[0].Area, []string{"alpha"}) {
+		t.Errorf("dry run wrote profile: %v", ps[0].Area)
+	}
+}
+
+func TestEditAreaList(t *testing.T) {
+	// Removal keeps unrelated legacy spellings exactly as stored.
+	out, changed := editAreaList([]string{"Gent Centrum", "other_one", "x"}, "gent_centrum", "")
+	if !changed || !slices.Equal(out, []string{"other_one", "x"}) {
+		t.Errorf("remove: %v %v", out, changed)
+	}
+	// Rename collapses duplicates by key.
+	out, changed = editAreaList([]string{"a b", "c", "a_b"}, "a_b", "a_b2")
+	if !changed || !slices.Equal(out, []string{"a_b2", "c"}) {
+		t.Errorf("rename: %v %v", out, changed)
+	}
+	if _, changed = editAreaList([]string{"c"}, "zzz", ""); changed {
+		t.Error("no match must be unchanged")
+	}
+}

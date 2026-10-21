@@ -26,6 +26,10 @@ type MockHumanStore struct {
 	StripUserAreasErr     error
 	StripOverrideAreasErr error
 
+	// OverrideTables are the tracking mocks EditOverrideAreas acts on, keyed
+	// by SQL table name (see trackingTablesWithOverrideAreas).
+	OverrideTables map[string]OverrideTable
+
 	Locations         map[string][]UserLocation
 	LocationRefs      map[string][]ReferencingRule // keyed by id|lowercased-label
 	StrippedAreaCalls map[string]map[string]bool   // humanID → denied set, for test assertions
@@ -593,4 +597,50 @@ func (m *MockHumanStore) StripUserAreas(humanID string, denied map[string]bool) 
 		ps[i].Area = prune(ps[i].Area)
 	}
 	return removed, nil
+}
+
+// RemoveAreaFromProfiles mirrors SQLHumanStore.RemoveAreaFromProfiles.
+func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) ([]int, error) {
+	m.record("RemoveAreaFromProfiles")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var removedFrom []int
+	ps := m.profiles[id]
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
+	for i := range ps {
+		if !slices.Contains(profileNos, ps[i].ProfileNo) {
+			continue
+		}
+		kept, changed := removeAreaName(ps[i].Area, name)
+		if !changed {
+			continue
+		}
+		if !dryRun {
+			ps[i].Area = kept
+		}
+		removedFrom = append(removedFrom, ps[i].ProfileNo)
+	}
+	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
+		if kept, changed := removeAreaName(h.Area, name); changed && !dryRun {
+			h.Area = kept
+		}
+	}
+	return removedFrom, nil
+}
+
+// EditOverrideAreas mirrors SQLHumanStore.EditOverrideAreas over the tracking
+// mocks registered in OverrideTables.
+func (m *MockHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, error) {
+	m.record("EditOverrideAreas")
+	broadened := map[string][]int64{}
+	for _, table := range trackingTablesWithOverrideAreas {
+		t, ok := m.OverrideTables[table]
+		if !ok {
+			continue
+		}
+		if emptied := t.editOverrides(id, profileNos, from, to, dryRun); len(emptied) > 0 {
+			broadened[trackingTypePathMap[table]] = emptied
+		}
+	}
+	return broadened, nil
 }

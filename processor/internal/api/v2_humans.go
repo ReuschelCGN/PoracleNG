@@ -585,7 +585,7 @@ type v2SetAreasInput struct {
 	// from EVERY profile — what a client does when a user deletes a fence they
 	// had drawn — had no API form at all.
 	Profile     int  `query:"profile" default:"-1" doc:"Profile number to write; defaults to the human's active profile. Mutually exclusive with all_profiles."`
-	AllProfiles bool `query:"all_profiles" doc:"Write the same areas to EVERY profile the human owns. Use when a fence has been deleted and must be dropped everywhere. Mutually exclusive with profile."`
+	AllProfiles bool `query:"all_profiles" doc:"Replace the areas on EVERY profile the human owns with the submitted list. This is a whole-list replace, not a per-name removal: profiles that currently hold different areas all end up with this list. To remove one area from every profile, use DELETE /api/v2/humans/{id}/areas?name=…&all_profiles=true. Mutually exclusive with profile."`
 	Body        v2SetAreasBody
 }
 
@@ -598,8 +598,9 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 			"select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match " +
 			"come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable " +
 			"fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. " +
-			"Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` writes every " +
-			"profile the human owns (the two are mutually exclusive). " +
+			"Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` replaces every " +
+			"profile's areas with the submitted list (a whole-list replace; to drop one name everywhere use DELETE …/areas?name=). " +
+			"The two are mutually exclusive. " +
 			"Triggers a state reload. 404 if the human does not exist.",
 		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
 	}, func(_ context.Context, in *v2SetAreasInput) (*v2SetAreasOutput, error) {
@@ -670,6 +671,101 @@ func registerV2HumanSetAreas(api huma.API, deps *TrackingDeps, tag []string, sec
 	})
 }
 
+// --- remove one area -------------------------------------------------------
+
+type v2RemoveAreaInput struct {
+	ID          string `path:"id" doc:"Human id (the owning user)"`
+	Name        string `query:"name" required:"true" minLength:"1" doc:"Area name to remove. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence."`
+	Profile     int    `query:"profile" default:"-1" doc:"Profile to remove it from; defaults to the active profile. Mutually exclusive with all_profiles."`
+	AllProfiles bool   `query:"all_profiles" doc:"Remove it from every profile the human owns, leaving each profile's other areas intact. Mutually exclusive with profile."`
+	DryRun      bool   `query:"dry_run" doc:"Report what would change without writing anything or reloading state."`
+}
+
+type v2RemoveAreaOutput struct {
+	Body struct {
+		Name        string             `json:"name" doc:"The name as requested"`
+		RemovedFrom []int              `json:"removed_from" doc:"Profile numbers whose area list held the name and no longer does. Empty when no targeted profile held it."`
+		Broadened   map[string][]int64 `json:"broadened" doc:"Rules whose only override area was this name, keyed by tracking type (pokemon, raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle). Their override is cleared, so they now match across all of the human's areas instead of one. Empty when no rule was affected."`
+		DryRun      bool               `json:"dry_run" doc:"True when nothing was written"`
+	}
+}
+
+// registerV2HumanRemoveArea registers DELETE /v2/humans/{id}/areas (#252, #253).
+//
+// POST …/areas is a whole-list replace, so dropping one name from profiles
+// that each hold different sets needed a read-modify-write per profile. This
+// removes one name from each targeted profile's own list AND from
+// override_areas on the human's rules in those profiles. No permission or
+// existence check: a removal can never widen what the human is alerted for
+// except by clearing a rule's last override (reported as `broadened`), and the
+// fence is usually gone already. No DB transaction: the per-human lock covers
+// concurrency and the operation is idempotent.
+func registerV2HumanRemoveArea(api huma.API, deps *TrackingDeps, tag []string, sec []map[string][]string) {
+	huma.Register(api, huma.Operation{
+		OperationID: "v2-remove-human-area", Method: "DELETE", Path: "/v2/humans/{id}/areas",
+		Summary: "Remove one area from a human's profiles and rule overrides",
+		Description: "Removes one area name from the active profile, `?profile=N`, or every profile with `?all_profiles=true`, " +
+			"leaving each profile's other areas untouched, and removes it from `override_areas` on the human's rules in " +
+			"those profiles. A rule whose only override area was this name loses its override and so now matches across " +
+			"all of the human's areas; those rules are listed in `broadened`. Names match case-insensitively with " +
+			"underscores and spaces alike. Removing a name nothing holds is a 200 with empty results. " +
+			"`?dry_run=true` reports the same result without writing or reloading. " +
+			"Triggers a state reload when something changed. 404 if the human does not exist.",
+		Tags: tag, Security: sec, RejectUnknownQueryParameters: true,
+	}, func(_ context.Context, in *v2RemoveAreaInput) (*v2RemoveAreaOutput, error) {
+		human, err := resolveFullHuman(deps, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if in.AllProfiles && in.Profile != profileSentinel {
+			return nil, huma.Error422UnprocessableEntity("profile and all_profiles are mutually exclusive")
+		}
+
+		targets := []int{human.CurrentProfileNo}
+		switch {
+		case in.AllProfiles:
+			profiles, err := deps.Humans.GetProfiles(in.ID)
+			if err != nil {
+				log.Errorf("v2 humans: list profiles for %s: %s", in.ID, err)
+				return nil, huma.Error500InternalServerError("database error")
+			}
+			targets = make([]int, 0, len(profiles))
+			for _, p := range profiles {
+				targets = append(targets, p.ProfileNo)
+			}
+		case in.Profile != profileSentinel:
+			targets = []int{in.Profile}
+		}
+
+		removedFrom, err := deps.Humans.RemoveAreaFromProfiles(in.ID, in.Name, targets, in.DryRun)
+		if err != nil {
+			log.Errorf("v2 humans: remove area %q from %s: %s", in.Name, in.ID, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		broadened, err := deps.Humans.EditOverrideAreas(in.ID, targets, in.Name, "", in.DryRun)
+		if err != nil {
+			log.Errorf("v2 humans: remove area %q overrides for %s: %s", in.Name, in.ID, err)
+			return nil, huma.Error500InternalServerError("database error")
+		}
+		if !in.DryRun && (len(removedFrom) > 0 || len(broadened) > 0) {
+			reloadState(deps)
+		}
+
+		out := &v2RemoveAreaOutput{}
+		out.Body.Name = in.Name
+		out.Body.RemovedFrom = removedFrom
+		if out.Body.RemovedFrom == nil {
+			out.Body.RemovedFrom = []int{}
+		}
+		out.Body.Broadened = broadened
+		if out.Body.Broadened == nil {
+			out.Body.Broadened = map[string][]int64{}
+		}
+		out.Body.DryRun = in.DryRun
+		return out, nil
+	})
+}
+
 // --- shared helpers --------------------------------------------------------
 
 // settableAreaSet keys bot.PermittedAreas for the set-areas path by the
@@ -721,4 +817,5 @@ func RegisterV2Humans(humaAPI huma.API, deps *TrackingDeps) {
 	registerV2HumanClearLocation(humaAPI, deps, tag, sec)
 	registerV2HumanCheckLocation(humaAPI, deps, tag, sec)
 	registerV2HumanSetAreas(humaAPI, deps, tag, sec)
+	registerV2HumanRemoveArea(humaAPI, deps, tag, sec)
 }

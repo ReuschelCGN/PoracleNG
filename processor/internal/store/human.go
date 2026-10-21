@@ -260,4 +260,25 @@ type HumanStore interface {
 	// first-seen order. Names absent from denied are kept. Destroys
 	// user-entered data: callers gate it behind prune_user_areas (#243).
 	StripUserAreas(humanID string, denied map[string]bool) (removed []string, err error)
+
+	// RemoveAreaFromProfiles removes every stored area matching name (by
+	// areaNameMatches: case, underscore/space insensitive) from each listed
+	// profile row, and from humans.area only when the human's
+	// current_profile_no is in profileNos. Kept names keep their stored
+	// spelling and order. Returns the profile numbers whose row changed,
+	// ascending. No transaction: callers hold the per-human lock and the
+	// operation is idempotent. With dryRun true nothing is written and the
+	// return value is what a real run would have changed (the repo-wide
+	// dry-run mechanism: a trailing dryRun bool parameter).
+	RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, err error)
+
+	// EditOverrideAreas edits override_areas on the human's rules in the
+	// listed profiles (profile_no IN profileNos). An empty to removes from;
+	// otherwise every entry matching from (by areaNameMatches) is replaced by
+	// to, written exactly as passed, collapsing duplicates by key. Returns,
+	// keyed by canonical v2 type name, the uids whose override list became
+	// empty (those are set to NULL, so the rule falls back to the human's
+	// areas). With dryRun true nothing is written; the result is what a real
+	// run would report.
+	EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (broadened map[string][]int64, err error)
 }

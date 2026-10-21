@@ -19936,6 +19936,51 @@
         },
         "type": "object"
       },
+      "V2RemoveAreaOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "broadened": {
+            "additionalProperties": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": "Rules whose only override area was this name, keyed by tracking type (pokemon, raid, egg, quest, invasion, lure, nest, gym, fort, maxbattle). Their override is cleared, so they now match across all of the human's areas instead of one. Empty when no rule was affected.",
+            "type": "object"
+          },
+          "dry_run": {
+            "description": "True when nothing was written",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name as requested",
+            "type": "string"
+          },
+          "removed_from": {
+            "description": "Profile numbers whose area list held the name and no longer does. Empty when no targeted profile held it.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "removed_from",
+          "broadened",
+          "dry_run"
+        ],
+        "type": "object"
+      },
       "V2RoleChangeOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -23261,6 +23306,97 @@
       }
     },
     "/v2/humans/{id}/areas": {
+      "delete": {
+        "description": "Removes one area name from the active profile, `?profile=N`, or every profile with `?all_profiles=true`, leaving each profile's other areas untouched, and removes it from `override_areas` on the human's rules in those profiles. A rule whose only override area was this name loses its override and so now matches across all of the human's areas; those rules are listed in `broadened`. Names match case-insensitively with underscores and spaces alike. Removing a name nothing holds is a 200 with empty results. `?dry_run=true` reports the same result without writing or reloading. Triggers a state reload when something changed. 404 if the human does not exist.",
+        "operationId": "v2-remove-human-area",
+        "parameters": [
+          {
+            "description": "Human id (the owning user)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Human id (the owning user)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Area name to remove. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence.",
+            "explode": false,
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "Area name to remove. Matched case-insensitively, with underscores and spaces treated alike. Need not be a current fence.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Profile to remove it from; defaults to the active profile. Mutually exclusive with all_profiles.",
+            "explode": false,
+            "in": "query",
+            "name": "profile",
+            "schema": {
+              "default": -1,
+              "description": "Profile to remove it from; defaults to the active profile. Mutually exclusive with all_profiles.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Remove it from every profile the human owns, leaving each profile's other areas intact. Mutually exclusive with profile.",
+            "explode": false,
+            "in": "query",
+            "name": "all_profiles",
+            "schema": {
+              "description": "Remove it from every profile the human owns, leaving each profile's other areas intact. Mutually exclusive with profile.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Report what would change without writing anything or reloading state.",
+            "explode": false,
+            "in": "query",
+            "name": "dry_run",
+            "schema": {
+              "description": "Report what would change without writing anything or reloading state.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2RemoveAreaOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "poracleSecret": []
+          }
+        ],
+        "summary": "Remove one area from a human's profiles and rule overrides",
+        "tags": [
+          "v2-humans"
+        ]
+      },
       "get": {
         "description": "Returns the geofence areas available to this human. The listing is what a trusted caller may select: every fence for an unrestricted human, community-filtered otherwise, with exempt fences included under area_security. 404 if the human does not exist.",
         "operationId": "v2-get-human-areas",
@@ -23309,7 +23445,7 @@
         ]
       },
       "post": {
-        "description": "Stores the requested areas as the matching fences' names (lowercased; underscores and spaces are interchangeable in the request), deduped, after matching them against the fences this human may select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` writes every profile the human owns (the two are mutually exclusive). Triggers a state reload. 404 if the human does not exist.",
+        "description": "Stores the requested areas as the matching fences' names (lowercased; underscores and spaces are interchangeable in the request), deduped, after matching them against the fences this human may select (userSelectable for non-admins, community-filtered when area_security is enabled). Names that do not match come back in `rejected` rather than being discarded silently. Set `trusted: true` to select non-userSelectable fences on behalf of a user whose client has already authorised the change; unknown names are still rejected. Writes the human's active profile by default; `?profile=` targets another and `?all_profiles=true` replaces every profile's areas with the submitted list (a whole-list replace; to drop one name everywhere use DELETE …/areas?name=). The two are mutually exclusive. Triggers a state reload. 404 if the human does not exist.",
         "operationId": "v2-set-human-areas",
         "parameters": [
           {
@@ -23335,12 +23471,12 @@
             }
           },
           {
-            "description": "Write the same areas to EVERY profile the human owns. Use when a fence has been deleted and must be dropped everywhere. Mutually exclusive with profile.",
+            "description": "Replace the areas on EVERY profile the human owns with the submitted list. This is a whole-list replace, not a per-name removal: profiles that currently hold different areas all end up with this list. To remove one area from every profile, use DELETE /api/v2/humans/{id}/areas?name=…&all_profiles=true. Mutually exclusive with profile.",
             "explode": false,
             "in": "query",
             "name": "all_profiles",
             "schema": {
-              "description": "Write the same areas to EVERY profile the human owns. Use when a fence has been deleted and must be dropped everywhere. Mutually exclusive with profile.",
+              "description": "Replace the areas on EVERY profile the human owns with the submitted list. This is a whole-list replace, not a per-name removal: profiles that currently hold different areas all end up with this list. To remove one area from every profile, use DELETE /api/v2/humans/{id}/areas?name=…&all_profiles=true. Mutually exclusive with profile.",
               "type": "boolean"
             }
           }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -122,4 +123,57 @@ func (m *MockTrackingStore[T]) AllRows() []T {
 	out := make([]T, len(m.rows))
 	copy(out, m.rows)
 	return out
+}
+
+// OverrideTable is a tracking table whose override_areas a MockHumanStore can
+// edit. Build one with NewMockOverrideTable and register it under the SQL
+// table name ("monsters", "raid", "lures", ...) in
+// MockHumanStore.OverrideTables.
+type OverrideTable interface {
+	editOverrides(id string, profileNos []int, from, to string, dryRun bool) (emptied []int64)
+}
+
+type mockOverrideTable[T any] struct {
+	m   *MockTrackingStore[T]
+	get func(*T) []string
+	set func(*T, []string)
+}
+
+// NewMockOverrideTable exposes a mock tracking store's override_areas to
+// MockHumanStore.EditOverrideAreas. Rows are scoped by the store's id and
+// profile accessors when WithIDScope / WithProfileScope were set.
+func NewMockOverrideTable[T any](m *MockTrackingStore[T], get func(*T) []string, set func(*T, []string)) OverrideTable {
+	return &mockOverrideTable[T]{m: m, get: get, set: set}
+}
+
+func (t *mockOverrideTable[T]) editOverrides(id string, profileNos []int, from, to string, dryRun bool) []int64 {
+	m := t.m
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var emptied []int64
+	for i := range m.rows {
+		row := &m.rows[i]
+		if m.getID != nil && m.getID(row) != id {
+			continue
+		}
+		if m.getProfNo != nil && !slices.Contains(profileNos, m.getProfNo(row)) {
+			continue
+		}
+		areas := t.get(row)
+		if len(areas) == 0 {
+			continue
+		}
+		out, changed := editAreaList(areas, from, to)
+		if !changed {
+			continue
+		}
+		if len(out) == 0 {
+			emptied = append(emptied, m.getUID(row))
+			out = nil
+		}
+		if !dryRun {
+			t.set(row, out)
+		}
+	}
+	return emptied
 }

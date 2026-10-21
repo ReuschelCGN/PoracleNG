@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"slices"
 	"strings"
@@ -333,5 +334,120 @@ func TestStripUserAreas_SQL_NoHuman(t *testing.T) {
 	}
 	if area != `["beta","alpha"]` {
 		t.Errorf("profile area = %s, want unchanged", area)
+	}
+}
+
+func TestRemoveAreaFromProfiles_SQL(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+
+	mustExec(t, dbx, `UPDATE humans SET current_profile_no = 1, area = ? WHERE id = 'u1'`, `["alpha","gent_centrum"]`)
+	mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES
+		('u1', 1, 'a', '["alpha","gent_centrum"]'),
+		('u1', 2, 'b', '["gent_centrum","beta"]'),
+		('u1', 3, 'c', '["beta"]')`)
+
+	// Dry run first: reports, writes nothing.
+	got, err := s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, true)
+	if err != nil || !slices.Equal(got, []int{1, 2}) {
+		t.Fatalf("dry run: got=%v err=%v", got, err)
+	}
+	var area string
+	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["alpha","gent_centrum"]` {
+		t.Fatalf("dry run wrote humans.area: %q %v", area, err)
+	}
+
+	got, err = s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []int{1, 2}) {
+		t.Errorf("removedFrom = %v, want [1 2]", got)
+	}
+	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["alpha"]` {
+		t.Errorf("humans.area = %q %v, want [\"alpha\"]", area, err)
+	}
+	var rows []struct {
+		ProfileNo int    `db:"profile_no"`
+		Area      string `db:"area"`
+	}
+	if err := dbx.Select(&rows, `SELECT profile_no, area FROM profiles WHERE id = 'u1' ORDER BY profile_no`); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`["alpha"]`, `["beta"]`, `["beta"]`}
+	for i, r := range rows {
+		if r.Area != want[i] {
+			t.Errorf("profile %d = %s, want %s", r.ProfileNo, r.Area, want[i])
+		}
+	}
+
+	// A non-current profile leaves humans.area alone.
+	mustExec(t, dbx, `UPDATE humans SET area = '["beta"]' WHERE id = 'u1'`)
+	if _, err := s.RemoveAreaFromProfiles("u1", "beta", []int{2}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["beta"]` {
+		t.Errorf("live humans.area changed: %q %v", area, err)
+	}
+}
+
+func TestEditOverrideAreas_SQL(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+
+	mustExec(t, dbx, `INSERT INTO monsters (uid, id, profile_no, override_areas) VALUES
+		(12, 'u1', 1, '["private"]'),
+		(40, 'u1', 1, '["Private","alpha"]'),
+		(41, 'u1', 2, '["private"]')`)
+	mustExec(t, dbx, `INSERT INTO raid (uid, id, profile_no, override_areas) VALUES (7, 'u1', 1, '["private"]')`)
+	mustExec(t, dbx, `INSERT INTO lures (uid, id, profile_no, override_areas) VALUES (9, 'u1', 1, '["private"]')`)
+
+	read := func(table string, uid int) any {
+		var v sql.NullString
+		if err := dbx.Get(&v, "SELECT override_areas FROM `"+table+"` WHERE uid = ?", uid); err != nil {
+			t.Fatal(err)
+		}
+		if !v.Valid {
+			return nil
+		}
+		return v.String
+	}
+
+	// Dry run reports and writes nothing.
+	b, err := s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(b["pokemon"], []int64{12}) || !slices.Equal(b["raid"], []int64{7}) || !slices.Equal(b["lure"], []int64{9}) || len(b) != 3 {
+		t.Fatalf("dry run broadened = %v", b)
+	}
+	if read("monsters", 12) != `["private"]` {
+		t.Fatal("dry run wrote")
+	}
+
+	b, err = s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(b["pokemon"], []int64{12}) {
+		t.Errorf("broadened = %v", b)
+	}
+	if read("monsters", 12) != nil || read("raid", 7) != nil || read("lures", 9) != nil {
+		t.Error("emptied rules must be NULL")
+	}
+	if got := read("monsters", 40); got != `["alpha"]` {
+		t.Errorf("rule 40 = %v, want [\"alpha\"]", got)
+	}
+	if got := read("monsters", 41); got != `["private"]` {
+		t.Errorf("profile 2 rule must be untouched, got %v", got)
+	}
+
+	// Rename replaces and collapses.
+	mustExec(t, dbx, `UPDATE monsters SET override_areas = '["old name","new_name"]' WHERE uid = 40`)
+	if b, err = s.EditOverrideAreas("u1", []int{1}, "old_name", "new_name", false); err != nil || len(b) != 0 {
+		t.Fatalf("rename: %v %v", b, err)
+	}
+	if got := read("monsters", 40); got != `["new_name"]` {
+		t.Errorf("rename = %v", got)
 	}
 }

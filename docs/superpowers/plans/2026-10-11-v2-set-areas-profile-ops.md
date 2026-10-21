@@ -1,5 +1,7 @@
 # v2 Set-Areas Profile Operations (#252, #253) Implementation Plan
 
+> **Superseded** by the 2026-10-20 v2 API improvements design (Tasks 11-12): `DELETE /api/v2/humans/{id}/areas` now also strips `override_areas`, reports `broadened`, supports `dry_run`, and uses no transaction. Kept for history only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the `?all_profiles=` doc string describe the whole-list replace it actually performs (#252). Add `DELETE /api/v2/humans/{id}/areas?name=…` to remove one area name from each targeted profile's own list, atomically (#253).
