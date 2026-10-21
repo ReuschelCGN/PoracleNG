@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -115,6 +116,23 @@ func main() {
 	// Download game resources (monsters, moves, locales, etc.)
 	if err := resources.Download(cfg.BaseDir); err != nil {
 		log.Warnf("Resource download had errors: %s", err)
+	}
+
+	// Species with a shiny release, for personal shiny alerts (pogo-ctrl-v2)
+	matching.StartShinyReleasedSync(cfg.BaseDir)
+
+	// Boosted shiny rates (dynamic detection from Golbat stats)
+	if raw, err := os.ReadFile(filepath.Join(cfg.BaseDir, "config", "shiny_link.json")); err == nil {
+		var shinyLinkCfg struct {
+			URL    string `json:"url"`
+			Secret string `json:"secret"`
+		}
+		if json.Unmarshal(raw, &shinyLinkCfg) == nil && shinyLinkCfg.URL != "" {
+			matching.StartShinyBoostedSync(
+				strings.TrimRight(shinyLinkCfg.URL, "/"),
+				shinyLinkCfg.Secret,
+			)
+		}
 	}
 
 	database, err := db.OpenDB(cfg.Database.DSN())
