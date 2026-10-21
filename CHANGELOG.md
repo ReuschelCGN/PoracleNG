@@ -62,8 +62,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **New `PUT /api/v2/humans/{id}/locations/{label}`** — update a saved
   location's coordinates in place, completing saved-location CRUD (v1 required
   delete + re-add to move a location).
+- **v2 `?dry_run=true`** on tracking POST, PUT, single and bulk DELETE and
+  PATCH, and on area DELETE/PATCH. Runs the same validation and diff but
+  writes nothing; created rules have `uid` 0 and the response carries
+  `"dry_run": true`.
+- **v2 `previous` on updated rules.** A rule in `updated` (POST, PUT, PATCH)
+  carries `previous`, the rule as it was stored before the edit, so a client
+  can show what changed. A real commit reports what it actually replaced.
+- **Bulk PATCH of delivery settings.** `PATCH /api/v2/humans/{id}/tracking/{type}`
+  with `{"uids":[…],"set":{distance,clean,edit,summary,template,ping}}` changes
+  those settings on the listed rules and keeps each rule's `uid`. One outcome
+  per rule (`updated` / `unchanged` / `refused` with reason `invalid`,
+  `conflict` or `not_found`); never all-or-nothing. `summary` is quest only;
+  `edit` is refused for gym, invasion, maxbattle, nest and quest.
+- **Bulk DELETE accepts a body.** `DELETE …/tracking/{type}` takes either
+  `?uid=1,2,3` or `{"uids":[…]}` (not both, not neither: `422`), for lists too
+  long for a URL.
+- **v2 area operations.** `DELETE /api/v2/humans/{id}/areas?name=` removes one
+  area name from the human, the profile(s) and every rule's `override_areas`,
+  reporting `removed_from` and `broadened` (rules whose override list became
+  empty and now use the profile's areas). `PATCH …/areas?from=&to=` renames one
+  name everywhere (`to` must be permitted: `422` otherwise, nothing changes).
+  Both take `?profile=`, `?all_profiles=` and `?dry_run=` (#252, #253, #259).
+- **v2 mutes: typed `tracking_type`.** A `tracking` mute names the table of
+  the rule it silences (any of the 11 type names; `incident` is stored as
+  `invasion`). `POST` checks that the uid is the human's rule in that table;
+  `DELETE ?scope=tracking&tracking_type=&value=`. The bot's `!<type> mute id:N`
+  keeps the type, and a bare `!mute id:N` / `!unmute id:N` resolves it or is
+  refused when ambiguous.
+- **`/health` and `servers` in the OpenAPI spec.** `GET /health` is documented
+  (public); the spec has `servers: [{url: "/api"}]` so paths carry their prefix.
+- **Per-human write lock.** All writes to one human (API, bot commands,
+  reconcilers, apply, rate-limit disable, buttons, profile scheduler) are now
+  serialised, so concurrent edits no longer interleave.
 
 ### Changed
+
+- **BREAKING: v2 mutes with `scope=tracking` require `tracking_type`**
+  (`422` without it). Mute uids are per-table, so an untyped tracking mute
+  could silence an unrelated rule in another table; an untyped entry now
+  matches nothing.
+- **BREAKING: the 401 from the `X-Poracle-Secret` check is `application/problem+json`
+  on every huma route** (all of `/api/v2` and the unversioned `/api` routes).
+  The frozen v1 routes (`/api/tracking`, `/api/humans`, `/api/profiles`) keep
+  `{"status":"authError",…}`.
+- **BREAKING: v2 `PUT …/tracking/{type}/{uid}` returns `409` ("would duplicate
+  rule N") when the edit would make the rule a duplicate or near-duplicate (one
+  updatable field apart) of another rule.** Previously only an exact duplicate
+  was refused.
+- **BREAKING: v2 returns `override_areas` as canonical fence names**
+  (lowercase, as stored); they were previously returned space-normalised.
+- **Maxbattle edits now squash.** `clean`, `distance` and `template` are
+  updatable fields for maxbattle, as for raid: re-posting a rule with one of
+  them changed updates the rule in place instead of adding a copy. Within one
+  batch an existing row is an update target for at most one candidate.
+- **Area spelling.** Stored area names are canonical fence names (lowercase);
+  spaces versus underscores is only a comparison key. State loading normalises
+  `override_areas`, so overrides stored with underscores now match; set-areas,
+  community `allowed_areas`, and `!area add/remove` accept either spelling.
+  v1 still writes and returns spaces.
+- **Reconcilers prune before saving a community-membership change.** If the
+  prune fails, `community_membership` / `area_restriction` are not saved and
+  the change is retried at the next reconcile (member event or
+  `check_role_interval` sweep).
+- **v2 `…/areas` set (`POST`) with `?all_profiles`** is documented as a
+  whole-list replace.
+- **Wildcard contract.** `null` on a v2 rule means unconstrained; clients never
+  need the stored sentinel, which may change without notice. Enforced by a test
+  that every nullable field on all 11 types reads back `null` and round-trips.
 
 - **One definition of the areas a human may hold** (#243). v2 set-areas,
   `override_areas` validation (v1 and v2 tracking writes), v2 GET areas and

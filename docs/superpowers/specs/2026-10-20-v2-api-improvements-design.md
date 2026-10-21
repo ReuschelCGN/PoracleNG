@@ -1,6 +1,6 @@
 # v2 API Improvements for Full Client Migration — Design for Comment
 
-**Status:** reviewed by PoracleWeb.NET (comment on #328, 2026-10-20); answers folded in ([§11](#11-open-questions-for-poraclewebnet)). Ready for an implementation plan.
+**Status:** implemented on v2-api-improvements (#328)
 **Date:** 2026-10-20
 **Branch:** `v2-api-improvements` (off `develop`, with #254 / #243 merged in)
 **Issues:** #326, #325, #324, #323, #259, #253, #252, #243, plus two questions asked out of band (versioning of unversioned routes, release tagging)
@@ -154,7 +154,7 @@ The risk described ("our edit path re-reads a rule before every write, so a wron
 1. **A round-trip guarantee, enforced by test.** For all 11 types, every nullable field is checked for: `null` / omitted on write reads back as `null`, and GET → PUT and GET → POST of any stored rule (including legacy alias values such as `rarity 0`) result in `unchanged`. The existing round-trip helper covers this partly; it becomes exhaustive and is generated from the field table in point 4.
 2. **Display bounds in the schema.** Every range field with a natural bound carries `minimum`/`maximum` (IV is already 0–100), so a UI can draw a slider or say "up to 100" without the stored value. A field whose only ceiling is a sentinel (e.g. `max_weight`, stored 9000000) gets no `maximum`, because publishing it would leak the sentinel.
 3. **A stated contract** in the API docs: "`null` means unconstrained. A v2 client never needs to know how that is stored, and the stored representation may change without notice."
-4. **One internal field table per type** (wildcard, kind, bounds) that drives `Translate` defaults, the `ToRule` null projection and the documentation. The same value is currently written separately in all three places. This removes drift on our side. It also feeds the squash policy (Appendix A). It stays internal.
+4. **One internal definition per field** (wildcard, kind, bounds), realised as shared named constants used by both `Translate` and `ToRule` (controller ruling: constants rather than a literal field table), which drives the defaults, the null projection and the documentation. The same value was previously written separately in each place. This removes drift on our side. It also feeds the squash policy (Appendix A). It stays internal.
 
 ### 4.3 The two special cases
 

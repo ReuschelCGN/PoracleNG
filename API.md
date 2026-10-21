@@ -155,6 +155,8 @@ Server-side validation rules:
 - `override_location_label` references unknown saved location → 400 "unknown location label"
 - `override_areas` contains area outside user's permitted set → 400 "area not permitted"
 
+Area names are matched by a comparison key (spaces and underscores are equal), so either spelling is accepted. Stored names are the canonical lowercase fence names; v1 still writes and returns spaces, while v2 returns fence names. See `docs/v2-api-design.md`.
+
 Example with override location:
 
 ```json

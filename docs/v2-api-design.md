@@ -10,6 +10,16 @@
 
 ## Changes
 
+**2026-10 — v2 API improvements for full client migration (#328).** Breaking for v2 clients:
+
+- **Mutes:** `tracking_type` is required when `scope=tracking` (`422` otherwise); an untyped tracking mute matches nothing. `DELETE …/mutes?scope=tracking&tracking_type=&value=`.
+- **401** from the secret check is `application/problem+json` on all huma routes (v2 and the unversioned routes). The frozen v1 routes keep `{"status":"authError",…}`.
+- **`PUT …/tracking/{type}/{uid}`** returns `409` ("would duplicate rule N") when the edit would make the rule a duplicate *or near-duplicate* (one updatable field apart) of another rule; it used to refuse only exact duplicates.
+- **`override_areas`** are returned as canonical fence names (lowercase); they used to come back space-normalised.
+- **Maxbattle** `clean`, `distance` and `template` are updatable fields, so edits squash into the existing rule like raid.
+
+Added (non-breaking): `?dry_run` on POST/PUT/DELETE/PATCH and the area operations; `previous` on rules in `updated`; bulk `PATCH` of delivery settings; bulk `DELETE` with a `{"uids":[…]}` body; `DELETE` and `PATCH …/areas` (remove / rename one area name everywhere); `servers` and `GET /health` in the OpenAPI spec.
+
 **2026-10 — v2 owns its response shapes (#294).** Breaking for v2 clients:
 
 - **Human** (`GET /v2/humans/{id}`, `POST /v2/humans`, snapshot `human`): `enabled` / `admin_disable` are booleans (were `1`/`0`); `area`, `community_membership`, `blocked_alerts` are arrays (were JSON-encoded strings); `area_restriction` is an array or `null` (was a JSON string or `null`); `language` is `""` when unset (was `null`). See [Human resource](#human-resource).
@@ -18,6 +28,14 @@
 - **`POST /v2/humans`**: `area` is an array of area names (was a JSON-encoded string).
 - **Snapshot `summaries`**: each entry is `{alert_type, active_hours}` with typed ISO-weekday entries; the redundant `id` is gone.
 - **Edited rules keep their `uid`** — both `PUT …/tracking/{type}/{uid}` and a `POST` that updates an existing rule (it used to return a new one).
+
+## API stability
+
+The unversioned routes (config, geofence, masterdata, geocode, test, summaries, reload and the rest of `/api` outside v1 tracking/humans/profiles) are treated as stable, with no plans for v2 copies. "v2" names the redesigned tracking and humans resources; the other routes already run on the same huma instance, are typed, appear in `/openapi.json`, and return problem+json errors.
+
+- Additive changes (new fields, new optional parameters) can arrive in any release.
+- A breaking change to one of these routes is listed under **Changed** in the changelog for that release, with a migration note. Where practical it is preceded by a release that accepts both shapes.
+- v1 tracking, humans and profiles routes stay frozen, as before.
 
 ## 1. Why v2 (and why freeze v1)
 
@@ -83,7 +101,7 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 | `GET` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Fetch one rule |
 | `PUT` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Full-replace one rule (the rule keeps its `uid`) |
 | `DELETE` | `/api/v2/humans/{id}/tracking/{type}/{uid}` | Delete one rule |
-| `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete |
+| `DELETE` | `/api/v2/humans/{id}/tracking/{type}?uid=1,2,3` | Bulk delete (or body `{"uids":[…]}`, not both) |
 | `PATCH` | `/api/v2/humans/{id}/tracking/{type}` | Bulk-set delivery settings on listed rules |
 
 - `{id}` (the human) is **always in the path** — required, and the ownership scope for every op. `profile` is a query param (`?profile={n}`, defaults to the human's active profile).
@@ -92,7 +110,8 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 - **Create** returns `{ "created": [<rule with uid>], "updated": [<rule>], "unchanged": [<rule>] }` (POST keeps v1's diff/upsert behaviour; a rule in `updated` keeps its `uid`). Delete returns `{ "deleted": [<rule>] }`.
 - **PUT** (full replace) returns `{ "updated": [<rule>] }`. The rule **keeps its `uid`**, so ids held by clients, tracking mutes and `id:N` bot commands stay valid.
 - **`?include_descriptions=true`** works uniformly on **every** tracking endpoint — reads **and** mutations. When set, each rule object in the response (in `rules`, or `created`/`updated`/`unchanged`/`deleted`) carries a `description` (its human-readable rowtext, in the human's language). The status (added/updated/removed) is conveyed by which array the rule is in, so there is **no** separate assembled `message` field. (The prefixed, assembled confirmation message remains purely the Discord/Telegram push, gated by `?silent`.)
-- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. Tracking has no per-rule partial update.
+- **PUT** is a **full replace**: the body fully specifies the rule's filter fields; omitted fields reset to documented defaults. There is no per-rule partial update; use the bulk `PATCH` below to change delivery settings. A `PUT` that would make the rule a duplicate or near-duplicate (one updatable field apart) of another rule is refused with `409` ("would duplicate rule N").
+- **`previous`**: each rule in `updated` (POST, PUT, PATCH) carries `previous`, the rule as stored before the edit. **`?dry_run=true`** (POST, PUT, single and bulk DELETE, PATCH) runs the same validation and diff but writes nothing; created rules have `uid` 0 and the response has `"dry_run": true`.
 - **PATCH** on the collection is a **bulk settings update**: body `{"uids":[…],"set":{…}}`, where `set` names any of `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`; filter fields are not settable. Each listed rule keeps its uid and every field not named, and goes through the PUT path (translate, validate, squash check). The response gives one outcome per rule, never all-or-nothing: `{ "updated": [<rule with previous>], "unchanged": [<rule>], "refused": [{"uid", "reason": "invalid"|"conflict"|"not_found", "detail", "conflicts_with"?}] }`. Rules are processed in `uids` order (a repeated uid once, at its first position); when two listed rules would collide, the first wins and the second is refused as `conflict`. An empty `set`, or a setting the type does not support (e.g. `clean` on fort, `edit` on gym), is a `422` for the whole request. Supports `?dry_run`, `?silent`, `?trusted`, `?include_descriptions`.
 - Mutations (`POST`/`PUT`/`PATCH`/`DELETE`) accept **`?silent=true`** (default false) — apply without notifying the user. (Single param; replaces v1's `silent`+`suppressMessage`.)
 - Unknown body **and** query params are rejected (`422`) — v2 is strict. Every rule carries its `uid` (int) in responses.
@@ -106,9 +125,13 @@ Tracking rules are **sub-resources of the human** (the human *is* the user). `ui
 
 ### Wildcard & sentinel conventions
 
+> **The `null` contract.** `null` means unconstrained. A v2 client never needs to know how that is stored, and the stored representation may change without notice. Read `null`, write `null` (or omit): a GET → PUT / POST of any stored rule results in `unchanged`, enforced by a test over every nullable field of all 11 types. Schemas carry display bounds (`minimum`/`maximum`) where a natural bound exists; a field whose only ceiling is a sentinel has no `maximum`.
+>
+> The sentinel table below is **internal, for readers of the v1 API and of the database only**. It is not part of the v2 contract and a v2 client must not depend on it. In the code, each field's wildcard is a shared named constant (`v2_wildcards.go`) used by both `Translate` and `ToRule`.
+
 **Request rule: to match "any", OMIT the field — never send the magic number.** A clean v2 client should not have to know the internal sentinel values. Every optional filter field, when omitted, is materialised to the engine's documented wildcard/sentinel by the handler. The OpenAPI `description` of each such field states both the omit-to-wildcard behaviour *and* the stored sentinel + its meaning (so the value is legible if you do read one back). You may still send the sentinel explicitly — it round-trips — but you never need to.
 
-The sentinels (verified against the matcher's "match any" semantics):
+The sentinels (internal; verified against the matcher's "match any" semantics):
 
 | sentinel | meaning | where it appears |
 |---|---|---|
@@ -159,7 +182,7 @@ The wire form is **present-but-null** (e.g. `"min_iv": null`), not an omitted ke
 | `summary` | bool | route into the summary digest (where supported) |
 | `ping` | string | mention string appended to the alert |
 | `override_location_label` | string? | use a saved named location instead of the profile location |
-| `override_areas` | string[] | restrict this rule to these geofence areas |
+| `override_areas` | string[] | restrict this rule to these geofence areas. Either spelling is accepted (spaces and underscores compare equal); stored and returned as the canonical lowercase fence name |
 
 (`clean`/`edit`/`summary` map to the stored `clean` bitmask: bit 1 / 2 / 4.)
 
@@ -247,7 +270,18 @@ Today this is stored as freeform JSON and the API dumps whatever the client send
 
 - **Single-fire**: `{day, hours, mins}` → fires once that day at `HH:MM`.
 - **Range**: adds `{step, end_hours, end_mins}` → fires at `HH:MM`, `+step h`, … up to and including `end`. **No cross-midnight** — `end` must be ≥ start (reject otherwise, `422`).
-- v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /v2/summaries/{id}/{alertType}` and the profile-schedule update endpoint. `day` is ISO 8601 (1 = Monday … 7 = Sunday), matching `isoDow` in `cmd/processor/profiles.go`, the bot, and v1. It was documented as 0–6 until #208: Sunday was unexpressible and `day: 0` stored a schedule that never fired.
+- v2 is **strict ints** (no `"00"` string coercion — that was the v1 leniency) with the bounds above. Same schema is shared by `POST /summaries/{id}/{alertType}` and the profile-schedule update endpoint. `day` is ISO 8601 (1 = Monday … 7 = Sunday), matching `isoDow` in `cmd/processor/profiles.go`, the bot, and v1. It was documented as 0–6 until #208: Sunday was unexpressible and `day: 0` stored a schedule that never fired.
+
+### Area operations
+
+- `DELETE /api/v2/humans/{id}/areas?name=[&profile=][&all_profiles=][&dry_run=]` removes one area name from the human's areas (profile, or every profile) and from every rule's `override_areas`. Returns `{name, removed_from, broadened{type:[uid]}, dry_run}`; `broadened` lists rules whose override list became empty and now match by the profile's areas.
+- `PATCH /api/v2/humans/{id}/areas?from=&to=[&profile=][&all_profiles=][&trusted=][&dry_run=]` renames one name everywhere. Returns `{from, to, renamed_in, dry_run}` with `to` in canonical form; `to` must be a permitted area, else `422` and nothing changes.
+- `POST …/areas` replaces the whole list; with `?all_profiles` it replaces it on every profile.
+- Area names are stored as canonical (lowercase) fence names; spaces versus underscores is only a comparison key, so either spelling is accepted on input.
+
+### Mutes
+
+`tracking_type` (any of the 11 type names; `incident` is stored as `invasion` and `GET` returns the canonical name) is required for `scope=tracking` and a `422` for any other scope. `POST` checks that the uid is the human's rule in that table (any profile). Delete with `DELETE …/mutes?scope=tracking&tracking_type=&value=`.
 
 ### Human resource
 
