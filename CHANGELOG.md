@@ -112,7 +112,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was refused.
 - **BREAKING: v2 returns `override_areas` as canonical fence names**
   (lowercase, as stored); they were previously returned space-normalised.
-- **Maxbattle edits now squash.** `clean`, `distance` and `template` are
+- **BREAKING: maxbattle edits now squash.** `clean`, `distance` and `template` are
   updatable fields for maxbattle, as for raid: re-posting a rule with one of
   them changed updates the rule in place instead of adding a copy. Within one
   batch an existing row is an update target for at most one candidate.

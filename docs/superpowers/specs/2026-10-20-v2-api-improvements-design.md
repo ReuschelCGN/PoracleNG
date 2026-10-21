@@ -118,7 +118,7 @@ type SquashPolicy[T any] interface {
 
 - **POST (all surfaces):** `Classify`. The behaviour is unchanged apart from the batch-claim fix in §3.2.
 - **PUT and PATCH (v2):** `Conflicts`. These address a named uid, so an edit that would make the rule a squash target of *another* rule is **refused** (`409`, or a per-rule refusal in PATCH) and names the other uid. It is not merged. Merging there would mean "editing rule A deleted rule B", which is the kind of hidden side effect this work is meant to remove.
-- **The policy is replaceable.** The current row heuristic becomes `RowDiffPolicy`. Every surface is tested against **one shared scenario table** (existing rules + submitted rule → expected outcome). Changing the squash rule later, for example to the set-based model in Appendix A, is then a contained change: a new policy plus an edited scenario table, with the effect on every surface visible in one test diff.
+- **The policy is replaceable.** The current row heuristic becomes `RowDiffPolicy`. Every surface delegates to the one policy (`DiffAndClassify` / `ApplyDiff` / `Conflicts`), and **one shared scenario table** (existing rules + submitted rule → expected outcome) tests the policy itself. Changing the squash rule later, for example to the set-based model in Appendix A, is then a contained change: a new policy plus an edited scenario table, with the effect on every surface visible in one test diff.
 
 ### 3.6 Concurrency and failure: a per-human lock, no DB transactions
 
@@ -192,7 +192,7 @@ The human in the path is the ownership scope. A uid that isn't that human's poke
 
 - **uids go in the body**, not the query string. This avoids the length limits they described. Bulk DELETE gets the same option (below). An explicit list is required, so there is no "every rule of this type". We agree with their own caution: a client that wants every rule sends the uids from a GET.
 - **Settable fields:** `distance`, `clean`, `edit`, `summary` (quest only), `template`, `ping`. These are the delivery and "where" settings shared by every type. Filter fields are not bulk-settable: setting `min_iv` on 300 different rules is a different operation and invites mass squashing. Unknown or unsupported fields get a 422 for the whole request.
-- **The merge keeps everything else.** Each rule keeps its uid, and every field not named stays as it is. PATCH reuses the PUT path: the stored rule is read as its v2 shape, the named settings are applied, and the result is written back through the normal translate and validate step. The §4 round-trip guarantee is what makes this lossless, so a rule stored with a legacy alias value (e.g. `rarity 0`) is written back in its canonical form, and `previous` shows what it was.
+- **The merge keeps everything else.** Each rule keeps its uid, and every field not named stays as it is. PATCH reuses the PUT path: the stored rule is read as its v2 shape, the named settings are applied, and the result is written back through the normal translate and validate step. The §4 round-trip guarantee is what makes this lossless, so when a PATCH actually changes a rule stored with a legacy alias value (e.g. `rarity 0`), the rule is written back with that value in its canonical form, and `previous` shows what it was. A rule whose named settings already match is reported `unchanged` and is not rewritten, so its alias value stays as stored.
 - **Per-rule outcomes, never all-or-nothing:**
 
 ```json
