@@ -162,6 +162,35 @@ func runScenarios[T any](t *testing.T, s scenarioType[T]) {
 		})
 	}
 
+	t.Run("exact duplicate of a later row is already present, not an update of an earlier row", func(t *testing.T) {
+		mock := NewMockTrackingStore(s.get, s.set)
+		a := s.knob(80, 0)
+		aUID, _ := mock.Insert(&a)
+		b := s.knob(90, 0)
+		bUID, _ := mock.Insert(&b)
+		existing, _ := mock.SelectByIDProfile("u", 0)
+		res, err := ApplyDiff[T](mock, "u", existing, []T{s.knob(90, 0)}, s.get, s.set)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Updates) != 0 || len(res.Inserts) != 0 || len(res.AlreadyPresent) != 1 {
+			t.Fatalf("got %+v", res)
+		}
+		if got := s.get(&res.AlreadyPresent[0]); got != bUID {
+			t.Fatalf("AlreadyPresent uid = %d, want %d", got, bUID)
+		}
+		rows := mock.AllRows()
+		if len(rows) != 2 {
+			t.Fatalf("rows = %+v", rows)
+		}
+		for _, r := range rows {
+			want := map[int64]int{aUID: 80, bUID: 90}[s.get(&r)]
+			if s.val(&r) != want {
+				t.Fatalf("row %d knob = %d, want %d: %+v", s.get(&r), s.val(&r), want, rows)
+			}
+		}
+	})
+
 	t.Run("conflicts: exact duplicate of another rule", func(t *testing.T) {
 		existing := []T{row(1, 90, 0), row(2, 70, 0)}
 		edited := s.knob(70, 0)

@@ -39,16 +39,29 @@ type RowDiffPolicy[T any] struct {
 //     classified against the remaining rows. Pinned rows still match further
 //     identical candidates, so several identical candidates all stay
 //     AlreadyPresent.
+//   - A candidate that exactly duplicates any existing row is AlreadyPresent
+//     (carrying that row's uid) without an update scan, even when an earlier
+//     row is one updatable field away from it.
 //
 // candidates is not modified; Inserts keeps the submission order.
 func (p RowDiffPolicy[T]) Classify(existing, candidates []T) DiffResult[T] {
 	var result DiffResult[T]
 
+	// dupOf[i] is the uid of the first existing row candidate i duplicates
+	// exactly (hasDup[i] set). Such a candidate is AlreadyPresent outright:
+	// it must never be read as a one-field update of some other row that
+	// happens to come earlier in existing.
 	pinned := make(map[int64]bool)
+	dupOf := make([]int64, len(candidates))
+	hasDup := make([]bool, len(candidates))
 	for i := range candidates {
 		for j := range existing {
 			if _, isDup, _, _ := db.DiffTracking(&existing[j], &candidates[i]); isDup {
-				pinned[p.GetUID(&existing[j])] = true
+				uid := p.GetUID(&existing[j])
+				pinned[uid] = true
+				if !hasDup[i] {
+					dupOf[i], hasDup[i] = uid, true
+				}
 			}
 		}
 	}
@@ -57,25 +70,23 @@ func (p RowDiffPolicy[T]) Classify(existing, candidates []T) DiffResult[T] {
 	isInsert := make([]bool, len(candidates))
 
 	for i := len(candidates) - 1; i >= 0; i-- {
+		if hasDup[i] {
+			present := candidates[i]
+			p.SetUID(&present, dupOf[i])
+			result.AlreadyPresent = append(result.AlreadyPresent, present)
+			continue
+		}
 		matched := false
 		for j := range existing {
 			rowUID := p.GetUID(&existing[j])
-			if claimed[rowUID] {
+			if claimed[rowUID] || pinned[rowUID] {
 				continue
 			}
-			noMatch, isDup, uid, isUpd := db.DiffTracking(&existing[j], &candidates[i])
+			noMatch, _, uid, isUpd := db.DiffTracking(&existing[j], &candidates[i])
 			if noMatch {
 				continue
 			}
-			if isDup {
-				result.AlreadyPresent = append(result.AlreadyPresent, candidates[i])
-				matched = true
-				break
-			}
 			if isUpd {
-				if pinned[rowUID] {
-					continue
-				}
 				update := candidates[i]
 				p.SetUID(&update, uid)
 				claimed[uid] = true
