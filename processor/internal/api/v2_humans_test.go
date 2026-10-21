@@ -1601,9 +1601,18 @@ func TestV2Humans_RemoveArea_AllProfilesNoProfileRows(t *testing.T) {
 	humans.AddHuman(h)
 	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
 
-	code, _ := removeArea(t, r, "name=private&all_profiles=true")
+	// The current profile has no profiles row; its humans.area still changes,
+	// so it is reported, under dry_run too.
+	code, got := removeArea(t, r, "name=private&all_profiles=true&dry_run=true")
+	if code != http.StatusOK || !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Fatalf("dry run: code=%d removed_from=%v, want [1]", code, got.RemovedFrom)
+	}
+	code, got = removeArea(t, r, "name=private&all_profiles=true")
 	if code != http.StatusOK {
 		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(got.RemovedFrom, []int{1}) {
+		t.Errorf("removed_from = %v, want [1]", got.RemovedFrom)
 	}
 	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"alpha"}) {
 		t.Errorf("humans.area = %v, want [alpha]", hh.Area)
@@ -1623,9 +1632,16 @@ func TestV2Humans_RenameArea_AllProfilesNoProfileRows(t *testing.T) {
 	humans.AddHuman(h)
 	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private"}})
 
-	code, _ := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
+	code, got := renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true&dry_run=true")
+	if code != http.StatusOK || !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Fatalf("dry run: code=%d renamed_in=%v, want [1]", code, got.RenamedIn)
+	}
+	code, got = renameArea(t, r, "from=private&to=Gent_Centrum&all_profiles=true")
 	if code != http.StatusOK {
 		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(got.RenamedIn, []int{1}) {
+		t.Errorf("renamed_in = %v, want [1]", got.RenamedIn)
 	}
 	if hh, _ := humans.Get("u1"); !slices.Equal(hh.Area, []string{"gent_centrum", "alpha"}) {
 		t.Errorf("humans.area = %v, want [gent_centrum alpha]", hh.Area)

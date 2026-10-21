@@ -239,6 +239,17 @@ func editAreaList(areas []string, from, to string) (out []string, changed bool) 
 	return out, !slices.Equal(out, areas)
 }
 
+// withProfileNo adds n to the ascending profile list nos unless already present.
+// The area ops use it to report the current profile when only humans.area
+// changed (a legacy human whose current profile has no profiles row).
+func withProfileNo(nos []int, n int) []int {
+	i, found := slices.BinarySearch(nos, n)
+	if found {
+		return nos
+	}
+	return slices.Insert(nos, i, n)
+}
+
 // RemoveAreaFromProfiles implements HumanStore.
 func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, changed bool, err error) {
 	if len(profileNos) == 0 {
@@ -283,6 +294,7 @@ func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int
 	if slices.Contains(profileNos, cur.ProfileNo) {
 		if kept, hc := removeAreaName(unmarshalStringSlice(cur.Area.String), name); hc {
 			changed = true
+			removedFrom = withProfileNo(removedFrom, cur.ProfileNo)
 			if !dryRun {
 				if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), id); err != nil {
 					return nil, false, fmt.Errorf("remove area %s: update human: %w", id, err)
@@ -337,6 +349,7 @@ func (s *SQLHumanStore) RenameAreaInProfiles(id, from, to string, profileNos []i
 	if slices.Contains(profileNos, cur.ProfileNo) {
 		if out, hc := editAreaList(unmarshalStringSlice(cur.Area.String), from, to); hc {
 			changed = true
+			renamedIn = withProfileNo(renamedIn, cur.ProfileNo)
 			if !dryRun {
 				if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(out), id); err != nil {
 					return nil, false, fmt.Errorf("rename area %s: update human: %w", id, err)

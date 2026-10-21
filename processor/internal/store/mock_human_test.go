@@ -362,3 +362,32 @@ func TestMockHumanStore_RenameAreaInProfiles(t *testing.T) {
 		t.Errorf("profiles = %v / %v", ps[0].Area, ps[1].Area)
 	}
 }
+
+// A current profile with no profiles row (legacy human) still has its
+// humans.area written, so it is reported, in order and once, under dry_run too.
+func TestMockHumanStore_AreaOps_CurrentProfileWithoutRowReported(t *testing.T) {
+	for _, dry := range []bool{true, false} {
+		m := NewMockHumanStore()
+		m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 2, Area: []string{"alpha", "private"}})
+		m.SeedProfile(Profile{ID: "u1", ProfileNo: 3, Area: []string{"private"}})
+		got, ch, err := m.RemoveAreaFromProfiles("u1", "private", []int{1, 2, 3}, dry)
+		if err != nil || !ch || !slices.Equal(got, []int{2, 3}) {
+			t.Errorf("dry=%v remove: got=%v ch=%v err=%v, want [2 3]", dry, got, ch, err)
+		}
+
+		m = NewMockHumanStore()
+		m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 2, Area: []string{"alpha", "private"}})
+		m.SeedProfile(Profile{ID: "u1", ProfileNo: 3, Area: []string{"private"}})
+		got, ch, err = m.RenameAreaInProfiles("u1", "private", "beta", []int{1, 2, 3}, dry)
+		if err != nil || !ch || !slices.Equal(got, []int{2, 3}) {
+			t.Errorf("dry=%v rename: got=%v ch=%v err=%v, want [2 3]", dry, got, ch, err)
+		}
+	}
+	// A current profile whose row also changed is reported once.
+	m := NewMockHumanStore()
+	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"private"}})
+	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"private"}})
+	if got, _, _ := m.RemoveAreaFromProfiles("u1", "private", []int{1}, false); !slices.Equal(got, []int{1}) {
+		t.Errorf("remove with row: got=%v, want [1]", got)
+	}
+}

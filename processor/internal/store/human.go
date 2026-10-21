@@ -266,7 +266,8 @@ type HumanStore interface {
 	// profile row, and from humans.area only when the human's
 	// current_profile_no is in profileNos. Kept names keep their stored
 	// spelling and order. Returns the profile numbers whose row changed,
-	// ascending. No transaction: callers hold the per-human lock and the
+	// ascending, plus current_profile_no when humans.area changed (so a
+	// current profile with no profiles row is still reported). No transaction: callers hold the per-human lock and the
 	// operation is idempotent. With dryRun true nothing is written and the
 	// return values are what a real run would have changed; changed reports
 	// whether ANY row (a profile or humans.area) was, or with dryRun would be, written (the repo-wide
@@ -278,7 +279,8 @@ type HumanStore interface {
 	// profile row and in humans.area when current_profile_no is in
 	// profileNos. Entries already matching to by key are normalised to to and
 	// duplicates collapse, so the list ends holding to once. Returns the
-	// profile numbers whose row changed, ascending; changed and dryRun follow
+	// profile numbers whose row changed, ascending, plus current_profile_no
+	// when humans.area changed; changed and dryRun follow
 	// RemoveAreaFromProfiles.
 	RenameAreaInProfiles(id, from, to string, profileNos []int, dryRun bool) (renamedIn []int, changed bool, err error)
 

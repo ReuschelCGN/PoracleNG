@@ -499,3 +499,27 @@ func TestRenameAreaInProfiles_SQL(t *testing.T) {
 		t.Errorf("repeat: got=%v ch=%v", got, ch)
 	}
 }
+
+// A current profile with no profiles row (legacy human) still has its
+// humans.area written, so it is reported, in order and once, under dry_run too.
+func TestAreaOps_SQL_CurrentProfileWithoutRowReported(t *testing.T) {
+	dbx := openTestDB(t)
+	s := &SQLHumanStore{db: dbx}
+	for _, dry := range []bool{true, false} {
+		mustExec(t, dbx, `DELETE FROM profiles WHERE id = 'u1'`)
+		mustExec(t, dbx, `UPDATE humans SET current_profile_no = 2, area = '["alpha","private"]' WHERE id = 'u1'`)
+		mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES ('u1', 3, 'c', '["private"]')`)
+		got, ch, err := s.RemoveAreaFromProfiles("u1", "private", []int{1, 2, 3}, dry)
+		if err != nil || !ch || !slices.Equal(got, []int{2, 3}) {
+			t.Errorf("dry=%v remove: got=%v ch=%v err=%v, want [2 3]", dry, got, ch, err)
+		}
+
+		mustExec(t, dbx, `DELETE FROM profiles WHERE id = 'u1'`)
+		mustExec(t, dbx, `UPDATE humans SET current_profile_no = 2, area = '["alpha","private"]' WHERE id = 'u1'`)
+		mustExec(t, dbx, `INSERT INTO profiles (id, profile_no, name, area) VALUES ('u1', 3, 'c', '["private"]')`)
+		got, ch, err = s.RenameAreaInProfiles("u1", "private", "beta", []int{1, 2, 3}, dry)
+		if err != nil || !ch || !slices.Equal(got, []int{2, 3}) {
+			t.Errorf("dry=%v rename: got=%v ch=%v err=%v, want [2 3]", dry, got, ch, err)
+		}
+	}
+}

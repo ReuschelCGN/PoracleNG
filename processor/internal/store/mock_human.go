@@ -625,6 +625,7 @@ func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []in
 	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
 		if kept, hc := removeAreaName(h.Area, name); hc {
 			changed = true
+			removedFrom = withProfileNo(removedFrom, h.CurrentProfileNo)
 			if !dryRun {
 				h.Area = kept
 			}
@@ -659,6 +660,7 @@ func (m *MockHumanStore) RenameAreaInProfiles(id, from, to string, profileNos []
 	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
 		if out, hc := editAreaList(h.Area, from, to); hc {
 			changed = true
+			renamedIn = withProfileNo(renamedIn, h.CurrentProfileNo)
 			if !dryRun {
 				h.Area = out
 			}
