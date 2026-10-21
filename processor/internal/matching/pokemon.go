@@ -21,6 +21,7 @@ const (
 
 // ProcessedPokemon holds computed fields for matching.
 type ProcessedPokemon struct {
+	EncounterID string
 	PokemonID   int
 	Form        int
 	Costume     int
@@ -71,6 +72,7 @@ func ProcessPokemonWebhook(pokemon *webhook.PokemonWebhook, rarityGroup int, pvp
 	pvpResult := pvp.Calculate(pokemon, pvpCfg)
 
 	return &ProcessedPokemon{
+		EncounterID: pokemon.EncounterID,
 		PokemonID:   pokemon.PokemonID,
 		Form:        form,
 		Costume:     pokemon.Costume,
@@ -149,6 +151,8 @@ func (m *PokemonMatcher) Match(pokemon *ProcessedPokemon, st *state.State) ([]we
 			}
 		}
 	}
+
+	matched = filterPersonalShiny(pokemon.EncounterID, pokemon.PokemonID, pokemon.Latitude, pokemon.Longitude, matched, st.Humans)
 
 	metrics.MatchingCandidates.WithLabelValues(metrics.TypePokemon).Observe(float64(len(matched)))
 
