@@ -397,26 +397,26 @@ func (ps *ProcessorService) notifySummaryRateBreach(target, typ, name, language 
 // triggers a debounced state reload so the user is removed from matching.
 func (ps *ProcessorService) OnBan(target, typ, name, language string) {
 	tr := ps.translations.For(language)
-	var msg string
 	// Hold the per-human lock only around the disable write, not the
-	// notifications below.
-	unlock := humanlock.Lock(target)
-	if ps.cfg.AlertLimits.DisableOnStop {
-		if ps.humans != nil {
-			if err := ps.humans.SetAdminDisable(target, true); err != nil {
-				log.Errorf("Rate limit: failed to admin_disable user %s: %s", target, err)
+	// notifications below. Deferred so a panic in the write can't leave the
+	// human's lock held.
+	msg := func() string {
+		defer humanlock.Lock(target)()
+		if ps.cfg.AlertLimits.DisableOnStop {
+			if ps.humans != nil {
+				if err := ps.humans.SetAdminDisable(target, true); err != nil {
+					log.Errorf("Rate limit: failed to admin_disable user %s: %s", target, err)
+				}
 			}
+			return tr.T("rate_limit.banned_hard")
 		}
-		msg = tr.T("rate_limit.banned_hard")
-	} else {
 		if ps.humans != nil {
 			if err := ps.humans.SetEnabled(target, false); err != nil {
 				log.Errorf("Rate limit: failed to disable user %s: %s", target, err)
 			}
 		}
-		msg = tr.Tf("rate_limit.banned_soft", bot.CommandPrefixForType(ps.cfg, typ))
-	}
-	unlock()
+		return tr.Tf("rate_limit.banned_soft", bot.CommandPrefixForType(ps.cfg, typ))
+	}()
 
 	ps.dispatchBypass(target, typ, name, msg, "RateLimit")
 
@@ -448,9 +448,10 @@ func (ps *ProcessorService) disableUserForDeliveryFailure(target, name, jobType 
 	if ps.humans == nil {
 		return
 	}
-	unlock := humanlock.Lock(target)
-	err := ps.humans.SetEnabled(target, false)
-	unlock()
+	err := func() error {
+		defer humanlock.Lock(target)()
+		return ps.humans.SetEnabled(target, false)
+	}()
 	if err != nil {
 		log.Errorf("Delivery failure: failed to disable user %s: %s", target, err)
 		return

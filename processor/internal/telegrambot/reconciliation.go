@@ -394,11 +394,12 @@ func (r *TelegramReconciliation) UpdateTelegramChannels() {
 			areaRestriction := community.CalculateLocationRestrictions(r.cfg.Area.Communities, user.CommunityMembership)
 			if !bot.HaveSameContents(areaRestriction, user.AreaRestriction) {
 				areaRestrictionJSON, _ := json.Marshal(areaRestriction)
-				unlock := humanlock.Lock(user.ID)
-				err := r.humanStore.Update(user.ID, map[string]any{
-					"area_restriction": string(areaRestrictionJSON),
-				})
-				unlock()
+				err := func() error {
+					defer humanlock.Lock(user.ID)()
+					return r.humanStore.Update(user.ID, map[string]any{
+						"area_restriction": string(areaRestrictionJSON),
+					})
+				}()
 				if err != nil {
 					r.log.Errorf("Update channel %s: %v", user.ID, err)
 					continue

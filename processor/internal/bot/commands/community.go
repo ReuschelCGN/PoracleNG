@@ -222,9 +222,10 @@ func (c *CommunityCommand) runClear(ctx *bot.CommandContext, args []string) []bo
 
 	var messages []string
 	for _, id := range targets {
-		unlock := humanlock.Lock(id)
-		err := ctx.Humans.SetCommunity(id, nil, nil)
-		unlock()
+		err := func() error {
+			defer humanlock.Lock(id)()
+			return ctx.Humans.SetCommunity(id, nil, nil)
+		}()
 		if err != nil {
 			log.Errorf("community: clear %s: %v", id, err)
 			continue

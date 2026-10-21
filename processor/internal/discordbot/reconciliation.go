@@ -688,11 +688,12 @@ func (r *Reconciliation) SyncDiscordChannels(syncNames, syncNotes, removeInvalid
 				if restErr.Response.StatusCode == 404 {
 					if removeInvalidChannels {
 						r.log.Infof("Disable channel %s %s", user.ID, user.Name)
-						unlock := humanlock.Lock(user.ID)
-						if err := r.humanStore.SetAdminDisable(user.ID, true); err != nil {
+						if err := func() error {
+							defer humanlock.Lock(user.ID)()
+							return r.humanStore.SetAdminDisable(user.ID, true)
+						}(); err != nil {
 							r.log.Errorf("Disable channel %s: %v", user.ID, err)
 						}
-						unlock()
 					}
 					continue
 				}
@@ -756,9 +757,10 @@ func (r *Reconciliation) SyncDiscordChannels(syncNames, syncNotes, removeInvalid
 		}
 
 		if len(updates) > 0 {
-			unlock := humanlock.Lock(user.ID)
-			err := r.humanStore.Update(user.ID, updates)
-			unlock()
+			err := func() error {
+				defer humanlock.Lock(user.ID)()
+				return r.humanStore.Update(user.ID, updates)
+			}()
 			if err != nil {
 				r.log.Errorf("Update channel %s: %v", user.ID, err)
 				continue

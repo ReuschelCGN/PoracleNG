@@ -39,13 +39,13 @@ func HandleUnsubscribe(_ context.Context, snap *snapshots.Snapshot, _ buttons.De
 
 	// Serialise with API/bot/reconciler writes to the same human. The rules
 	// deleted belong to snap.Target (the clicker for the DM-only default).
-	unlock := humanlock.Lock(snap.Target)
-	deleted, err := deleteTrackingByAlertType(snap.AlertType, snap.Target, snap.TrackingUIDs, deps)
+	deleted, err := func() (int, error) {
+		defer humanlock.Lock(snap.Target)()
+		return deleteTrackingByAlertType(snap.AlertType, snap.Target, snap.TrackingUIDs, deps)
+	}()
 	if err != nil {
-		unlock()
 		return Response{Text: tr.T("msg.button.unsubscribe_failed"), Reaction: "🙅"}, err
 	}
-	unlock()
 	if deleted == 0 {
 		// Rule(s) already removed — possibly by !untrack from another
 		// surface since the snapshot was written. Friendly soft-fail.
