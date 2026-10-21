@@ -390,7 +390,7 @@ func main() {
 	api.RegisterReload(humaAPI, "get-geofence-reload", http.MethodGet, "/geofence/reload", geofenceReloadSummary, geofenceReloadDesc, func() error { return state.LoadWithGeofences(stateMgr, database, summaryScheduleStore, cfg.Geofence) })
 
 	// Weather, stats, geocode (migrated to huma, in place — same paths, same
-	// success JSON, problem+json errors). test stays on gin below.
+	// success JSON, problem+json errors).
 	api.RegisterWeather(humaAPI, proc.weather)
 	api.RegisterStatsRarity(humaAPI, proc.stats.ExportGroups)
 	api.RegisterStatsShiny(humaAPI, proc.stats.ExportShinyStats)
@@ -411,7 +411,7 @@ func main() {
 	}
 	// Geofence data reads (migrated to huma, in place — same paths, same
 	// {status, X} bodies, problem+json errors). Registered at full paths
-	// relative to /api. The tile routes below stay on gin.
+	// relative to /api.
 	api.RegisterGeofenceHash(humaAPI, stateMgr)
 	api.RegisterGeofenceGeoJSON(humaAPI, stateMgr)
 	api.RegisterGeofenceAll(humaAPI, stateMgr)

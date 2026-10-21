@@ -22062,6 +22062,53 @@
         ]
       }
     },
+    "/health": {
+      "get": {
+        "description": "Public (no secret). Returns the binary version and a static feature-capability map for client feature detection.",
+        "operationId": "get-health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "capabilities": {
+                      "additionalProperties": {
+                        "type": "boolean"
+                      },
+                      "type": "object"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "version",
+                    "capabilities"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Healthy"
+          }
+        },
+        "security": [],
+        "summary": "Health check",
+        "tags": [
+          "health"
+        ]
+      },
+      "servers": [
+        {
+          "url": "/"
+        }
+      ]
+    },
     "/masterdata/costumes": {
       "get": {
         "description": "Returns costumes keyed by costume id (an empty object when game data is unavailable). `?locale=` selects the language (default `en`); a costume with no translation in that locale falls back to the raw masterfile name rather than the bare translation key.",
@@ -33163,5 +33210,10 @@
         ]
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ]
 }
