@@ -57,6 +57,7 @@ func (e *Enricher) PokemonPerUser(
 		m["userHasPvpTracks"] = len(cu.Filters) > 0
 		m["userDistanceTrack"] = cu.TrackDistance > 0
 		m["userTrackDistance"] = cu.TrackDistance
+		m["personalShiny"] = cu.PersonalShiny
 
 		// Distance and bearing
 		m["distance"] = cu.Distance
@@ -115,6 +116,9 @@ func consolidateUsers(matchedUsers []webhook.MatchedUser) []consolidatedUser {
 		// threshold so userDistanceTrack reflects "at least one rule was
 		// distance-based" while also making the threshold available for
 		// richer template logic.
+		if u.PersonalShiny {
+			consolidated[idx].PersonalShiny = true
+		}
 		if u.TrackDistance > consolidated[idx].TrackDistance {
 			consolidated[idx].TrackDistance = u.TrackDistance
 		}
