@@ -379,7 +379,7 @@ Role-loss handling is left to Discord: private-thread visibility inherits View C
 
 ### Command Pattern
 
-Hosts that dispatch commands (Discord/Telegram gateways, slash dispatcher, autocreate, `/api/command`) must call `bot.RunLocked(cmd, ctx, args)`, never `cmd.Run` directly: it takes the process-wide per-human lock (`internal/humanlock`) on `ctx.TargetID`, serialising the command against API writes (`api.HumanLock` middleware) and the reconcilers. The lock is not reentrant, so commands that delegate to other commands call `Run` directly, and commands that act on other humans (`!apply`, `!poracle-admin`) implement `bot.TargetLockExempt` and lock per human themselves.
+Hosts that dispatch commands (Discord/Telegram gateways, slash dispatcher, autocreate, `/api/command`) must call `bot.RunLocked(cmd, ctx, args)`, never `cmd.Run` directly: it takes the process-wide per-human lock (`internal/humanlock`) on `ctx.TargetID`, serialising the command against API writes (`api.HumanLock` middleware) and the reconcilers. The lock is not reentrant, so commands that delegate to other commands call `Run` directly, and commands that act on other humans (`!apply`, `!poracle-admin`, `!enable`, `!disable`, `!community`, `!unregister`) implement `bot.TargetLockExempt` and lock each human they write themselves.
 
 All tracking commands (track, raid, egg, quest, nest, lure, gym, fort, invasion, maxbattle) follow:
 

@@ -451,4 +451,4 @@ This task makes the stored form the fence name everywhere outside v1, and moves 
 - [ ] **Step 2: Check** that `grep -n "transaction" CLAUDE.md docs/v2-api-design.md` mentions only `!restore`.
 - [ ] **Step 3: Gate and commit:** `docs: v2 API improvements — changelog, design doc, migration guide, CLAUDE.md`.
 - [ ] **Step 4:** Push, and update the #328 description from "design for comment" to "ready for review". Ask the user before marking it ready.
-- [ ] **Step 5 (user action, not code):** the spec §10 release steps. Tag `v5.2.1` on the `main` commit that bumped the version (`6f25eb6c`), and tag `v5.3.0` when `develop` is released. Each tag triggers the semver Docker images (`.github/workflows/docker.yml`). Tags are public, so they need the user's go-ahead.
+- [ ] **Step 5 (user action, not code):** the spec §10 release steps. Tag `v5.2.1` on the `main` commit that bumped the version (`6f25eb6c`), and tag `v5.4.0` when `develop` is released (the version is 5.4.0; develop builds already report 5.3.0). Each tag triggers the semver Docker images (`.github/workflows/docker.yml`). Tags are public, so they need the user's go-ahead.

@@ -112,6 +112,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was refused.
 - **BREAKING: v2 returns `override_areas` as canonical fence names**
   (lowercase, as stored); they were previously returned space-normalised.
+- **v2 POST reports `unchanged` rules with their real uid.** A submitted rule that
+  exactly matches a stored one comes back under `unchanged` carrying the stored
+  rule's `uid` (previously `0`), and it is matched against *every* stored rule
+  before any near-duplicate update is considered, so it can no longer overwrite a
+  different rule.
 - **BREAKING: maxbattle edits now squash.** `clean`, `distance` and `template` are
   updatable fields for maxbattle, as for raid: re-posting a rule with one of
   them changed updates the rule in place instead of adding a copy. Within one
