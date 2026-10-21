@@ -275,7 +275,7 @@ func TestMockHumanStore_RemoveAreaFromProfiles(t *testing.T) {
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 3, Area: []string{"beta"}})
 
 	// Different spelling of the same fence.
-	got, err := m.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
+	got, _, err := m.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestMockHumanStore_RemoveAreaFromProfiles_InactiveLeavesLive(t *testing.T) 
 	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha"}})
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 2, Area: []string{"alpha"}})
-	if _, err := m.RemoveAreaFromProfiles("u1", "alpha", []int{2}, false); err != nil {
+	if _, _, err := m.RemoveAreaFromProfiles("u1", "alpha", []int{2}, false); err != nil {
 		t.Fatal(err)
 	}
 	if h, _ := m.Get("u1"); !slices.Equal(h.Area, []string{"alpha"}) {
@@ -313,7 +313,10 @@ func TestMockHumanStore_RemoveAreaFromProfiles_DryRun(t *testing.T) {
 	m := NewMockHumanStore()
 	m.AddHuman(&Human{ID: "u1", CurrentProfileNo: 1, Area: []string{"alpha"}})
 	m.SeedProfile(Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
-	got, _ := m.RemoveAreaFromProfiles("u1", "alpha", []int{1}, true)
+	got, ch, _ := m.RemoveAreaFromProfiles("u1", "alpha", []int{1}, true)
+	if !ch {
+		t.Error("dry run must report changed")
+	}
 	if !slices.Equal(got, []int{1}) {
 		t.Errorf("dry run removedFrom = %v, want [1]", got)
 	}

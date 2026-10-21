@@ -239,33 +239,34 @@ func editAreaList(areas []string, from, to string) (out []string, changed bool) 
 }
 
 // RemoveAreaFromProfiles implements HumanStore.
-func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, err error) {
+func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, changed bool, err error) {
 	if len(profileNos) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	q, args, err := sqlx.In(`SELECT profile_no, area FROM profiles WHERE id = ? AND profile_no IN (?) ORDER BY profile_no`, id, profileNos)
 	if err != nil {
-		return nil, fmt.Errorf("remove area %s: build query: %w", id, err)
+		return nil, false, fmt.Errorf("remove area %s: build query: %w", id, err)
 	}
 	var rows []struct {
 		ProfileNo int            `db:"profile_no"`
 		Area      sql.NullString `db:"area"`
 	}
 	if err = s.db.Select(&rows, s.db.Rebind(q), args...); err != nil {
-		return nil, fmt.Errorf("remove area %s: select profiles: %w", id, err)
+		return nil, false, fmt.Errorf("remove area %s: select profiles: %w", id, err)
 	}
 	for _, r := range rows {
-		kept, changed := removeAreaName(unmarshalStringSlice(r.Area.String), name)
-		if !changed {
+		kept, rowChanged := removeAreaName(unmarshalStringSlice(r.Area.String), name)
+		if !rowChanged {
 			continue
 		}
 		if !dryRun {
 			if _, err = s.db.Exec(`UPDATE profiles SET area = ? WHERE id = ? AND profile_no = ?`,
 				marshalStringSlice(kept), id, r.ProfileNo); err != nil {
-				return nil, fmt.Errorf("remove area %s/%d: %w", id, r.ProfileNo, err)
+				return nil, false, fmt.Errorf("remove area %s/%d: %w", id, r.ProfileNo, err)
 			}
 		}
 		removedFrom = append(removedFrom, r.ProfileNo)
+		changed = true
 	}
 
 	var cur struct {
@@ -274,25 +275,29 @@ func (s *SQLHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int
 	}
 	if err = s.db.Get(&cur, `SELECT current_profile_no, area FROM humans WHERE id = ?`, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return removedFrom, nil
+			return removedFrom, changed, nil
 		}
-		return nil, fmt.Errorf("remove area %s: select human: %w", id, err)
+		return nil, false, fmt.Errorf("remove area %s: select human: %w", id, err)
 	}
 	if slices.Contains(profileNos, cur.ProfileNo) {
-		if kept, changed := removeAreaName(unmarshalStringSlice(cur.Area.String), name); changed && !dryRun {
-			if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), id); err != nil {
-				return nil, fmt.Errorf("remove area %s: update human: %w", id, err)
+		if kept, hc := removeAreaName(unmarshalStringSlice(cur.Area.String), name); hc {
+			changed = true
+			if !dryRun {
+				if _, err = s.db.Exec(`UPDATE humans SET area = ? WHERE id = ?`, marshalStringSlice(kept), id); err != nil {
+					return nil, false, fmt.Errorf("remove area %s: update human: %w", id, err)
+				}
 			}
 		}
 	}
-	return removedFrom, nil
+	return removedFrom, changed, nil
 }
 
 // EditOverrideAreas implements HumanStore.
-func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, error) {
+func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, bool, error) {
 	broadened := map[string][]int64{}
+	anyChanged := false
 	if len(profileNos) == 0 {
-		return broadened, nil
+		return broadened, false, nil
 	}
 	type row struct {
 		UID           int64  `db:"uid"`
@@ -303,11 +308,11 @@ func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to 
 			"SELECT uid, COALESCE(override_areas, '') AS override_areas FROM `%s` WHERE id = ? AND profile_no IN (?) AND override_areas IS NOT NULL AND override_areas != ''",
 			table), id, profileNos)
 		if err != nil {
-			return nil, fmt.Errorf("edit override areas %s: build query: %w", table, err)
+			return nil, false, fmt.Errorf("edit override areas %s: build query: %w", table, err)
 		}
 		var rows []row
 		if err := s.db.Select(&rows, s.db.Rebind(q), args...); err != nil {
-			return nil, fmt.Errorf("edit override areas %s: %w", table, err)
+			return nil, false, fmt.Errorf("edit override areas %s: %w", table, err)
 		}
 		for _, r := range rows {
 			areas := unmarshalStringSlice(r.OverrideAreas)
@@ -318,6 +323,7 @@ func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to 
 			if !changed {
 				continue
 			}
+			anyChanged = true
 			var newVal any
 			if len(out) > 0 {
 				newVal = nullStringSlice(out)
@@ -328,9 +334,9 @@ func (s *SQLHumanStore) EditOverrideAreas(id string, profileNos []int, from, to 
 				continue
 			}
 			if _, err := s.db.Exec(fmt.Sprintf("UPDATE `%s` SET override_areas = ? WHERE uid = ?", table), newVal, r.UID); err != nil {
-				return nil, fmt.Errorf("edit override areas %s uid %d: %w", table, r.UID, err)
+				return nil, false, fmt.Errorf("edit override areas %s uid %d: %w", table, r.UID, err)
 			}
 		}
 	}
-	return broadened, nil
+	return broadened, anyChanged, nil
 }

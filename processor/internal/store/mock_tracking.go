@@ -130,7 +130,7 @@ func (m *MockTrackingStore[T]) AllRows() []T {
 // table name ("monsters", "raid", "lures", ...) in
 // MockHumanStore.OverrideTables.
 type OverrideTable interface {
-	editOverrides(id string, profileNos []int, from, to string, dryRun bool) (emptied []int64)
+	editOverrides(id string, profileNos []int, from, to string, dryRun bool) (emptied []int64, changed bool)
 }
 
 type mockOverrideTable[T any] struct {
@@ -146,11 +146,12 @@ func NewMockOverrideTable[T any](m *MockTrackingStore[T], get func(*T) []string,
 	return &mockOverrideTable[T]{m: m, get: get, set: set}
 }
 
-func (t *mockOverrideTable[T]) editOverrides(id string, profileNos []int, from, to string, dryRun bool) []int64 {
+func (t *mockOverrideTable[T]) editOverrides(id string, profileNos []int, from, to string, dryRun bool) ([]int64, bool) {
 	m := t.m
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var emptied []int64
+	anyChanged := false
 	for i := range m.rows {
 		row := &m.rows[i]
 		if m.getID != nil && m.getID(row) != id {
@@ -167,6 +168,7 @@ func (t *mockOverrideTable[T]) editOverrides(id string, profileNos []int, from, 
 		if !changed {
 			continue
 		}
+		anyChanged = true
 		if len(out) == 0 {
 			emptied = append(emptied, m.getUID(row))
 			out = nil
@@ -175,5 +177,5 @@ func (t *mockOverrideTable[T]) editOverrides(id string, profileNos []int, from, 
 			t.set(row, out)
 		}
 	}
-	return emptied
+	return emptied, anyChanged
 }

@@ -268,9 +268,10 @@ type HumanStore interface {
 	// spelling and order. Returns the profile numbers whose row changed,
 	// ascending. No transaction: callers hold the per-human lock and the
 	// operation is idempotent. With dryRun true nothing is written and the
-	// return value is what a real run would have changed (the repo-wide
+	// return values are what a real run would have changed; changed reports
+	// whether ANY row (a profile or humans.area) was, or with dryRun would be, written (the repo-wide
 	// dry-run mechanism: a trailing dryRun bool parameter).
-	RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, err error)
+	RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) (removedFrom []int, changed bool, err error)
 
 	// EditOverrideAreas edits override_areas on the human's rules in the
 	// listed profiles (profile_no IN profileNos). An empty to removes from;
@@ -279,6 +280,7 @@ type HumanStore interface {
 	// keyed by canonical v2 type name, the uids whose override list became
 	// empty (those are set to NULL, so the rule falls back to the human's
 	// areas). With dryRun true nothing is written; the result is what a real
-	// run would report.
-	EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (broadened map[string][]int64, err error)
+	// run would report. changed is true when ANY override row was (or with
+	// dryRun would be) written, even if broadened is empty.
+	EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (broadened map[string][]int64, changed bool, err error)
 }

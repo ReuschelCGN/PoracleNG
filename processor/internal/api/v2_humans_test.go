@@ -1441,3 +1441,28 @@ func TestV2Humans_RemoveArea_SpellingVariants(t *testing.T) {
 		}
 	}
 }
+
+// A real write that touches neither a profile list nor broadens a rule (an
+// override shrinks but keeps another area) must still reload; dry run must not.
+func TestV2Humans_RemoveArea_PartialOverrideStillReloads(t *testing.T) {
+	r, humans, reloads, mons, _ := newV2HumansTestAPIRules(t, nil)
+	humans.SeedProfile(store.Profile{ID: "u1", ProfileNo: 1, Area: []string{"alpha"}})
+	_, _ = mons.Insert(&db.MonsterTrackingAPI{ID: "u1", ProfileNo: 1, OverrideAreas: []string{"private", "alpha"}})
+
+	code, got := removeArea(t, r, "name=private&dry_run=true")
+	if code != http.StatusOK || len(got.RemovedFrom) != 0 || len(got.Broadened) != 0 {
+		t.Fatalf("dry run: code=%d %+v", code, got)
+	}
+	if atomic.LoadInt32(reloads) != 0 {
+		t.Fatal("dry run must not reload")
+	}
+	if code, _ = removeArea(t, r, "name=private"); code != http.StatusOK {
+		t.Fatalf("code=%d", code)
+	}
+	if !slices.Equal(mons.AllRows()[0].OverrideAreas, []string{"alpha"}) {
+		t.Errorf("override = %v", mons.AllRows()[0].OverrideAreas)
+	}
+	if atomic.LoadInt32(reloads) == 0 {
+		t.Error("a written override must trigger a reload")
+	}
+}

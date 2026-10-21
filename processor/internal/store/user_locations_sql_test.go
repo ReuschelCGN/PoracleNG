@@ -348,7 +348,7 @@ func TestRemoveAreaFromProfiles_SQL(t *testing.T) {
 		('u1', 3, 'c', '["beta"]')`)
 
 	// Dry run first: reports, writes nothing.
-	got, err := s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, true)
+	got, _, err := s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, true)
 	if err != nil || !slices.Equal(got, []int{1, 2}) {
 		t.Fatalf("dry run: got=%v err=%v", got, err)
 	}
@@ -357,7 +357,7 @@ func TestRemoveAreaFromProfiles_SQL(t *testing.T) {
 		t.Fatalf("dry run wrote humans.area: %q %v", area, err)
 	}
 
-	got, err = s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
+	got, _, err = s.RemoveAreaFromProfiles("u1", "Gent Centrum", []int{1, 2, 3}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestRemoveAreaFromProfiles_SQL(t *testing.T) {
 
 	// A non-current profile leaves humans.area alone.
 	mustExec(t, dbx, `UPDATE humans SET area = '["beta"]' WHERE id = 'u1'`)
-	if _, err := s.RemoveAreaFromProfiles("u1", "beta", []int{2}, false); err != nil {
+	if _, _, err := s.RemoveAreaFromProfiles("u1", "beta", []int{2}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := dbx.Get(&area, `SELECT area FROM humans WHERE id = 'u1'`); err != nil || area != `["beta"]` {
@@ -414,7 +414,10 @@ func TestEditOverrideAreas_SQL(t *testing.T) {
 	}
 
 	// Dry run reports and writes nothing.
-	b, err := s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", true)
+	b, ch, err := s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", true)
+	if !ch {
+		t.Error("dry run must report changed")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +428,7 @@ func TestEditOverrideAreas_SQL(t *testing.T) {
 		t.Fatal("dry run wrote")
 	}
 
-	b, err = s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", false)
+	b, _, err = s.EditOverrideAreas("u1", []int{1}, "PRIVATE", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +447,7 @@ func TestEditOverrideAreas_SQL(t *testing.T) {
 
 	// Rename replaces and collapses.
 	mustExec(t, dbx, `UPDATE monsters SET override_areas = '["old name","new_name"]' WHERE uid = 40`)
-	if b, err = s.EditOverrideAreas("u1", []int{1}, "old_name", "new_name", false); err != nil || len(b) != 0 {
+	if b, ch, err = s.EditOverrideAreas("u1", []int{1}, "old_name", "new_name", false); err != nil || len(b) != 0 || !ch {
 		t.Fatalf("rename: %v %v", b, err)
 	}
 	if got := read("monsters", 40); got != `["new_name"]` {

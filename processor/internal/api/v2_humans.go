@@ -737,17 +737,17 @@ func registerV2HumanRemoveArea(api huma.API, deps *TrackingDeps, tag []string, s
 			targets = []int{in.Profile}
 		}
 
-		removedFrom, err := deps.Humans.RemoveAreaFromProfiles(in.ID, in.Name, targets, in.DryRun)
+		removedFrom, areasChanged, err := deps.Humans.RemoveAreaFromProfiles(in.ID, in.Name, targets, in.DryRun)
 		if err != nil {
 			log.Errorf("v2 humans: remove area %q from %s: %s", in.Name, in.ID, err)
 			return nil, huma.Error500InternalServerError("database error")
 		}
-		broadened, err := deps.Humans.EditOverrideAreas(in.ID, targets, in.Name, "", in.DryRun)
+		broadened, overridesChanged, err := deps.Humans.EditOverrideAreas(in.ID, targets, in.Name, "", in.DryRun)
 		if err != nil {
 			log.Errorf("v2 humans: remove area %q overrides for %s: %s", in.Name, in.ID, err)
 			return nil, huma.Error500InternalServerError("database error")
 		}
-		if !in.DryRun && (len(removedFrom) > 0 || len(broadened) > 0) {
+		if !in.DryRun && (areasChanged || overridesChanged) {
 			reloadState(deps)
 		}
 

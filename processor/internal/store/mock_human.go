@@ -600,47 +600,55 @@ func (m *MockHumanStore) StripUserAreas(humanID string, denied map[string]bool) 
 }
 
 // RemoveAreaFromProfiles mirrors SQLHumanStore.RemoveAreaFromProfiles.
-func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) ([]int, error) {
+func (m *MockHumanStore) RemoveAreaFromProfiles(id, name string, profileNos []int, dryRun bool) ([]int, bool, error) {
 	m.record("RemoveAreaFromProfiles")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var removedFrom []int
+	changed := false
 	ps := m.profiles[id]
 	sort.SliceStable(ps, func(i, j int) bool { return ps[i].ProfileNo < ps[j].ProfileNo })
 	for i := range ps {
 		if !slices.Contains(profileNos, ps[i].ProfileNo) {
 			continue
 		}
-		kept, changed := removeAreaName(ps[i].Area, name)
-		if !changed {
+		kept, rowChanged := removeAreaName(ps[i].Area, name)
+		if !rowChanged {
 			continue
 		}
 		if !dryRun {
 			ps[i].Area = kept
 		}
 		removedFrom = append(removedFrom, ps[i].ProfileNo)
+		changed = true
 	}
 	if h, ok := m.humans[id]; ok && slices.Contains(profileNos, h.CurrentProfileNo) {
-		if kept, changed := removeAreaName(h.Area, name); changed && !dryRun {
-			h.Area = kept
+		if kept, hc := removeAreaName(h.Area, name); hc {
+			changed = true
+			if !dryRun {
+				h.Area = kept
+			}
 		}
 	}
-	return removedFrom, nil
+	return removedFrom, changed, nil
 }
 
 // EditOverrideAreas mirrors SQLHumanStore.EditOverrideAreas over the tracking
 // mocks registered in OverrideTables.
-func (m *MockHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, error) {
+func (m *MockHumanStore) EditOverrideAreas(id string, profileNos []int, from, to string, dryRun bool) (map[string][]int64, bool, error) {
 	m.record("EditOverrideAreas")
 	broadened := map[string][]int64{}
+	anyChanged := false
 	for _, table := range trackingTablesWithOverrideAreas {
 		t, ok := m.OverrideTables[table]
 		if !ok {
 			continue
 		}
-		if emptied := t.editOverrides(id, profileNos, from, to, dryRun); len(emptied) > 0 {
+		emptied, ch := t.editOverrides(id, profileNos, from, to, dryRun)
+		anyChanged = anyChanged || ch
+		if len(emptied) > 0 {
 			broadened[trackingTypePathMap[table]] = emptied
 		}
 	}
-	return broadened, nil
+	return broadened, anyChanged, nil
 }
