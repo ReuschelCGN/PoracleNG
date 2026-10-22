@@ -400,7 +400,7 @@ type MonsterTrackingAPI struct {
 	PVPRankingMinCP       int      `db:"pvp_ranking_min_cp"      json:"pvp_ranking_min_cp"`
 	PVPRankingCap         int      `db:"pvp_ranking_cap"         json:"pvp_ranking_cap"`
 	PVPRankingEvolution   int      `db:"pvp_ranking_evolution"   json:"pvp_ranking_evolution"`
- 	ShinyPredict          int      `db:"shiny_predict"           json:"shiny_predict"`
+	ShinyPredict          int      `db:"shiny_predict"           json:"shiny_predict"`
 	OverrideLocationLabel string   `db:"override_location_label" json:"override_location_label" diff:""`
 	OverrideAreasRaw      string   `db:"override_areas"          json:"-"                      diff:"-"`
 	OverrideAreas         []string `db:"-"                       json:"override_areas"         diff:""`
