@@ -208,6 +208,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the matcher reads — so e.g. `DELETE …/location?profile=2` while profile 1 was
   active stopped every distance rule matching. The store now writes the human
   row only when the named profile is the current one.
+- **v2 snapshot `?all_profiles=true` returns every rule the human has.** It
+  read only profile numbers with a `profiles` row, so a human with no row for
+  their active profile (common after a PoracleJS migration) got no rules at
+  all, and rules left by a deleted profile were missing. It now reads every
+  profile number a rule sits on, plus the active profile, as v1
+  `allProfiles/{id}` did. Such rules carry a `profile_no` that `profiles` does
+  not list (#330).
+- **v2 invasion catch-alls keep their gender.** `everything` and `boss` rules
+  read back with `gender: null` even when stored as male or female, although
+  the matcher applies it, so a read-modify-write widened the rule to both
+  genders. Reads now return the gender, and `gender` is accepted with every
+  mode except `grunt_id` (#330).
 
 ### Deprecated
 

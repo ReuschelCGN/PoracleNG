@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -31,7 +32,7 @@ import (
 type v2SnapshotInput struct {
 	ID                  string `path:"id" doc:"Human id (the owning user); ownership scope. 404 if it does not exist."`
 	Profile             int    `query:"profile" default:"-1" doc:"Profile number; defaults to the human's active profile. Ignored when all_profiles=true."`
-	AllProfiles         bool   `query:"all_profiles" doc:"Span every profile the human owns; each rule then carries its profile_no."`
+	AllProfiles         bool   `query:"all_profiles" doc:"Span every profile the human has rules on; each rule then carries its profile_no. That can include profile numbers with no entry in profiles: the active profile of a human who never created one, or rules left behind by a deleted profile."`
 	IncludeDescriptions bool   `query:"include_descriptions" doc:"Add a human-readable description to every rule."`
 }
 
@@ -89,9 +90,18 @@ func RegisterV2TrackingSnapshot(api huma.API, deps *TrackingDeps) {
 			return nil, huma.Error500InternalServerError("database error")
 		}
 
+		var profileNos []int
+		if in.AllProfiles {
+			profileNos, err = snapshotProfileNos(deps, human, profiles)
+			if err != nil {
+				log.Errorf("v2 snapshot: rule profiles %s: %s", human.ID, err)
+				return nil, huma.Error500InternalServerError("database error")
+			}
+		}
+
 		tracking := make(map[string][]json.RawMessage, len(deps.v2SnapshotProviders))
 		for _, p := range deps.v2SnapshotProviders {
-			rules, rerr := p.Rules(human, profiles, profileNo, in.AllProfiles, in.IncludeDescriptions)
+			rules, rerr := p.Rules(human, profileNos, profileNo, in.AllProfiles, in.IncludeDescriptions)
 			if rerr != nil {
 				log.Errorf("v2 snapshot: %s rules for %s: %s", p.TypeName, human.ID, rerr)
 				return nil, huma.Error500InternalServerError("database error")
@@ -111,6 +121,25 @@ func RegisterV2TrackingSnapshot(api huma.API, deps *TrackingDeps) {
 		out.Body.Mutes = snapshotMutes(deps, human.ID)
 		return out, nil
 	})
+}
+
+// snapshotProfileNos is the profile set all_profiles reads: every profiles
+// row, the active profile, and every profile_no a rule sits on. The last two
+// matter because neither needs a profiles row: a human migrated from
+// PoracleJS often has rules on current_profile_no and no row for it, and a
+// deleted profile can leave rules behind. Those leftovers never fire (matching
+// is scoped to the active profile) but they are still the human's rules (#330).
+func snapshotProfileNos(deps *TrackingDeps, human *store.HumanLite, profiles []store.Profile) ([]int, error) {
+	nos, err := deps.Humans.RuleProfileNos(human.ID)
+	if err != nil {
+		return nil, err
+	}
+	nos = append(nos, human.CurrentProfileNo)
+	for _, p := range profiles {
+		nos = append(nos, p.ProfileNo)
+	}
+	slices.Sort(nos)
+	return slices.Compact(nos), nil
 }
 
 // snapshotLocations builds the {default, named} locations payload, mirroring

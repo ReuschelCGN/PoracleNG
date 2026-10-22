@@ -33,6 +33,10 @@ type MockHumanStore struct {
 	Locations         map[string][]UserLocation
 	LocationRefs      map[string][]ReferencingRule // keyed by id|lowercased-label
 	StrippedAreaCalls map[string]map[string]bool   // humanID → denied set, for test assertions
+
+	// RuleProfiles is what RuleProfileNos returns per human. The mock has no
+	// view of the tracking tables, so tests seed it to match their rows.
+	RuleProfiles map[string][]int
 }
 
 // MockUpdateCall is a copy of one Update call's arguments.
@@ -369,6 +373,15 @@ func (m *MockHumanStore) GetProfiles(id string) ([]Profile, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.profiles[id], nil
+}
+
+func (m *MockHumanStore) RuleProfileNos(id string) ([]int, error) {
+	m.record("RuleProfileNos")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	nos := slices.Clone(m.RuleProfiles[id])
+	slices.Sort(nos)
+	return slices.Compact(nos), nil
 }
 
 func (m *MockHumanStore) SwitchProfile(id string, profileNo int) (bool, error) {
