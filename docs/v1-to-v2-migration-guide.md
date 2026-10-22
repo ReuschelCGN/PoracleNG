@@ -145,9 +145,9 @@ is **not** a sentinel to avoid.
 ### Type-specific changes
 
 - **`ping`** — optional string on every type; null when empty.
-- **invasion** — v2 requires **exactly one** targeting mode per rule: `type_id` (int poke-type,
-  optional `gender`) | `grunt_id` (int exact character) | `everything: true` | `boss: true`. The
-  facade translates down to the same stored grunt-type names v1 wrote.
+- **invasion** — v2 requires **exactly one** targeting mode per rule: `grunt_type` | `type_id` (int poke-type) | `grunt_id` (int exact character) | `everything: true` |
+  `boss: true`, with optional `gender` on any mode except `grunt_id`. The facade translates down
+  to the same stored grunt-type names v1 wrote; reads return `grunt_type` and `gender`.
 - **incident (NEW)** — pokestop events (e.g. Showcases) split out of invasion into their own type,
   keyed by the game's `display_type` int. Not available on v1.
 - **`distance`** — clamped to the server's `[tracking] max_distance` on every type (v1 only capped at the

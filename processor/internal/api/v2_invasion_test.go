@@ -225,18 +225,17 @@ func TestV2Invasion_TwoModesSet422(t *testing.T) {
 	}
 }
 
-func TestV2Invasion_GenderWithNonTypeID422(t *testing.T) {
+func TestV2Invasion_GenderWithGruntID422(t *testing.T) {
 	cases := []string{
 		`[{"grunt_id":5,"gender":"male"}]`,
-		`[{"everything":true,"gender":"male"}]`,
-		`[{"boss":true,"gender":"female"}]`,
+		`[{"grunt_id":5,"gender":"any"}]`,
 	}
 	for _, body := range cases {
 		r, is, _, restore := newV2InvasionTestAPI(t)
 		w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/invasion", body)
 		if w.Code != http.StatusUnprocessableEntity {
 			restore()
-			t.Fatalf("body %s: expected 422 for gender with non-type_id mode, got %d: %s", body, w.Code, w.Body.String())
+			t.Fatalf("body %s: expected 422 for gender with grunt_id, got %d: %s", body, w.Code, w.Body.String())
 		}
 		if len(is.AllRows()) != 0 {
 			restore()
@@ -340,9 +339,9 @@ func TestV2Invasion_EverythingRoundTrip(t *testing.T) {
 	if _, ok := rule["type_id"]; ok {
 		t.Fatalf("everything rule should not carry type_id: %v", rule)
 	}
-	// The catch-alls have no gender.
+	// No gender given: null at the 'any' wildcard.
 	if g := rule["gender"]; g != nil {
-		t.Fatalf("everything rule should not carry gender, got %v", g)
+		t.Fatalf("everything rule without gender should read gender null, got %v", g)
 	}
 }
 
@@ -515,7 +514,7 @@ func TestV2Invasion_RoundTrip_TypeIDMode(t *testing.T) {
 }
 
 // TestV2Invasion_RoundTrip_EverythingMode checks the catch-all mode: everything
-// stays present, gender is null (not type_id mode), other modes absent, and the
+// stays present, gender is null (none given), other modes absent, and the
 // rule round-trips unchanged.
 func TestV2Invasion_RoundTrip_EverythingMode(t *testing.T) {
 	r, is, _, restore := newV2InvasionTestAPI(t)
@@ -531,7 +530,7 @@ func TestV2Invasion_RoundTrip_EverythingMode(t *testing.T) {
 		t.Fatalf("type_id must be absent in everything mode, got %v", v)
 	}
 	if got["gender"] != nil {
-		t.Fatalf("gender must be null outside type_id mode, got %v", got["gender"])
+		t.Fatalf("gender must be null when none was given, got %v", got["gender"])
 	}
 
 	rows := is.AllRows()
@@ -792,5 +791,37 @@ func TestV2Invasion_NormalisationStillRejectsUnknown(t *testing.T) {
 		`[{"grunt_type":"no such grunt"}]`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for an unknown name, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// The matcher narrows the catch-alls by gender (!invasion everything male
+// fires only for male grunts), so v2 must accept that gender on every
+// catch-all form and return it on read. Hiding it meant a read-modify-write
+// stored gender 0 and widened the rule to both genders (#330).
+func TestV2Invasion_CatchAllGenderRoundTrips(t *testing.T) {
+	cases := []struct {
+		body, gruntType string
+		gender          int
+	}{
+		{`[{"everything":true,"gender":"male"}]`, "everything", 1},
+		{`[{"boss":true,"gender":"female"}]`, "boss", 2},
+		{`[{"grunt_type":"everything","gender":"male"}]`, "everything", 1},
+		{`[{"gender":"female"}]`, "everything", 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.body, func(t *testing.T) {
+			r, is, _, restore := newV2InvasionTestAPI(t)
+			defer restore()
+
+			got := roundTripRule(t, r, "/api/v2/humans/u1/tracking/invasion", tc.body)
+			want := invasionGenderEnum.fromStored(tc.gender)
+			if got["grunt_type"] != tc.gruntType || got["gender"] != want {
+				t.Fatalf("read = grunt_type %v gender %v, want %s %s", got["grunt_type"], got["gender"], tc.gruntType, want)
+			}
+			rows := is.AllRows()
+			if len(rows) != 1 || rows[0].GruntType != tc.gruntType || rows[0].Gender != tc.gender {
+				t.Fatalf("stored = %+v, want (%s, gender %d)", rows, tc.gruntType, tc.gender)
+			}
+		})
 	}
 }

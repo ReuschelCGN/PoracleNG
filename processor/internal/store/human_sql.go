@@ -376,6 +376,21 @@ func (s *SQLHumanStore) GetProfiles(id string) ([]Profile, error) {
 	return profiles, nil
 }
 
+func (s *SQLHumanStore) RuleProfileNos(id string) ([]int, error) {
+	parts := make([]string, len(trackingTables))
+	args := make([]any, len(trackingTables))
+	for i, table := range trackingTables {
+		parts[i] = fmt.Sprintf("SELECT profile_no FROM `%s` WHERE id = ?", table)
+		args[i] = id
+	}
+	var nos []int
+	query := strings.Join(parts, " UNION ") + " ORDER BY profile_no"
+	if err := s.db.Select(&nos, query, args...); err != nil {
+		return nil, fmt.Errorf("select rule profile numbers for %s: %w", id, err)
+	}
+	return nos, nil
+}
+
 func (s *SQLHumanStore) SwitchProfile(id string, profileNo int) (bool, error) {
 	var profile profileRow
 	err := s.db.Get(&profile, `SELECT * FROM profiles WHERE id = ? AND profile_no = ?`, id, profileNo)

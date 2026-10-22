@@ -187,6 +187,12 @@ type HumanStore interface {
 	// GetProfiles returns all profiles for a human.
 	GetProfiles(id string) ([]Profile, error)
 
+	// RuleProfileNos returns the distinct profile_no values the human's
+	// tracking rules use, ascending. It can name profiles with no profiles
+	// row: a PoracleJS-migrated human's active profile, or one left behind
+	// by a deleted profile (#330).
+	RuleProfileNos(id string) ([]int, error)
+
 	// SwitchProfile switches the human's active profile. Returns false if
 	// the profile does not exist.
 	SwitchProfile(id string, profileNo int) (bool, error)

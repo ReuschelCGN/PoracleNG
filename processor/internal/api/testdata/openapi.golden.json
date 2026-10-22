@@ -4711,7 +4711,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -4839,7 +4839,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -4963,7 +4963,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -5050,7 +5050,7 @@
                       "type": "boolean"
                     },
                     "gender": {
-                      "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                      "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                       "enum": [
                         "any",
                         "male",
@@ -9937,7 +9937,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -11788,7 +11788,7 @@
             "type": "boolean"
           },
           "gender": {
-            "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+            "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
             "enum": [
               "any",
               "male",
@@ -12395,7 +12395,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -15554,7 +15554,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -15679,7 +15679,7 @@
                   "type": "boolean"
                 },
                 "gender": {
-                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                  "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                   "enum": [
                     "any",
                     "male",
@@ -15766,7 +15766,7 @@
                       "type": "boolean"
                     },
                     "gender": {
-                      "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode).",
+                      "description": "Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'.",
                       "enum": [
                         "any",
                         "male",
@@ -25129,12 +25129,12 @@
             }
           },
           {
-            "description": "Span every profile the human owns; each rule then carries its profile_no.",
+            "description": "Span every profile the human has rules on; each rule then carries its profile_no. That can include profile numbers with no entry in profiles: the active profile of a human who never created one, or rules left behind by a deleted profile.",
             "explode": false,
             "in": "query",
             "name": "all_profiles",
             "schema": {
-              "description": "Span every profile the human owns; each rule then carries its profile_no.",
+              "description": "Span every profile the human has rules on; each rule then carries its profile_no. That can include profile numbers with no entry in profiles: the active profile of a human who never created one, or rules left behind by a deleted profile.",
               "type": "boolean"
             }
           },

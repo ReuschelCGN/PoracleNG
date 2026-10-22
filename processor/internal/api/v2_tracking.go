@@ -224,14 +224,14 @@ func resolveHuman(deps *TrackingDeps, id string, profile int) (*store.HumanLite,
 // profile_no field injected in all_profiles mode (see buildSnapshotEnvelopes).
 //
 // typeName is the tracking-type URL segment (the snapshot's "tracking" map key).
-// When allProfiles is true, the provider spans every profile the human owns and
-// each returned rule carries its profile_no.
+// When allProfiles is true, the provider reads each of profileNos (see
+// snapshotProfileNos) and each returned rule carries its profile_no.
 type v2SnapshotProvider struct {
 	// TypeName is the "tracking" map key (e.g. "pokemon", "invasion", "incident").
 	TypeName string
 	// Rules returns the rules-as-envelopes (already JSON-marshalled) for this
 	// type, scoped to the human (and profile, or all profiles).
-	Rules func(human *store.HumanLite, profiles []store.Profile, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error)
+	Rules func(human *store.HumanLite, profileNos []int, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error)
 }
 
 // registerV2Tracking wires the six strict endpoints for one tracking type. It
@@ -242,8 +242,8 @@ type v2SnapshotProvider struct {
 func registerV2Tracking[Req any, T any](api huma.API, deps *TrackingDeps, typ v2TrackingType[Req, T]) {
 	deps.v2SnapshotProviders = append(deps.v2SnapshotProviders, v2SnapshotProvider{
 		TypeName: typ.Name,
-		Rules: func(human *store.HumanLite, profiles []store.Profile, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error) {
-			return buildSnapshotRules(deps, typ, human, profiles, profileNo, allProfiles, includeDesc)
+		Rules: func(human *store.HumanLite, profileNos []int, profileNo int, allProfiles, includeDesc bool) ([]json.RawMessage, error) {
+			return buildSnapshotRules(deps, typ, human, profileNos, profileNo, allProfiles, includeDesc)
 		},
 	})
 	registerV2TrackingOps(api, deps, typ)
@@ -720,16 +720,15 @@ func buildRuleEnvelopes[Req any, T any](deps *TrackingDeps, typ v2TrackingType[R
 // Single-profile mode (allProfiles=false): one scopedRows(profileNo) read,
 // envelopes without profile_no — exactly the per-type list shape.
 //
-// all_profiles mode: enumerate every profile the human owns, read each, and
-// stamp profile_no onto every envelope so a client can tell them apart. (The
-// per-type list logic lists one profile; spanning profiles is the snapshot's
-// job, done here by looping the human's profiles — mirroring v1 allProfiles,
-// which is profile-agnostic.)
+// all_profiles mode: read each of profileNos and stamp profile_no onto every
+// envelope so a client can tell them apart. profileNos comes from the rules
+// themselves, not just the profiles rows, so like v1 allProfiles nothing the
+// human owns is left out (#330).
 func buildSnapshotRules[Req any, T any](
 	deps *TrackingDeps,
 	typ v2TrackingType[Req, T],
 	human *store.HumanLite,
-	profiles []store.Profile,
+	profileNos []int,
 	profileNo int,
 	allProfiles, includeDesc bool,
 ) ([]json.RawMessage, error) {
@@ -758,8 +757,7 @@ func buildSnapshotRules[Req any, T any](
 	}
 
 	out := []json.RawMessage{}
-	for i := range profiles {
-		pn := profiles[i].ProfileNo
+	for _, pn := range profileNos {
 		rows, err := typ.scopedRows(deps, humanID, pn)
 		if err != nil {
 			return nil, err
