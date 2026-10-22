@@ -4675,7 +4675,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -4707,7 +4707,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -4803,7 +4803,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -4835,7 +4835,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -4927,7 +4927,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -4959,7 +4959,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -5014,7 +5014,7 @@
                   "description": "The stored rule this one replaced",
                   "properties": {
                     "boss": {
-                      "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                      "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                       "type": "boolean"
                     },
                     "clean": {
@@ -5046,7 +5046,7 @@
                       ]
                     },
                     "everything": {
-                      "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                      "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                       "type": "boolean"
                     },
                     "gender": {
@@ -9901,7 +9901,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -9933,7 +9933,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -11756,7 +11756,7 @@
         "additionalProperties": false,
         "properties": {
           "boss": {
-            "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+            "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
             "type": "boolean"
           },
           "clean": {
@@ -11784,7 +11784,7 @@
             ]
           },
           "everything": {
-            "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+            "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
             "type": "boolean"
           },
           "gender": {
@@ -12359,7 +12359,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -12391,7 +12391,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -15518,7 +15518,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -15550,7 +15550,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -15643,7 +15643,7 @@
               "additionalProperties": false,
               "properties": {
                 "boss": {
-                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "clean": {
@@ -15675,7 +15675,7 @@
                   ]
                 },
                 "everything": {
-                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                  "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                   "type": "boolean"
                 },
                 "gender": {
@@ -15730,7 +15730,7 @@
                   "description": "The stored rule this one replaced",
                   "properties": {
                     "boss": {
-                      "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed.",
+                      "description": "Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender.",
                       "type": "boolean"
                     },
                     "clean": {
@@ -15762,7 +15762,7 @@
                       ]
                     },
                     "everything": {
-                      "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed.",
+                      "description": "Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender.",
                       "type": "boolean"
                     },
                     "gender": {
