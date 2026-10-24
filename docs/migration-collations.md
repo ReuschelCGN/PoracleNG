@@ -16,7 +16,10 @@ foreign keys; user deletion remains application-managed.
 - `000009` now normalises IDs to `utf8mb4_unicode_ci` in temporary tables and
   converts only the persistent table's side of each comparison, so every
   lookup uses a temporary table's primary key. It does not alter persistent
-  columns.
+  columns. The temporary tables declare their `id` column explicitly
+  (`VARCHAR(255)`, `utf8mb4_unicode_ci`): MariaDB 10.5 and 10.6 type a
+  `CONVERT(… USING utf8mb4)` result as TEXT in `CREATE … SELECT`, and a TEXT
+  column cannot be a primary key without a prefix length.
 - All of its data changes commit in one transaction, so a failure part-way
   leaves the data unchanged (InnoDB tables; a MyISAM table would not roll
   back). It is idempotent: once it succeeds nothing is left on a fake
@@ -55,4 +58,5 @@ The tests in `processor/internal/db/migrate_collation_test.go` need
 `PORACLENG_MIGRATION_TEST_DSN` pointing at MySQL 8 or MariaDB, with permission
 to create and drop databases. Each creates and removes its own uniquely named
 database. They cover mixed collations across all tracking tables, re-running
-`000009`, rollback after a failure part-way, and dirty-state handling.
+`000009`, rollback after a failure part-way, and dirty-state handling. They
+pass on MySQL 8.0 and 8.4 and MariaDB 10.5, 10.6, 10.11 and 11.4.
