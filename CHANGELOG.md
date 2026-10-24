@@ -187,6 +187,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of silently marking it applied. A database where an older build
   skipped a failed 000009 needs a manual reset to version 8; see
   `docs/migration-collations.md`.
+- **Migration 000009 runs on MariaDB 10.5 and 10.6.** The collation fix above
+  failed there, on fresh installs and upgrades alike, with "BLOB/TEXT column
+  'id' used in key specification without a key length": those versions type
+  the normalised ID as TEXT. Its temporary tables now declare the ID column.
+  A database left dirty at 000009 by that error is retried on the next start.
 - **v2 pokemon: a GET → POST of a rule stored with a legacy wildcard alias is
   `unchanged`, not a duplicate.** Rows holding `0` for `pvp_ranking_best`,
   `rarity`, `size` or `pvp_ranking_worst` read back as `null`, which the write

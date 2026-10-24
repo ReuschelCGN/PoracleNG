@@ -19,7 +19,9 @@
 -- collations". Every id is therefore normalised to utf8mb4_unicode_ci into a
 -- temporary table keyed on it, and each comparison converts only the
 -- persistent table's side, so the temporary table's primary key still serves
--- the lookup. Persistent columns are not altered.
+-- the lookup. Persistent columns are not altered. The temporary tables declare
+-- id explicitly: older MariaDB (10.5, 10.6) types a CONVERT(... USING) result
+-- as TEXT in CREATE ... SELECT, which cannot be a key without a length.
 --
 -- Safe to re-run: it is idempotent (once it succeeds nothing is left on a
 -- fake profile 0), and all data changes commit in one transaction, so a
@@ -30,11 +32,11 @@
 
 -- Temporary tables are built before the transaction: CREATE TEMPORARY TABLE
 -- inside one is rejected under some GTID replication settings.
-CREATE TEMPORARY TABLE tmp_real_profile_zero (PRIMARY KEY (id))
+CREATE TEMPORARY TABLE tmp_real_profile_zero (id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (id))
 	SELECT DISTINCT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS id FROM profiles WHERE profile_no = 0;
 
 -- Humans that already have rules on profile 1, captured before anything moves.
-CREATE TEMPORARY TABLE tmp_has_profile_one_rules (PRIMARY KEY (id))
+CREATE TEMPORARY TABLE tmp_has_profile_one_rules (id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (id))
 	SELECT DISTINCT id FROM (
 	SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS id FROM `monsters` WHERE profile_no = 1
 	UNION SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS id FROM `raid` WHERE profile_no = 1
@@ -50,7 +52,7 @@ CREATE TEMPORARY TABLE tmp_has_profile_one_rules (PRIMARY KEY (id))
 	) x;
 
 -- Humans on the fake profile 0, with the live area/location to fold into 1.
-CREATE TEMPORARY TABLE tmp_fold_humans (PRIMARY KEY (id))
+CREATE TEMPORARY TABLE tmp_fold_humans (id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (id))
 	SELECT CONVERT(h.id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS id, h.name, h.area, h.latitude, h.longitude
 	FROM humans h
 	WHERE h.current_profile_no = 0
@@ -58,7 +60,7 @@ CREATE TEMPORARY TABLE tmp_fold_humans (PRIMARY KEY (id))
 
 -- Humans that switched away from the fake profile 0 and already have profile-1
 -- rules (see step 3).
-CREATE TEMPORARY TABLE tmp_abandoned_profile_zero (PRIMARY KEY (id))
+CREATE TEMPORARY TABLE tmp_abandoned_profile_zero (id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (id))
 	SELECT CONVERT(h.id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS id
 	FROM humans h
 	WHERE h.current_profile_no <> 0
