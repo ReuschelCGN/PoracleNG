@@ -5,6 +5,7 @@ package discordbot
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -83,8 +84,9 @@ type Config struct {
 	ClearGuildSlash bool
 }
 
-// New creates and starts a Discord bot. Returns the bot (for shutdown) or an error.
-func New(cfg Config) (*Bot, error) {
+// New creates and starts a Discord bot, retrying transient gateway failures until
+// connected or ctx is cancelled. Returns the bot (for shutdown) or an error.
+func New(ctx context.Context, cfg Config) (*Bot, error) {
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, err
@@ -146,7 +148,8 @@ func New(cfg Config) (*Bot, error) {
 		log.Info("slash: dispatcher disabled ([discord.slash_commands] enabled=false)")
 	}
 
-	if err := session.Open(); err != nil {
+	if err := openWithRetry(ctx, session.Open); err != nil {
+		session.Close()
 		return nil, err
 	}
 

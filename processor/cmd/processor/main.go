@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -1123,6 +1122,11 @@ func main() {
 		api.RegisterCommand(humaAPI, &apiCmdDeps)
 	}
 
+	// Handle shutdown while the initial Discord connection is waiting to retry,
+	// as well as during normal operation.
+	shutdownCtx, stopShutdown := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopShutdown()
+
 	gatewayToken := cfg.Discord.DiscordGatewayToken()
 	if cfg.Discord.Enabled && gatewayToken != "" {
 		deps := sharedBotDeps
@@ -1136,7 +1140,7 @@ func main() {
 			mode = "split (using [discord] command_token)"
 		}
 		log.Infof("Discord bot starting in %s mode", mode)
-		dbot, err := discordbot.New(discordbot.Config{
+		dbot, err := discordbot.New(shutdownCtx, discordbot.Config{
 			Token:            gatewayToken,
 			BotDeps:          deps,
 			ForceSyncSlash:   *forceSyncSlash,
@@ -1144,7 +1148,13 @@ func main() {
 			ClearGuildSlash:  *clearGuildSlash,
 		})
 		if err != nil {
-			// When command_token is set, treat a gateway failure as
+			if shutdownCtx.Err() != nil {
+				log.Info("Discord bot startup cancelled; shutting down...")
+				close(periodicDone)
+				proc.Close()
+				return
+			}
+			// When command_token is set, treat a permanent gateway failure as
 			// fatal: the operator explicitly configured a split-bot
 			// setup, and silently falling back to "warn and continue"
 			// would hide a real misconfiguration (typo, revoked
@@ -1242,9 +1252,7 @@ func main() {
 	}()
 
 	// Graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	<-shutdownCtx.Done()
 
 	log.Infof("Shutting down...")
 
