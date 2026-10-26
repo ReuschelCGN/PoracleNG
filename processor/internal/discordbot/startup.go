@@ -14,8 +14,8 @@ import (
 const gatewayRetryInterval = time.Minute
 
 // openWithRetry covers the initial connection: discordgo only reconnects
-// automatically after a session has opened successfully. Keep startup synchronous
-// so callers never receive a partially initialized bot.
+// automatically after a session has opened successfully. Return a fully
+// initialized bot even when the caller runs this connection in the background.
 func openWithRetry(ctx context.Context, open func() error) error {
 	for {
 		if err := ctx.Err(); err != nil {
