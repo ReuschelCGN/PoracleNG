@@ -1,6 +1,6 @@
 ---
 name: new-tracking
-description: Generate a task checklist for adding a new tracking type (and optionally a new webhook handler) to PoracleNG. Use when planning implementation across the database, processor, matching, enrichment, v2 API, bot and slash commands, mutes/buttons, test data, DTS templates and the config editor.
+description: Generate a task checklist for adding a new tracking type or a new Golbat webhook type (alert type) to PoracleNG. Use when planning implementation across the database, processor, matching, enrichment, v2 API, bot and slash commands, mutes/buttons, test data, DTS templates and the config editor.
 user-invocable: true
 argument-hint: [tracking-type-name] [optional-reference-pr-url]
 allowed-tools: Read, Grep, Glob, Bash(gh *), Bash(git *), WebFetch, TaskCreate
@@ -269,6 +269,37 @@ Settings keyed by type are spread across several files: one struct field, the ex
 - [ ] Type-enumerating tests: re-run `grep -rlIi 'maxbattle\|max_battle\|fort-update\|fort_update\|"forts"\|"nests"\|"lures"' processor --include=*_test.go` and check each one also covers `$0`. Search every spelling: some tables, such as the field-group table, list fort and nest but not maxbattle. The tests named in earlier sections are the known ones: §1 tables, §2 squash, §3 mock stores, §6 enrich and dts_alias, §9 parity and definitions, §10 buttonactions, §11 mute, §12 help and dts_fields.
 - [ ] Re-run the touchpoint sweep with `$0` alongside the reference type and diff the two file lists. Any file that names the reference but not `$0` needs a deliberate justification.
 - [ ] Manual checks: `!poracle-test <cli-type>,default` delivers on Discord and Telegram. `!$0 …` adds a rule, a duplicate gets 👌, a one-field change updates in place with the same `id:N`. `!tracked`, `!script` (and pasting its output back), `!untrack $0 id:N` / `!untrack $0 …` (bare `!untrack id:N` only removes pokemon rules), `/$0` and `/untrack $0`, and `!$0 mute id:N` all work. The unsubscribe and mute buttons work on a delivered alert. v2 GET/POST/PUT/PATCH/DELETE, the `dry_run` variants, and the full snapshot `GET /api/v2/humans/{id}/tracking` include the type. `GET /api/dts/fields/$0`, `/api/dts/testdata`, `/api/dts/enrich` and `/api/config/poracleWeb` `disabledHooks` all respond correctly. `disable_<wire_type> = true` drops the type end to end (handler, command and both `!tracked` gates). `!backup`/`!restore`, profile copy and delete, and human delete cover the new table.
+
+## Cross-cutting verification
+
+The checklist above makes sure the type is *wired in*. These checks make sure it *behaves correctly* everywhere it shows up. Add them to the plan as explicit tasks. Most of them are tests and not only manual checks.
+
+- [ ] **Every way of creating a rule gives the same row.** A rule can come from `!$0 …`, `/$0`, v2 `POST`, `!script` replay or `!restore`. Each path must store an identical row (same sentinels, same `clean` bits, same override spelling), and a one-field change must squash the same way through every path. Write at least one test that creates the same rule through the bot command and through v2 and compares the stored rows. Disagreements between paths have caused real bugs before (`e15ab0c3` for the slash form, the raid/maxbattle level sentinels).
+- [ ] **Permissions.** For the new command, check:
+  - a non-admin in a registered channel is blocked;
+  - `user:` / `name:` overrides are admin or webhook-admin only;
+  - delegated channel admins work;
+  - `command_security` gating (#16) applies to the text command, `/$0` and `/api/command` alike;
+  - with `area_security` on, `override_areas` is limited to `PermittedAreas`, and `strict_locations` still applies at match time.
+
+  These are mostly generic, but a mistake specific to one type is a security bug, so test them anyway.
+- [ ] **Clients and feature detection.** Decide whether clients (PoracleWeb, ReactMap, the DTS editor) need to detect the new type. If they do, add a flag to `api.Capabilities` (`api/api.go`, built in the function that returns `Capabilities{…}`), mirroring `Costume`, and add it to the `/health` capabilities list in CLAUDE.md and API.md. List the client changes needed (tracking UI, editor field list, any new masterdata endpoint for ID lists) and raise them with the client maintainers.
+- [ ] **Upgrades and data lifecycle.** Check:
+  - the migration on an existing install, on both MySQL and MariaDB, and that the down migration runs;
+  - profile copy carries the new rules across;
+  - `disable_<wire_type> = true` with existing rules leaves them stored but inert, and `!tracked` hides them;
+  - **`!restore` of a backup taken before the type existed clears the new type's rules.** Restore replaces every table in `backupTables`, and a table missing from the file ends up empty. Decide whether that's acceptable, and either document it in the release notes or skip absent tables (`legacyBackupTables` in `backup.go` handles the reverse case, a table that has been removed).
+- [ ] **Hot-path cost.** The matcher scans `st.$0s` linearly on every webhook. Check:
+  - the geofence lookup happens once per event;
+  - there are no per-rule allocations;
+  - any JSON-array columns are parsed at state load, not per event;
+  - the dedup key and the `DuplicateCache` TTL suit how often the event type fires;
+  - metrics labels never contain IDs.
+
+  For a high-volume type, benchmark the matcher (`go test -bench`) with a realistic rule count.
+- [ ] **Bad and unusual payloads.** Test the handler and enrichment with: optional fields missing, zero or absent coordinates, an expiry already in the past (drop the event), an unknown enum value, and a duplicate that arrives after a state reload. Golbat payloads change between versions, so prefer tolerant decoding: unknown fields are ignored, and a missing field means "unknown", never a zero that matches a rule.
+- [ ] **Localisation.** Slash command and option names translated into other locales must satisfy Discord's naming rules (lowercase, at most 32 characters). Invalid ones are silently dropped back to English by `slash/localization.go` (see `TestLocalizationsForKeyValidateNameDropsInvalid`), so check the registered result rather than assuming. The translated text-command alias (`cmd.$0` in each locale) must not collide with an existing command in that language.
+- [ ] **Telegram.** The Telegram fallback template must escape correctly for its parse mode (MarkdownV2 is strict), and the send order (sticker, photo, text, location, venue) must produce a sensible message. Test-deliver to Telegram, not only Discord.
 
 ## Reference files
 
