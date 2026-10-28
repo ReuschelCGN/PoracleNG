@@ -8,12 +8,12 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	_ "time/tzdata" // embed IANA timezone database as fallback
@@ -537,11 +537,11 @@ func main() {
 	tracking.GET("/allProfiles/:id", api.HandleGetAllProfilesTracking(trackingDeps))
 
 	// Human endpoints — Gin handles path parameter conflicts natively
-	var discordBotRef *discordbot.Bot
+	var discordBot atomic.Pointer[discordbot.Bot]
 	roleDeps := &api.RoleDeps{
 		SessionFunc: func() *discordgo.Session {
-			if discordBotRef != nil {
-				return discordBotRef.Session()
+			if b := discordBot.Load(); b != nil {
+				return b.Session()
 			}
 			return nil
 		},
@@ -928,8 +928,8 @@ func main() {
 		}
 	}()
 
-	// Start Discord bot (if token configured)
-	var discordBot *discordbot.Bot
+	// Discord may connect after the HTTP server starts. Bot-dependent handlers
+	// read this atomic pointer so they become available when it does.
 	// Shared bot dependencies — constructed once, passed to both Discord and Telegram bots.
 	sharedBotDeps := bot.BotDeps{
 		DB:                 database,
@@ -971,7 +971,7 @@ func main() {
 			return cmdEmoji.Reload()
 		},
 		EmojiOperation: func(channelID, guildID string, upload, overwrite bool) []bot.Reply {
-			b := discordBotRef
+			b := discordBot.Load()
 			if b == nil {
 				return []bot.Reply{{Text: "Discord bot is not configured on this deployment."}}
 			}
@@ -1003,16 +1003,18 @@ func main() {
 		// configured, the closures return discordbot.ErrReconciliationDisabled.
 		// Command callers use errors.Is to detect.
 		Reconciler: func(userID string) error {
-			if discordBot == nil {
+			b := discordBot.Load()
+			if b == nil {
 				return discordbot.ErrReconciliationDisabled
 			}
-			return discordBot.ReconcileUserNow(userID)
+			return b.ReconcileUserNow(userID)
 		},
 		RunReconcile: func() error {
-			if discordBot == nil {
+			b := discordBot.Load()
+			if b == nil {
 				return discordbot.ErrReconciliationDisabled
 			}
-			return discordBot.RunReconciliationNow()
+			return b.RunReconciliationNow()
 		},
 		LogBuffer:    logBuf,
 		ProcessStart: proc.ProcessStart(),
@@ -1022,28 +1024,28 @@ func main() {
 		// slash.ErrSlashNotConfigured so the command handler can emit a
 		// friendly operator message.
 		SlashSync: func() error {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return slash.ErrSlashNotConfigured
 			}
 			return d.SyncCommands()
 		},
 		SlashForceResync: func() error {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return slash.ErrSlashNotConfigured
 			}
 			return d.ForceResync()
 		},
 		SlashClearGlobal: func() error {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return slash.ErrSlashNotConfigured
 			}
 			return d.ClearGlobalCommands()
 		},
 		SlashClearGuild: func(guildID string) error {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return slash.ErrSlashNotConfigured
 			}
@@ -1052,7 +1054,7 @@ func main() {
 			return d.ClearSingleGuild(guildID)
 		},
 		SlashStatus: func() (bot.SlashScope, []bot.SlashScope, error) {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return bot.SlashScope{}, nil, slash.ErrSlashNotConfigured
 			}
@@ -1076,7 +1078,7 @@ func main() {
 			return gscope, guildScopes, nil
 		},
 		SlashList: func(guildID string) ([]bot.SlashScopeCommands, error) {
-			d := discordBotSlashDispatcher(discordBot)
+			d := discordBotSlashDispatcher(discordBot.Load())
 			if d == nil {
 				return nil, slash.ErrSlashNotConfigured
 			}
@@ -1123,43 +1125,58 @@ func main() {
 		api.RegisterCommand(humaAPI, &apiCmdDeps)
 	}
 
+	// Handle shutdown while Discord is retrying in the background, as well as
+	// during normal operation.
+	shutdownCtx, stopShutdown := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopShutdown()
+
+	// Wire the renderer before HTTP can accept webhooks. Installing this
+	// callback after Discord connects would race with concurrent renders.
+	if proc.dtsRenderer != nil {
+		proc.dtsRenderer.SetErrorNoticer(func(key, msg string) {
+			proc.adminNoticeThrottled(key, msg, time.Hour)
+		})
+	}
+
+	var discordStartup sync.WaitGroup
 	gatewayToken := cfg.Discord.DiscordGatewayToken()
 	if cfg.Discord.Enabled && gatewayToken != "" {
 		deps := sharedBotDeps
 		deps.Parser = cmdParser
-		// Log which side of the split we're on so operators can
-		// confirm their command_token is being picked up. Mask the
-		// token itself (first 8 chars + ellipsis is enough to
-		// distinguish, no full secret in logs).
+		// Log which side of the split we're on without logging either token.
 		mode := "single-bot"
 		if cfg.Discord.CommandToken != "" {
 			mode = "split (using [discord] command_token)"
 		}
 		log.Infof("Discord bot starting in %s mode", mode)
-		dbot, err := discordbot.New(discordbot.Config{
-			Token:            gatewayToken,
-			BotDeps:          deps,
-			ForceSyncSlash:   *forceSyncSlash,
-			ClearGlobalSlash: *clearGlobalSlash,
-			ClearGuildSlash:  *clearGuildSlash,
-		})
-		if err != nil {
-			// When command_token is set, treat a gateway failure as
-			// fatal: the operator explicitly configured a split-bot
-			// setup, and silently falling back to "warn and continue"
-			// would hide a real misconfiguration (typo, revoked
-			// token) behind seemingly-working alerts. The historic
-			// behaviour (warn-and-continue) is preserved for the
-			// single-bot case where the delivery side can still work
-			// even with a broken gateway.
-			if cfg.Discord.CommandToken != "" {
-				log.Fatalf("Discord command_token failed to start the gateway bot: %v — fix the token or unset [discord] command_token to fall back to single-bot operation", err)
+		discordStartup.Add(1)
+		go func() {
+			defer discordStartup.Done()
+			dbot, err := discordbot.New(shutdownCtx, discordbot.Config{
+				Token:            gatewayToken,
+				BotDeps:          deps,
+				ForceSyncSlash:   *forceSyncSlash,
+				ClearGlobalSlash: *clearGlobalSlash,
+				ClearGuildSlash:  *clearGuildSlash,
+			})
+			if err != nil {
+				if shutdownCtx.Err() != nil {
+					return
+				}
+				// Preserve split-bot mode's fatal handling for permanent
+				// configuration errors; single-bot mode can still deliver alerts.
+				if cfg.Discord.CommandToken != "" {
+					log.Fatalf("Discord command_token failed to start the gateway bot: %v — fix the token or unset [discord] command_token to fall back to single-bot operation", err)
+				}
+				log.Warnf("Discord bot failed to start: %v", err)
+				return
 			}
-			log.Warnf("Discord bot failed to start: %v", err)
-		} else {
-			discordBot = dbot
-			discordBotRef = dbot
-			proc.discordBot = dbot
+			if shutdownCtx.Err() != nil {
+				dbot.Close()
+				return
+			}
+			discordBot.Store(dbot)
+			proc.discordBot.Store(dbot)
 			// Replay any startup-time issues that happened before the bot
 			// was up so the operator sees them in the admin channel.
 			if proc.dtsInitErr != nil {
@@ -1168,15 +1185,7 @@ func main() {
 					proc.dtsInitErr,
 				))
 			}
-			// Route DTS render errors to the admin channel, throttled per
-			// type|platform|language|template so a broken template doesn't
-			// flood the channel on every webhook event.
-			if proc.dtsRenderer != nil {
-				proc.dtsRenderer.SetErrorNoticer(func(key, msg string) {
-					proc.adminNoticeThrottled(key, msg, time.Hour)
-				})
-			}
-		}
+		}()
 	}
 
 	// Start Telegram bot (if token configured)
@@ -1196,13 +1205,12 @@ func main() {
 		}
 	}
 
-	// Register resolve endpoint now that bots are initialized
+	// Resolve Discord IDs once the gateway becomes available, even if it
+	// connected after this handler was registered.
 	resolveDeps := api.ResolveDeps{
-		Cache:  resolveCache,
-		Humans: humanStore,
-	}
-	if discordBot != nil {
-		resolveDeps.DiscordSession = discordBot.Session()
+		Cache:              resolveCache,
+		Humans:             humanStore,
+		DiscordSessionFunc: roleDeps.SessionFunc,
 	}
 	if telegramBot != nil {
 		resolveDeps.TelegramAPI = telegramBot.API()
@@ -1214,7 +1222,7 @@ func main() {
 	// in place — same paths, same success JSON, problem+json errors. These six
 	// autocreate ops are guarded by huma_autocreate_golden_test.go (this package),
 	// not the package-api golden — see the NOTE near the humaAPI setup above.
-	registerAutocreateHuma(humaAPI, cfg, discordBot)
+	registerAutocreateHuma(humaAPI, cfg, discordBot.Load)
 	// autocreate templates GET/POST + validate migrated to huma, in place —
 	// open (raw-JSON) bodies, same success JSON, problem+json errors.
 	registerAutocreateTemplatesHuma(humaAPI, cfg)
@@ -1228,9 +1236,7 @@ func main() {
 	)
 
 	// Freeze the startup buffer: everything logged from here on goes to
-	// the rolling buffer. MarkStartupComplete is placed right before the
-	// HTTP server starts accepting requests so all subsystem initialisation
-	// (migrations, state load, bots, …) is captured in the startup snapshot.
+	// the rolling buffer. Discord may still be connecting when HTTP starts.
 	logBuf.MarkStartupComplete()
 
 	// Start server
@@ -1242,9 +1248,7 @@ func main() {
 	}()
 
 	// Graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	<-shutdownCtx.Done()
 
 	log.Infof("Shutting down...")
 
@@ -1259,8 +1263,14 @@ func main() {
 	// 2. Stop bots (no more command processing)
 	close(periodicDone)
 	stopBackupSweeper()
-	if discordBot != nil {
-		discordBot.Close()
+	// Wait until the connection attempt stops using shared processor state,
+	// but not indefinitely: an attempt that finishes after this sees the
+	// cancelled shutdownCtx and closes its own bot instead of storing it.
+	if !waitTimeout(&discordStartup, discordStartupWait) {
+		log.Warnf("Discord connection attempt still in progress after %s; continuing shutdown", discordStartupWait)
+	}
+	if b := discordBot.Load(); b != nil {
+		b.Close()
 		log.Infof("Discord bot disconnected")
 	}
 	if telegramBot != nil {
@@ -1323,9 +1333,8 @@ type ProcessorService struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 
-	// discordBot is set by main after the bot starts so helpers can post
-	// to the admin channel. May be nil if Discord is disabled.
-	discordBot *discordbot.Bot
+	// The gateway may connect after webhooks start arriving.
+	discordBot atomic.Pointer[discordbot.Bot]
 
 	// dtsInitErr remembers a startup-time DTS-renderer init failure so
 	// main can post an admin notice once the Discord bot is up. nil
@@ -1389,16 +1398,16 @@ func (ps *ProcessorService) SummarySchedules() store.SummaryScheduleStore {
 // adminNotice posts to the admin channel if the bot is up. No-op when
 // Discord is disabled or the admin_channel_id config is empty.
 func (ps *ProcessorService) adminNotice(msg string) {
-	if ps.discordBot != nil {
-		ps.discordBot.PostAdminNotice(msg)
+	if b := ps.discordBot.Load(); b != nil {
+		b.PostAdminNotice(msg)
 	}
 }
 
 // adminNoticeThrottled posts to the admin channel with throttling. See
 // (*discordbot.Bot).PostAdminNoticeThrottled for semantics.
 func (ps *ProcessorService) adminNoticeThrottled(key, msg string, ttl time.Duration) {
-	if ps.discordBot != nil {
-		ps.discordBot.PostAdminNoticeThrottled(key, msg, ttl)
+	if b := ps.discordBot.Load(); b != nil {
+		b.PostAdminNoticeThrottled(key, msg, ttl)
 	}
 }
 
