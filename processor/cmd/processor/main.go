@@ -1263,8 +1263,12 @@ func main() {
 	// 2. Stop bots (no more command processing)
 	close(periodicDone)
 	stopBackupSweeper()
-	// Wait until the connection attempt stops using shared processor state.
-	discordStartup.Wait()
+	// Wait until the connection attempt stops using shared processor state,
+	// but not indefinitely: an attempt that finishes after this sees the
+	// cancelled shutdownCtx and closes its own bot instead of storing it.
+	if !waitTimeout(&discordStartup, discordStartupWait) {
+		log.Warnf("Discord connection attempt still in progress after %s; continuing shutdown", discordStartupWait)
+	}
 	if b := discordBot.Load(); b != nil {
 		b.Close()
 		log.Infof("Discord bot disconnected")
