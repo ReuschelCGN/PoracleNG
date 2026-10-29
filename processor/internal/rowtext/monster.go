@@ -132,7 +132,7 @@ func (g *Generator) MonsterRowText(tr *i18n.Translator, monster *db.MonsterTrack
 		s += " | " + tr.Tf("tracking.min_time_fmt", monster.MinTime)
 	}
 
-    if monster.ShinyPredict != 0 {
+	if monster.ShinyPredict != 0 {
 		s += " | " + tr.T("tracking.myshiny")
 	}
 
