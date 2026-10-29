@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
