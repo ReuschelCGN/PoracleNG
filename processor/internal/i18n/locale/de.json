@@ -103,6 +103,7 @@
   "tracking.any": "_alle_",
   "tracking.male": "männlich",
   "tracking.female": "weiblich",
+  "tracking.myshiny": "✨ nur deine Shinys",
 
   "tracking.unchanged": "Unverändert: ",
   "tracking.updated": "Aktualisiert: ",
@@ -253,6 +254,7 @@
   "arg.allprofiles": "alle profile",
   "arg.ex": "ex",
   "arg.shiny": "schillernd",
+  "arg.myshiny": "meinshiny",
   "arg.gmax": "gmax",
   "arg.stardust": "sternenstaub",
   "arg.energy": "energie",
@@ -1365,7 +1367,5 @@
   "showcase_focus_shiny": "Schillernd",
   "showcase_class_ultra_beast": "Ultrabestie",
 
-  "arg.myshiny": "meinshiny",
-  "msg.track.myshiny_not_linked": "Für persönliche Shiny-Meldungen brauchst du einen verknüpften Trainer. Verknüpfe ihn auf der Karte unter Profil → Trainer-Profil.",
-  "tracking.myshiny": "✨ nur deine Shinys"
+  "msg.track.myshiny_not_linked": "Für persönliche Shiny-Meldungen brauchst du einen verknüpften Trainer. Verknüpfe ihn auf der Karte unter Profil → Trainer-Profil."
 }
