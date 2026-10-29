@@ -6,15 +6,19 @@
   "template": {
     "embed": {
       "title": "!broadcast (admin)",
-      "description": "Send a message to every registered user. Useful for maintenance notices, feature announcements, or event warnings.",
+      "description": "Send a message from `config/broadcast.json` to registered users selected by location or area. Useful for maintenance notices, feature announcements, or event warnings.",
       "fields": [
         {
           "name": "Usage",
-          "value": "`{{prefix}}broadcast Server restart tonight at 22:00 UTC — alerts will pause briefly.`\n\nThe message is sent as-is to every registered user via DM (Discord) or direct message (Telegram)."
+          "value": "`{{prefix}}broadcast <filter> <message id>`\n\nThe message id is the `id` of an entry in `config/broadcast.json` (see `examples/broadcast.json`). Entries can set `\"platform\": \"discord\"` or `\"telegram\"`, or omit it to serve both. Only enabled user registrations receive it, never channels, groups or webhooks."
         },
         {
           "name": "Filter the audience",
-          "value": "`{{prefix}}broadcast type:discord:user Your message` — only Discord users\n`{{prefix}}broadcast type:telegram:user Your message` — only Telegram users\n\nOther filter types: `role:<roleId>`, `community:<name>`. Consult the admin manual for the full list."
+          "value": "`{{prefix}}broadcast 51.5,-0.12 d5000 donate` — users whose location is within 5000 m\n`{{prefix}}broadcast @london @paris donate` — users who have any of those areas selected\n\nA location (with a `d` distance in metres) and areas can be combined; a user matching either receives the message. At least one filter is required."
+        },
+        {
+          "name": "Test",
+          "value": "`{{prefix}}broadcast test donate` — send the message only to yourself."
         },
         {
           "name": "Care",

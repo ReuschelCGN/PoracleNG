@@ -89,6 +89,13 @@ type Capabilities struct {
 	// the binary. For a server that is actually serving traffic the two
 	// questions collapse into one. See #212.
 	Costume bool `json:"costume"`
+
+	// CustomMaps reports whether GET /api/dts/custommaps exists and the
+	// {{map}} / {{map2}} helpers follow PoracleJS semantics: object values with
+	// block syntax, a missing key renders empty / is falsy, maps keyed by their
+	// "name" field with optional "language". Editors use it to decide whether
+	// to fetch maps for live preview.
+	CustomMaps bool `json:"customMaps"`
 }
 
 // HandleHealth returns a Gin handler that responds with a small health
@@ -119,5 +126,6 @@ func BuildCapabilities() Capabilities {
 		ButtonResponseObject: true,
 		DerivedDtsTypes:      true,
 		Costume:              true,
+		CustomMaps:           true,
 	}
 }

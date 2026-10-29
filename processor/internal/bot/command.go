@@ -312,6 +312,9 @@ type CommandContext struct {
 	// Permissions (resolved before command runs)
 	IsAdmin          bool
 	IsCommunityAdmin bool
+	// CommunityAdminOf lists the communities a Telegram community admin
+	// administers (lowercase); !userlist limits its output to them.
+	CommunityAdminOf []string
 	IsRegistered     bool
 	Permissions      Permissions
 
@@ -529,6 +532,23 @@ func SplitTextReply(text string) []Reply {
 	replies := make([]Reply, len(messages))
 	for i, msg := range messages {
 		replies[i] = Reply{Text: msg}
+	}
+	return replies
+}
+
+// codeBlockChunkLen leaves headroom under the 2000-char limit for the
+// ``` fences plus a short caller-supplied header line on the first chunk.
+const codeBlockChunkLen = 1900
+
+// SplitCodeBlockReply is SplitTextReply with each chunk wrapped in a fenced
+// code block, so machine-shaped text (config keys like default_edit) isn't
+// interpreted as Markdown — e.g. underscore pairs turning into italics.
+// Each chunk is fenced separately so a split never leaves a block unclosed.
+func SplitCodeBlockReply(text string) []Reply {
+	messages := SplitMessage(escapeMarkdownCode(text), codeBlockChunkLen)
+	replies := make([]Reply, len(messages))
+	for i, msg := range messages {
+		replies[i] = Reply{Text: "```\n" + msg + "\n```"}
 	}
 	return replies
 }

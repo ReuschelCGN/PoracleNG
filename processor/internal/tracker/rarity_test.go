@@ -202,8 +202,9 @@ func TestStatsTrackerRingRecyclesStaleBuckets(t *testing.T) {
 	st.RecordSighting(150, false, false)
 	st.recalculate()
 
-	if got := st.GetRarityGroup(25); got != RarityUnknown {
-		t.Errorf("pokemon 25 should have aged out of the ring, got group %d", got)
+	// Aged out ⇒ no sightings in the window ⇒ Unseen, not a stale group.
+	if got := st.GetRarityGroup(25); got != RarityNever {
+		t.Errorf("pokemon 25 should have aged out of the ring (Unseen), got group %d", got)
 	}
 	if got := st.GetRarityGroup(150); got == RarityUnknown {
 		t.Error("pokemon 150 was just recorded and should have a group")
@@ -311,5 +312,34 @@ func TestStatsTrackerKeepsStaleGroupsBelowMinSampleSize(t *testing.T) {
 
 	if got := st.GetRarityGroup(25); got != before {
 		t.Errorf("group changed to %d after the window drained; below min_sample_size the previous groups are expected to persist (was %d)", got, before)
+	}
+}
+
+// Once there is enough data to group species, a species with no sightings
+// in the window is Unseen (6) rather than Unknown (-1); otherwise a
+// rarity:6 rule can never match (#276). Below the sample size nothing is
+// known, so it stays Unknown.
+func TestStatsTrackerUnseenSpecies(t *testing.T) {
+	cfg := testStatsConfig()
+	cfg.MinSampleSize = 10
+	st := NewStatsTracker(cfg)
+
+	for range 5 {
+		st.RecordSighting(25, false, false)
+	}
+	st.recalculate()
+	if g := st.GetRarityGroup(150); g != RarityUnknown {
+		t.Errorf("below sample size: group = %d, want %d", g, RarityUnknown)
+	}
+
+	for range 10 {
+		st.RecordSighting(25, false, false)
+	}
+	st.recalculate()
+	if g := st.GetRarityGroup(150); g != RarityNever {
+		t.Errorf("unseen species: group = %d, want %d", g, RarityNever)
+	}
+	if g := st.GetRarityGroup(25); g != RarityCommon {
+		t.Errorf("seen species: group = %d, want %d", g, RarityCommon)
 	}
 }

@@ -233,7 +233,7 @@ func HandleCreateEgg(deps *TrackingDeps) gin.HandlerFunc {
 					RSVPChanges:           rsvpChanges,
 					Level:                 lvl,
 					OverrideLocationLabel: req.OverrideLocationLabel,
-					OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+					OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 				})
 			}
 		}

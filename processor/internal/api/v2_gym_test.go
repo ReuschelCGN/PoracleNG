@@ -358,7 +358,7 @@ func TestV2Gym_BulkDelete(t *testing.T) {
 
 // --- PUT full-replace -------------------------------------------------------
 
-func TestV2Gym_PutFullReplace_NewUID(t *testing.T) {
+func TestV2Gym_PutFullReplace_KeepsUID(t *testing.T) {
 	r, gs, _, restore := newV2GymTestAPI(t)
 	defer restore()
 	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/gym", `[{"team":"mystic","slot_changes":true}]`)
@@ -370,8 +370,8 @@ func TestV2Gym_PutFullReplace_NewUID(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "updated")[0]["uid"].(float64))
-	if newUID == oldUID {
-		t.Fatalf("PUT must yield a NEW uid")
+	if newUID != oldUID {
+		t.Fatalf("PUT must keep the rule uid: was %d, now %d", oldUID, newUID)
 	}
 	rows := gs.AllRows()
 	if len(rows) != 1 || bool(rows[0].SlotChanges) {

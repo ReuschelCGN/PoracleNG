@@ -969,3 +969,12 @@ func TestTrack_EditKeyword(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, 3, rows[0].Clean, "clean (1) + edit (2)")
 }
+
+// `shiny` was accepted by !track and ignored, so `!track 25 shiny` tracked
+// every pikachu (#277). It is now reported as unrecognised.
+func TestTrack_ShinyIsUnrecognised(t *testing.T) {
+	ctx := trackCtx(t)
+	replies := runTrack(t, ctx, "25 shiny")
+	require.NotEmpty(t, replies)
+	assert.Equal(t, "🙅", replies[0].React, "reply: %s", replies[0].Text)
+}

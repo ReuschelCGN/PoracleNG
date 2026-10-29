@@ -429,7 +429,7 @@ func profileOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 		subCommand(bundle, "profile.delete", "delete", "Delete a profile",
 			stringOpt(bundle, "profile.delete.name", "name", "Profile name", true, true)),
 		subCommand(bundle, "profile.settime", "settime", "Set active-hours for the current profile",
-			stringOpt(bundle, "profile.settime.times", "times", "Time-range string (e.g. mon07:30, weekday07:30-18:00, weekday:9-17/2)", true, false)),
+			stringOpt(bundle, "profile.settime.times", "times", "Time-range string (e.g. mon07:30, weekday07:30-18:00, weekday:9-17/2)", true, true)),
 		subCommand(bundle, "profile.cleartime", "cleartime", "Clear active-hours from the current profile"),
 		subCommand(bundle, "profile.copyto", "copyto", "Copy this profile's tracking to another profile",
 			stringOpt(bundle, "profile.copyto.profile", "profile", "Target profile name or number", true, true)),
@@ -463,7 +463,7 @@ func summaryOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 			Options: []*discordgo.ApplicationCommandOption{
 				subCommand(bundle, "summary.quest.show", "show", "Show schedule and current buffer count"),
 				subCommand(bundle, "summary.quest.settime", "settime", "Set the active-hours schedule for the quest summary",
-					stringOpt(bundle, "summary.quest.settime.times", "times", "Time-range string (e.g. mon07:30, weekday07:30-18:00, weekday:9-17/2)", true, false)),
+					stringOpt(bundle, "summary.quest.settime.times", "times", "Time-range string (e.g. mon07:30, weekday07:30-18:00, weekday:9-17/2)", true, true)),
 				subCommand(bundle, "summary.quest.cleartime", "cleartime", "Clear the active-hours schedule"),
 				subCommand(bundle, "summary.quest.now", "now", "Force-dispatch the currently-buffered quests"),
 			},
@@ -781,7 +781,8 @@ func fortOptions(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOption {
 		},
 		boolOpt(bundle, "fort.include_empty", "include_empty", "Alert on empty/unowned forts"),
 		distanceOpt(bundle, "fort"),
-		cleanOpt(bundle, "fort", "Auto-delete the alert when the fort changes again"),
+		// No clean option: fort rules have no clean column and fort
+		// updates have no expiry to clean up at.
 		templateOpt(bundle, "fort"),
 	}
 	return append(opts, trackerLocationAreaOpts(bundle)...)
@@ -843,6 +844,8 @@ func fortTypeChoices(bundle *i18n.Bundle) []*discordgo.ApplicationCommandOptionC
 	return choiceList(bundle, "fort.fort_type", []choiceDef{
 		{0, "Pokestop"},
 		{1, "Gym"},
+		{2, "Station"},
+		{3, "Everything"},
 	})
 }
 

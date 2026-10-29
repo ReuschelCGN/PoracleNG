@@ -53,7 +53,7 @@ func translateV2Quest(deps *TrackingDeps, humanID string, profileNo int, oc over
 		return db.QuestTrackingAPI{}, huma.Error422UnprocessableEntity("Unrecognised reward_type value")
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -67,13 +67,13 @@ func translateV2Quest(deps *TrackingDeps, humanID string, profileNo int, oc over
 		Template:              valueOr(req.Template, ""),
 		Distance:              distance,
 		RewardType:            req.RewardType,
-		Reward:                valueOr(req.Reward, 0),
-		Form:                  valueOr(req.Form, 0),
+		Reward:                valueOr(req.Reward, wcQuestReward),
+		Form:                  valueOr(req.Form, wcForm),
 		Shiny:                 db.IntBool(valueOr(req.Shiny, false)),
-		Amount:                valueOr(req.Amount, 0),
+		Amount:                valueOr(req.Amount, wcQuestAmount),
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -83,11 +83,11 @@ func translateV2Quest(deps *TrackingDeps, humanID string, profileNo int, oc over
 func questRowToRule(row *db.QuestTrackingAPI) v2QuestRule {
 	return v2QuestRule{
 		RewardType:            row.RewardType, // required, always present
-		Reward:                ptrUnless(row.Reward, 0),
-		Form:                  ptrUnless(row.Form, 0),
+		Reward:                ptrUnless(row.Reward, wcQuestReward),
+		Form:                  ptrUnless(row.Form, wcForm),
 		Shiny:                 ptrUnless(bool(row.Shiny), false),
-		Amount:                ptrUnless(row.Amount, 0),
-		Distance:              ptrUnless(row.Distance, 0),
+		Amount:                ptrUnless(row.Amount, wcQuestAmount),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

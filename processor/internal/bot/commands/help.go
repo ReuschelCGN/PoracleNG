@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/dts"
 )
 
 // HelpCommand implements !help — renders DTS help/greeting templates.
@@ -105,7 +106,7 @@ func (c *HelpCommand) renderHelpTemplate(ctx *bot.CommandContext, templateType, 
 	}
 
 	// Render the template
-	result, err := tmpl.Exec(view)
+	result, err := dts.ExecTemplate(tmpl, view, language, platform)
 	if err != nil {
 		log.Warnf("help: render %s/%s: %v", templateType, templateID, err)
 		tr := ctx.Tr()

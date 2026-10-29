@@ -261,36 +261,31 @@ func (c *ProfileCommand) copyTo(ctx *bot.CommandContext, args []string) []bot.Re
 		return []bot.Reply{{React: "🙅"}}
 	}
 
-	// Determine which target profiles match.
-	var valid []string
+	// Determine which target profiles match, by name or by number (the
+	// /profile copyto autocomplete sends the number). The current profile
+	// is never a valid target.
+	targets := make(map[int]bool)
+	hasAll := false
 	var invalid []string
 
 	for _, arg := range args {
-		lower := strings.ToLower(arg)
-		if lower == "all" {
-			valid = append(valid, "all")
+		if strings.EqualFold(arg, "all") {
+			hasAll = true
 			continue
 		}
+		n, numErr := strconv.Atoi(arg)
 		found := false
 		for _, p := range profiles {
-			if strings.ToLower(p.Name) == lower && p.ProfileNo != ctx.ProfileNo {
+			if p.ProfileNo == ctx.ProfileNo {
+				continue
+			}
+			if strings.EqualFold(p.Name, arg) || (numErr == nil && p.ProfileNo == n) {
+				targets[p.ProfileNo] = true
 				found = true
-				break
 			}
 		}
-		if found {
-			valid = append(valid, arg)
-		} else {
+		if !found {
 			invalid = append(invalid, arg)
-		}
-	}
-
-	// Copy tracking to each matching profile.
-	hasAll := false
-	for _, v := range valid {
-		if strings.ToLower(v) == "all" {
-			hasAll = true
-			break
 		}
 	}
 
@@ -299,14 +294,7 @@ func (c *ProfileCommand) copyTo(ctx *bot.CommandContext, args []string) []bot.Re
 		if p.ProfileNo == ctx.ProfileNo {
 			continue
 		}
-		nameMatch := false
-		for _, v := range valid {
-			if strings.EqualFold(v, p.Name) {
-				nameMatch = true
-				break
-			}
-		}
-		if !hasAll && !nameMatch {
+		if !hasAll && !targets[p.ProfileNo] {
 			continue
 		}
 		if err := ctx.Humans.CopyProfile(ctx.TargetID, ctx.ProfileNo, p.ProfileNo); err != nil {

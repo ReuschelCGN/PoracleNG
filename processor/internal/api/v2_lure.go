@@ -39,7 +39,7 @@ func translateV2Lure(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		return db.LureTrackingAPI{}, huma.Error422UnprocessableEntity("Unrecognised lure_id value")
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -55,7 +55,7 @@ func translateV2Lure(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		LureID:                req.LureID,
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -65,7 +65,7 @@ func translateV2Lure(deps *TrackingDeps, humanID string, profileNo int, oc overr
 func lureRowToRule(row *db.LureTrackingAPI) v2LureRule {
 	return v2LureRule{
 		LureID:                row.LureID, // required, always present
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

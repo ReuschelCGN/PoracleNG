@@ -224,7 +224,7 @@ func HandleCreateFort(deps *TrackingDeps) gin.HandlerFunc {
 				IncludeEmpty:          includeEmpty,
 				ChangeTypes:           changeTypes,
 				OverrideLocationLabel: req.OverrideLocationLabel,
-				OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+				OverrideAreas:         v1NormalizeOverrideAreas(req.OverrideAreas),
 			})
 		}
 

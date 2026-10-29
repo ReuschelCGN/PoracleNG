@@ -242,7 +242,7 @@ func TestV2Incident_DeleteSingle(t *testing.T) {
 	}
 }
 
-func TestV2Incident_PutFullReplace_NewUID(t *testing.T) {
+func TestV2Incident_PutFullReplace_KeepsUID(t *testing.T) {
 	r, is, _, restore := newV2IncidentTestAPI(t)
 	defer restore()
 	w := v2DoReq(t, r, http.MethodPost, "/api/v2/humans/u1/tracking/incident", `[{"display_type":9,"distance":500}]`)
@@ -253,8 +253,8 @@ func TestV2Incident_PutFullReplace_NewUID(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	newUID := int64(v2RulesArray(t, v2DecodeBody(t, w), "updated")[0]["uid"].(float64))
-	if newUID == oldUID {
-		t.Fatalf("PUT must yield a NEW uid")
+	if newUID != oldUID {
+		t.Fatalf("PUT must keep the rule uid: was %d, now %d", oldUID, newUID)
 	}
 	rows := is.AllRows()
 	if len(rows) != 1 || rows[0].GruntType != "showcase" || rows[0].Distance != 0 {

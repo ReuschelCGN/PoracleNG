@@ -488,7 +488,7 @@ func TestStandardText_DefaultTemplate(t *testing.T) {
 	g := testGenerator(t)
 	tr := g.Translations.For("en")
 
-	result := standardText(tr, "1", g.DefaultTemplateName, 0)
+	result := standardText(tr, "1", g.DefaultTemplateName, 0, false)
 	if result != "" {
 		t.Errorf("expected empty for default template, got: %q", result)
 	}
@@ -498,7 +498,7 @@ func TestStandardText_CustomTemplateAndClean(t *testing.T) {
 	g := testGenerator(t)
 	tr := g.Translations.For("en")
 
-	result := standardText(tr, "3", g.DefaultTemplateName, 1)
+	result := standardText(tr, "3", g.DefaultTemplateName, 1, false)
 	if !strings.Contains(result, "template: 3") {
 		t.Errorf("expected template: 3, got: %q", result)
 	}
@@ -813,4 +813,37 @@ func boldSlot(row string) string {
 		return ""
 	}
 	return rest[:j]
+}
+
+func TestStandardText_DefaultEdit(t *testing.T) {
+	g := testGenerator(t)
+	tr := g.Translations.For("en")
+
+	if got := standardText(tr, "1", g.DefaultTemplateName, 0, true); got != " edit (default)" {
+		t.Errorf("defaulted edit: got %q", got)
+	}
+	// An explicit edit bit wins over the default label.
+	if got := standardText(tr, "1", g.DefaultTemplateName, 2, true); got != " edit" {
+		t.Errorf("explicit edit: got %q", got)
+	}
+}
+
+func TestRowText_DefaultEditByType(t *testing.T) {
+	g := testGenerator(t)
+	g.DefaultEdit = func(alertType string) bool { return alertType == "lure" || alertType == "incident" }
+	tr := g.Translations.For("en")
+
+	if got := g.LureRowText(tr, &db.LureTracking{LureID: 501, Template: "1"}); !strings.Contains(got, "edit (default)") {
+		t.Errorf("lure in default_edit: got %s", got)
+	}
+	if got := g.NestRowText(tr, &db.NestTracking{Template: "1"}); strings.Contains(got, "edit") {
+		t.Errorf("nest has no edit default: got %s", got)
+	}
+	if got := g.InvasionRowText(tr, &db.InvasionTracking{GruntType: "showcase", Template: "1"}); !strings.Contains(got, "edit (default)") {
+		t.Errorf("showcase incident in default_edit: got %s", got)
+	}
+	// Grunt invasion alerts never edit, so plain invasion rules stay unlabelled.
+	if got := g.InvasionRowText(tr, &db.InvasionTracking{GruntType: "Water", Template: "1"}); strings.Contains(got, "edit") {
+		t.Errorf("grunt invasion: got %s", got)
+	}
 }

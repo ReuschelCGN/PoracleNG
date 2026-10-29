@@ -30,6 +30,7 @@ type poracleWebResponse struct {
 	AvailableLanguages           []string         `json:"availableLanguages" doc:"Language codes this server accepts for a user's alert language (sorted). null means unrestricted — every language is allowed — so clients should offer their full menu. A non-null array is the exact allow-list enforced by the set-language endpoints."`
 	ChannelNotesContainsCategory bool             `json:"channelNotesContainsCategory" doc:"Whether channel notes carry the category (check_role + update_channel_notes)"`
 	DefaultDistance              int              `json:"defaultDistance" doc:"Default tracking distance (m)"`
+	DefaultEdit                  []string         `json:"defaultEdit" doc:"Alert types ([tracking] default_edit) whose rules edit the original alert in place even without the edit flag. Always an array; empty when none."`
 	DefaultPvpCap                int              `json:"defaultPvpCap" doc:"Default user PVP level cap"`
 	DefaultTemplateName          string           `json:"defaultTemplateName" doc:"Default DTS template name"`
 	DisabledHooks                []string         `json:"disabledHooks" doc:"Webhook types disabled on this server"`
@@ -310,6 +311,15 @@ func buildPoracleWebResponse(cfg *config.Config) poracleWebResponse {
 		}
 	}
 
+	// Only the types that actually honour edit; unsupported entries are
+	// ignored by the processor too.
+	defaultEdit := make([]string, 0)
+	for _, t := range config.DefaultEditTypes {
+		if cfg.Tracking.DefaultEditFor(t) {
+			defaultEdit = append(defaultEdit, t)
+		}
+	}
+
 	// Sorted allow-list of language codes, or nil when the server imposes no
 	// restriction. The set-language endpoints only validate when the map is
 	// non-empty, so unset and empty are the same thing to the server — both
@@ -377,6 +387,7 @@ func buildPoracleWebResponse(cfg *config.Config) poracleWebResponse {
 		},
 		MaxDistance:               cfg.Tracking.MaxDistance,
 		DefaultDistance:           cfg.Tracking.DefaultDistance,
+		DefaultEdit:               defaultEdit,
 		EverythingFlagPermissions: cfg.Tracking.EverythingFlagPermissions,
 		DisabledHooks:             disabledHooks,
 		GymBattles:                cfg.Tracking.EnableGymBattle,
