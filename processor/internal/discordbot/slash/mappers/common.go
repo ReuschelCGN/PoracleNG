@@ -138,13 +138,18 @@ func appendCommonTail(tokens *[]string, o map[string]*discordgo.ApplicationComma
 
 // fortTypeName maps the /fort fort_type choice integer to the canonical
 // English fort-type keyword expected by the text bot. Values are aligned
-// with the strings the bot's arg matcher accepts (`pokestop` / `gym`).
+// with the strings the bot's arg matcher accepts (`pokestop` / `gym` /
+// `station` / `everything`).
 func fortTypeName(v int) string {
 	switch v {
 	case 0:
 		return "pokestop"
 	case 1:
 		return "gym"
+	case 2:
+		return "station"
+	case 3:
+		return "everything"
 	}
 	return ""
 }

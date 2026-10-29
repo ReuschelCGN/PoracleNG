@@ -470,6 +470,17 @@ func (l *Limiter) StateFor(id, dtype string) []TargetState {
 	return result
 }
 
+// ClearViolations forgets a target's 24h breach history, including the ban
+// latch, without touching its current window counters. Called when a user
+// is re-enabled (!start, !enable) after a ban, so a repeat offender is
+// banned again after another MaxLimitsBeforeStop breaches rather than
+// never within the rest of the window.
+func (l *Limiter) ClearViolations(id string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.violations, id)
+}
+
 // Reset clears all counters, violation history, and bans for one target
 // across both buckets. Returns true if anything was reset.
 //

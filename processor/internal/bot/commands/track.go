@@ -102,8 +102,7 @@ func (c *TrackCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 
 	// Reject bare "!track everything" with no meaningful filters for non-admins.
 	// Filters like IV, CP, level, PVP league, type, gender, or costume
-	// meaningfully narrow results. "shiny" alone doesn't — almost everything
-	// can be shiny.
+	// meaningfully narrow results.
 	if parsed.HasKeyword("arg.everything") && !ctx.IsAdmin {
 		hasFilters := len(parsed.Singles) > 0 || narrowingRanges(parsed.Ranges) ||
 			len(parsed.Types) > 0 || parsed.Gender != 0 || len(parsed.PVP) > 0 ||
@@ -334,7 +333,6 @@ func trackParams(ctx *bot.CommandContext) []bot.ParamDef {
 		{Type: bot.ParamKeyword, Key: "arg.remove"},
 		{Type: bot.ParamKeyword, Key: "arg.clean"},
 		{Type: bot.ParamKeyword, Key: "arg.edit"},
-		{Type: bot.ParamKeyword, Key: "arg.shiny"},
 		{Type: bot.ParamGender},
 		{Type: bot.ParamTypeName},
 		{Type: bot.ParamPokemonName},
@@ -639,13 +637,7 @@ func (c *TrackCommand) resolveMonsters(ctx *bot.CommandContext, parsed *bot.Pars
 
 		if forceIndividual && ctx.GameData != nil {
 			// Expand to all base forms
-			var monsters []bot.ResolvedPokemon
-			for key := range ctx.GameData.Monsters {
-				if key.Form == 0 {
-					monsters = append(monsters, bot.ResolvedPokemon{PokemonID: key.ID, Form: 0})
-				}
-			}
-			monsters, reply := applyFormFilter(ctx, monsters, parsed)
+			monsters, reply := applyFormFilter(ctx, allBaseForms(ctx), parsed)
 			if reply != nil {
 				return nil, reply
 			}

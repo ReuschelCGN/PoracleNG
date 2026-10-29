@@ -68,7 +68,7 @@ func translateV2Fort(deps *TrackingDeps, humanID string, profileNo int, oc overr
 
 	// include_empty defaults TRUE on omission (DB column default; signed-off
 	// behaviour change vs v1). CHANGELOG note required (Phase 5).
-	includeEmpty := db.IntBool(valueOr(req.IncludeEmpty, true))
+	includeEmpty := db.IntBool(valueOr(req.IncludeEmpty, wcFortIncludeEmpty))
 
 	// change_types: validate each value against the accepted set, then JSON-encode
 	// the array as the stored varchar (empty ⇒ "[]", matching v1 + the bot).
@@ -88,7 +88,7 @@ func translateV2Fort(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		changeTypes = string(b)
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -105,7 +105,7 @@ func translateV2Fort(deps *TrackingDeps, humanID string, profileNo int, oc overr
 		IncludeEmpty:          includeEmpty,
 		ChangeTypes:           changeTypes,
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -122,9 +122,9 @@ func fortRowToRule(row *db.FortTrackingAPI) v2FortRule {
 		// fort_type wildcard is the catch-all "everything" (its documented default);
 		// include_empty defaults TRUE (DB column default) so true is hidden as null.
 		FortType:              ptrUnless(row.FortType, fortTypeEnum.defValue),
-		IncludeEmpty:          ptrUnless(bool(row.IncludeEmpty), true),
+		IncludeEmpty:          ptrUnless(bool(row.IncludeEmpty), wcFortIncludeEmpty),
 		ChangeTypes:           ptrUnlessSlice(changeTypes),
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		OverrideLocationLabel: ptrUnless(row.OverrideLocationLabel, ""),

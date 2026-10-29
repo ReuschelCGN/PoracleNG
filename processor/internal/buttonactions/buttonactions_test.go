@@ -281,3 +281,44 @@ func TestUnsubscribeRoutesEveryRenderedAlertType(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleMute_TrackingTyped(t *testing.T) {
+	ms := mute.NewStore()
+	snap := &snapshots.Snapshot{Target: "u1", AlertType: "raid", TrackingUIDs: []int64{60, 61}}
+	def := buttons.Def{ID: "m", Label: "Mute", Action: "mute", Scope: buttons.ScopeTracking}
+	resp, err := HandleMute(context.Background(), snap, def, "u1", Deps{MuteStore: ms})
+	if err != nil {
+		t.Fatalf("HandleMute: %v", err)
+	}
+	if resp.Reaction != "🔇" {
+		t.Fatalf("reaction = %q (%s), want mute", resp.Reaction, resp.Text)
+	}
+	list := ms.List("u1")
+	if len(list) != 2 {
+		t.Fatalf("entries = %+v, want two", list)
+	}
+	for i, uid := range []string{"60", "61"} {
+		if e := list[i]; e.ScopeType != mute.ScopeTracking || e.RuleTable != "raid" || e.ScopeValue != uid {
+			t.Errorf("entry %d = %+v, want tracking/raid/%s", i, e, uid)
+		}
+	}
+}
+
+func TestAlertTypeTable(t *testing.T) {
+	cases := map[string]string{
+		"pokemon": "pokemon", "monster": "pokemon", "monsterChanged": "pokemon",
+		"raid": "raid", "egg": "egg", "quest": "quest",
+		"invasion": "invasion", "incident": "invasion",
+		"pokestop": "lure", "lure": "lure", "nest": "nest", "gym": "gym",
+		"fort-update": "fort", "fort_update": "fort",
+		"max_battle": "maxbattle", "maxbattle": "maxbattle",
+	}
+	for in, want := range cases {
+		if got, ok := alertTypeTable(in); !ok || got != want {
+			t.Errorf("alertTypeTable(%q) = %q,%v want %q", in, got, ok, want)
+		}
+	}
+	if _, ok := alertTypeTable("nope"); ok {
+		t.Errorf("unknown alert type must not resolve")
+	}
+}

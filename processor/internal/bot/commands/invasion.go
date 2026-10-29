@@ -153,27 +153,29 @@ func (c *InvasionCommand) Run(ctx *bot.CommandContext, args []string) []bot.Repl
 	}
 
 	// Match unrecognized args against valid type/event names
-	var gruntTypes []string
-	if parsed.HasKeyword("arg.everything") {
-		gruntTypes = append(gruntTypes, "everything")
-	} else {
-		for _, arg := range parsed.Unrecognized {
-			lower := strings.ToLower(arg)
-			if canonical, ok := validTypes[lower]; ok {
-				gruntTypes = append(gruntTypes, canonical)
-			}
+	var gruntTypes, unknown []string
+	for _, arg := range parsed.Unrecognized {
+		lower := strings.ToLower(arg)
+		if canonical, ok := validTypes[lower]; ok {
+			gruntTypes = append(gruntTypes, canonical)
+		} else {
+			unknown = append(unknown, arg)
 		}
 	}
 
-	// If nothing matched, report unrecognized or default to everything
-	if len(gruntTypes) == 0 && !parsed.HasKeyword("arg.remove") {
-		if len(parsed.Unrecognized) > 0 {
+	// Any token that isn't a known type is an error — for add and remove
+	// alike. Remove in particular must never fall through to "everything"
+	// because of a typo: that would delete every invasion rule.
+	if len(unknown) > 0 {
+		if len(gruntTypes) == 0 {
 			return []bot.Reply{{React: "🙅", Text: tr.T("msg.no_invasion_type")}}
 		}
-		gruntTypes = append(gruntTypes, "everything")
+		return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.unrecognized", strings.Join(unknown, ", "))}}
 	}
-	if len(gruntTypes) == 0 {
-		gruntTypes = append(gruntTypes, "everything")
+
+	// No type given (or the everything keyword) means every type.
+	if parsed.HasKeyword("arg.everything") || len(gruntTypes) == 0 {
+		gruntTypes = []string{"everything"}
 	}
 
 	if parsed.HasKeyword("arg.remove") {
@@ -261,6 +263,10 @@ func (c *InvasionCommand) removeInvasions(ctx *bot.CommandContext, parsed *bot.P
 	var uids []int64
 	var removed []db.InvasionTrackingAPI
 	for _, existing := range tracked {
+		// A gender narrows the removal to rules with that gender.
+		if parsed.Gender != 0 && existing.Gender != parsed.Gender {
+			continue
+		}
 		// "everything" means remove all
 		if gtSet["everything"] || gtSet[existing.GruntType] {
 			uids = append(uids, existing.UID)

@@ -242,7 +242,7 @@ func (d *Dispatcher) HandleCommand(s *discordgo.Session, ic *discordgo.Interacti
 		d.respondError(s, ic, "🛑 Command not implemented.")
 		return
 	}
-	replies := cmd.Run(ctx, tokens)
+	replies := bot.RunLocked(cmd, ctx, tokens)
 	// Apply maintenance suffix so slash users see the paused-delivery
 	// warning, matching the gateway (discordbot/bot.go) and Telegram surfaces.
 	if d.bundle != nil && ctx != nil && d.deps != nil {
@@ -396,9 +396,10 @@ func (d *Dispatcher) routeAutocomplete(cmd, opt, focused, userLang string, ic *d
 		return d.userstateAutocomplete(ic, "profiles", "", focused)
 	// /profile copyto target — pick another profile of the same user.
 	// Reuses the same profiles lister as `name`; the sub-command name
-	// (copyto) selects the option name (profile), not a different list.
+	// (copyto) selects the option name (profile), not a different list,
+	// and is passed as the subtype so the lister omits the current profile.
 	case opt == "profile" && cmd == "profile":
-		return d.userstateAutocomplete(ic, "profiles", "", focused)
+		return d.userstateAutocomplete(ic, "profiles", subCommandName(ic), focused)
 	// /location show name and /location remove name — autocomplete from
 	// the user's saved named locations. Both sub-commands use the same
 	// option name ("name"), so a single (opt, cmd) pair covers both.

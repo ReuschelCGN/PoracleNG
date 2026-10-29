@@ -49,7 +49,7 @@ func translateV2Gym(deps *TrackingDeps, humanID string, profileNo int, oc overri
 		return db.GymTrackingAPI{}, huma.Error422UnprocessableEntity("Invalid team: " + req.Team)
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -73,7 +73,7 @@ func translateV2Gym(deps *TrackingDeps, humanID string, profileNo int, oc overri
 		GymID:                 gymID,
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -90,7 +90,7 @@ func gymRowToRule(row *db.GymTrackingAPI) v2GymRule {
 		SlotChanges:           ptrUnless(bool(row.SlotChanges), false),
 		BattleChanges:         ptrUnless(bool(row.BattleChanges), false),
 		GymID:                 gymID,
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

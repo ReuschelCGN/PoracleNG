@@ -127,6 +127,7 @@ func ValidateHumans(
 			PVPRankingWorst:   monster.PVPRankingWorst,
 			TrackDistance:     monster.Distance,
 			RuleUID:           monster.UID,
+			RuleTable:         "pokemon",
 			PersonalShiny:     monster.ShinyPredict != 0,
 		})
 	}
@@ -233,6 +234,7 @@ func ValidateHumansForRaid(
 			RSVPChanges:       td.RSVPChanges,
 			TrackDistance:     td.Distance,
 			RuleUID:           td.UID,
+			RuleTable:         td.RuleTable,
 		})
 	}
 	return result
@@ -246,7 +248,8 @@ type raidUserData struct {
 	Clean                 int
 	Ping                  string
 	RSVPChanges           int
-	UID                   int64 // database UID of the matched raid/egg rule — surfaced on MatchedUser.RuleUID
+	UID                   int64  // database UID of the matched raid/egg rule — surfaced on MatchedUser.RuleUID
+	RuleTable             string // tracking table the rule came from (raid or egg) — set by the matcher
 	IsSpecificMatch       bool
 	OverrideLocationLabel string
 	OverrideAreas         []string

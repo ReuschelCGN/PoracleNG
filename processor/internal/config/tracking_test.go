@@ -42,3 +42,26 @@ func TestPokemonEditMaxAgeNoLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestTrackingDefaultEdit(t *testing.T) {
+	cfg, err := loadFromReader(t, "")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Tracking.DefaultEditFor("pokemon") {
+		t.Error("default_edit should be empty by default")
+	}
+
+	cfg, err = loadFromReader(t, "[tracking]\ndefault_edit = [\"pokemon\", \" Egg \", \"gym\"]\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for alertType, want := range map[string]bool{"pokemon": true, "egg": true, "raid": false, "lure": false} {
+		if got := cfg.Tracking.DefaultEditFor(alertType); got != want {
+			t.Errorf("DefaultEditFor(%q) = %v, want %v", alertType, got, want)
+		}
+	}
+	if bad := cfg.Tracking.UnsupportedDefaultEdit(); len(bad) != 1 || bad[0] != "gym" {
+		t.Errorf("UnsupportedDefaultEdit() = %v, want [gym]", bad)
+	}
+}

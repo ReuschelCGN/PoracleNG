@@ -107,8 +107,10 @@ func canonicalGruntTypes(gd *gamedata.GameData) map[string]bool {
 // be a pokemon type and NOTHING otherwise — 41 of the 59 distinct grunt_type
 // values in shipped data, so GET → PUT was impossible for most rules (#209).
 //
-// gender is valid with type_id and grunt_type (("mixed", gender 1) has to be
-// expressible and is not a type). gender + grunt_id/everything/boss ⇒ 422.
+// gender is valid with every mode except grunt_id, which already implies the
+// grunt's own gender (gender + grunt_id ⇒ 422). ("mixed", gender 1) has to be
+// expressible and is not a type, and the matcher honours gender on the
+// catch-alls too: !invasion everything male fires only for male grunts (#330).
 //
 // (Pokestop-event rows live in the SAME table but are addressed via the separate
 // /incident endpoint; see v2_incident.go.)
@@ -116,9 +118,9 @@ type v2InvasionRule struct {
 	TypeID     *int    `json:"type_id,omitempty" minimum:"1" maximum:"18" doc:"Pokemon type id (1-18); grunt_type resolves to that type's lowercased name. At most one mode field may be set — this OR grunt_id OR grunt_type OR everything OR boss. Omitting all of them matches EVERY invasion (stored \"everything\") — blank is the wildcard, as elsewhere in v2. In responses, the active mode field is always present; the other mode fields are omitted/null."`
 	GruntID    *int    `json:"grunt_id,omitempty" minimum:"0" doc:"Game-master grunt id; resolves to that grunt's name and implies its own gender. One-of mode field. Mutually exclusive with the others; gender not allowed. Read-back reports the rule as grunt_type, because that is what is stored — see grunt_type."`
 	GruntType  *string `json:"grunt_type,omitempty" doc:"The stored targeting value, and the ONE targeting field every read emits. Accepts any grunt name the bot accepts: a pokemon type (\"water\"), a named grunt (\"giovanni\", \"blanche\", \"mixed\", \"npc_0\"), or a catch-all (\"everything\", \"boss\"). type_id and grunt_id are input conveniences that resolve to one of these. Pokestop-event names are not valid here — use /incident. Enumerate valid names from GET /api/masterdata/grunts. One-of mode field; may be combined with gender."`
-	Everything *bool   `json:"everything,omitempty" doc:"Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; gender not allowed."`
-	Boss       *bool   `json:"boss,omitempty" doc:"Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; gender not allowed."`
-	Gender     *string `json:"gender,omitempty" nullable:"true" enum:"any,male,female" doc:"Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). ONLY valid together with type_id. Returned as null when 'any' (or when not in type_id mode)."`
+	Everything *bool   `json:"everything,omitempty" doc:"Catch-all wildcard: set true to match EVERY invasion (stored grunt_type \"everything\"). Equivalent to omitting every mode field, which is the wildcard; set it explicitly when you want the intent on the wire. Mutually exclusive with the others; may be combined with gender."`
+	Boss       *bool   `json:"boss,omitempty" doc:"Catch-all for boss encounters: set true to match only boss invasions (stored grunt_type \"boss\"). One-of mode field. Mutually exclusive with the others; may be combined with gender."`
+	Gender     *string `json:"gender,omitempty" nullable:"true" enum:"any,male,female" doc:"Grunt gender filter: any|male|female. Omit to match any gender (defaults to 'any', stored as 0). Valid with every mode except grunt_id, which implies its grunt's gender; it narrows the catch-alls too (everything + male fires only for male grunts). Returned as null when 'any'."`
 
 	// Common fields. invasion HAS a clean column ⇒ clean/edit/summary apply.
 	Distance *int    `json:"distance,omitempty" minimum:"0" maximum:"40000000" nullable:"true" doc:"Radius in metres around the anchor location. Omit (or 0) to match by the profile's geofence areas instead of a radius — 0 means area-based, NOT zero metres (stored as 0). Values above the server's [tracking] max_distance are clamped to it. Returned as null when at its wildcard."`
@@ -164,11 +166,11 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 			"grunt_type, type_id, grunt_id, everything and boss are mutually exclusive (set at most one)")
 	}
 
-	// gender is only valid with the name-shaped modes: a specific grunt_id
-	// already implies its gender, and the catch-alls have none.
-	if req.Gender != nil && req.TypeID == nil && req.GruntType == nil {
+	// A specific grunt_id already implies its gender. Every other mode takes
+	// one, the catch-alls included: the matcher narrows them by gender too.
+	if req.Gender != nil && req.GruntID != nil {
 		return db.InvasionTrackingAPI{}, huma.Error422UnprocessableEntity(
-			"gender is only valid together with type_id or grunt_type")
+			"gender is not valid with grunt_id (the grunt implies its gender)")
 	}
 
 	var gruntType string
@@ -211,9 +213,11 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 
 	case req.Everything != nil && *req.Everything:
 		gruntType = "everything"
+		gender = invasionGenderEnum.resolveStored(req.Gender)
 
 	case req.Boss != nil && *req.Boss:
 		gruntType = "boss"
+		gender = invasionGenderEnum.resolveStored(req.Gender)
 
 	default:
 		// No targeting field at all is the wildcard. v2 uses blank-means-
@@ -225,9 +229,10 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 		// Note this is NOT bot parity: bare !invasion prints usage rather than
 		// tracking everything. The convention is the reason, not the command.
 		gruntType = "everything"
+		gender = invasionGenderEnum.resolveStored(req.Gender)
 	}
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -244,7 +249,7 @@ func translateV2Invasion(deps *TrackingDeps, humanID string, profileNo int, oc o
 		GruntType:             gruntType,
 		Clean:                 packClean(valueOr(req.Clean, false), false, valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -290,11 +295,12 @@ func gruntTypeName(gd *gamedata.GameData, grunt *gamedata.Grunt) string {
 // It emits exactly ONE targeting field — grunt_type, the value the row actually
 // stores — for every rule, the "everything"/"boss" catch-alls included. type_id
 // and grunt_id are write-side conveniences that resolve to a grunt_type on the
-// way in and are never emitted. gender rides alongside for the name-shaped
-// rules and is nulled at its 'any' wildcard.
+// way in and are never emitted. gender rides alongside on every rule, the
+// catch-alls included (the matcher applies it to them), and is nulled at its
+// 'any' wildcard. Hiding it on the catch-alls widened them on write-back (#330).
 func v2InvasionToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2InvasionRule {
 	rule := v2InvasionRule{
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),
@@ -318,9 +324,7 @@ func v2InvasionToRule(gd *gamedata.GameData, row *db.InvasionTrackingAPI) v2Inva
 	// normaliseGruntTypeInput).
 	name := strings.ToLower(row.GruntType)
 	rule.GruntType = &name
-	if name != "everything" && name != "boss" {
-		rule.Gender = ptrUnless(invasionGenderEnum.fromStored(row.Gender), "any")
-	}
+	rule.Gender = ptrUnless(invasionGenderEnum.fromStored(row.Gender), "any")
 	return rule
 }
 

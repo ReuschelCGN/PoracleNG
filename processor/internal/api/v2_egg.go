@@ -57,7 +57,7 @@ func translateV2Egg(deps *TrackingDeps, humanID string, profileNo int, oc overri
 	team := teamEnum.resolveStored(req.Team)
 	rsvp := rsvpChangesEnum.resolveStored(req.RSVPChanges)
 
-	distance := clampV2Distance(deps, valueOr(req.Distance, 0))
+	distance := clampV2Distance(deps, valueOr(req.Distance, wcDistance))
 
 	overrideLabel := valueOr(req.OverrideLocationLabel, "")
 	if msg, code := validateOverrideFields(deps, oc, humanID, overrideLabel, req.OverrideAreas, distance); msg != "" {
@@ -82,7 +82,7 @@ func translateV2Egg(deps *TrackingDeps, humanID string, profileNo int, oc overri
 		RSVPChanges:           rsvp,
 		Clean:                 packClean(valueOr(req.Clean, false), valueOr(req.Edit, false), valueOr(req.Summary, false)),
 		OverrideLocationLabel: overrideLabel,
-		OverrideAreas:         normalizeOverrideAreas(req.OverrideAreas),
+		OverrideAreas:         canonicalOverrideAreas(deps, req.OverrideAreas),
 	}
 	return row, nil
 }
@@ -103,7 +103,7 @@ func eggRowToRule(row *db.EggTrackingAPI) v2EggRule {
 		Exclusive:             ptrUnless(bool(row.Exclusive), false),
 		GymID:                 gymID,
 		RSVPChanges:           ptrUnless(rsvp, "none"),
-		Distance:              ptrUnless(row.Distance, 0),
+		Distance:              ptrUnless(row.Distance, wcDistance),
 		Template:              ptrUnless(row.Template, ""),
 		Ping:                  ptrUnless(row.Ping, ""),
 		Clean:                 ptrUnless(db.IsClean(row.Clean), false),

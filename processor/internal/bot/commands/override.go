@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/pokemon/poracleng/processor/internal/bot"
+	"github.com/pokemon/poracleng/processor/internal/geofence"
 )
 
 // Override holds the resolved per-rule override fields ready to drop onto a
@@ -78,14 +79,17 @@ func parseOverride(ctx *bot.CommandContext, locationLabel string, areas []string
 		communities := humanCommunities(ctx, h)
 		available := ctx.AreaLogic.GetAvailableAreas(communities, ctx.IsAdmin)
 
-		// Build a lowercase set for O(1) membership test.
-		permitted := make(map[string]bool, len(available))
+		// Key the permitted fences by NormalizeAreaKey so either spelling of
+		// a fence name resolves (the parser has already turned unquoted
+		// underscores into spaces), and remember each fence's own spelling,
+		// which is what gets stored.
+		canonical := make(map[string]string, len(available))
 		for _, a := range available {
-			permitted[strings.ToLower(a.Name)] = true
+			canonical[geofence.NormalizeAreaKey(a.Name)] = strings.ToLower(a.Name)
 		}
 
 		for _, a := range areas {
-			if !permitted[strings.ToLower(a)] {
+			if _, ok := canonical[geofence.NormalizeAreaKey(a)]; !ok {
 				return Override{}, &bot.Reply{
 					React: "🙅",
 					Text:  tr.Tf("msg.override.area_not_permitted", a, bot.CommandPrefix(ctx)),
@@ -97,12 +101,12 @@ func parseOverride(ctx *bot.CommandContext, locationLabel string, areas []string
 		// Store each one once, in the order the user first named it.
 		seen := make(map[string]bool, len(areas))
 		for _, a := range areas {
-			norm := strings.ToLower(strings.ReplaceAll(a, "_", " "))
-			if seen[norm] {
+			key := geofence.NormalizeAreaKey(a)
+			if seen[key] {
 				continue
 			}
-			seen[norm] = true
-			out.Areas = append(out.Areas, norm)
+			seen[key] = true
+			out.Areas = append(out.Areas, canonical[key])
 		}
 	}
 

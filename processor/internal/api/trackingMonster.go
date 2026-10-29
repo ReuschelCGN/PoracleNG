@@ -298,7 +298,7 @@ func HandleCreateMonster(deps *TrackingDeps) gin.HandlerFunc {
 				return
 			}
 			row.OverrideLocationLabel = req.OverrideLocationLabel
-			row.OverrideAreas = normalizeOverrideAreas(req.OverrideAreas)
+			row.OverrideAreas = v1NormalizeOverrideAreas(req.OverrideAreas)
 			if req.UID.isSet() {
 				updates = append(updates, row)
 			} else {

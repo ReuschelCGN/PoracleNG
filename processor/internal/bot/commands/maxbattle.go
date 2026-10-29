@@ -77,7 +77,11 @@ func (c *MaxbattleCommand) Run(ctx *bot.CommandContext, args []string) []bot.Rep
 	// Move filter — match by translated name
 	move := bot.WildcardID
 	if moveName, ok := parsed.Strings["move"]; ok {
-		move = resolveMoveByName(ctx, moveName)
+		id, found := resolveMoveByName(ctx, moveName)
+		if !found {
+			return []bot.Reply{{React: "🙅", Text: tr.Tf("msg.move.unknown", moveName)}}
+		}
+		move = id
 	}
 
 	// Handle remove
@@ -113,6 +117,13 @@ func (c *MaxbattleCommand) Run(ctx *bot.CommandContext, args []string) []bot.Rep
 			})
 		}
 	} else {
+		// gen/type filters narrow a list of named pokemon; by-level rules
+		// have none to narrow, so `everything gen1` / `fire level5` would
+		// silently track every boss. Reject instead.
+		if hasGenOrTypeFilter(parsed) {
+			return []bot.Reply{{React: "🙅", Text: tr.T("msg.maxbattle.gen_type_needs_pokemon")}}
+		}
+
 		// Track by level
 		levelSet := make(map[int]bool)
 
@@ -240,8 +251,20 @@ func (c *MaxbattleCommand) removeMaxbattles(ctx *bot.CommandContext, parsed *bot
 		for _, mon := range parsed.Pokemon {
 			removeIDs[mon.PokemonID] = true
 		}
+		levelRange, hasLevel := parsed.Ranges["level"]
+		matchesLevel := func(existing *db.MaxbattleTrackingAPI) bool {
+			// Level rules are the by-level rows (wildcard pokemon); a
+			// pokemon-specific rule is removed by naming the pokemon.
+			if !hasLevel || existing.PokemonID != bot.WildcardID {
+				return false
+			}
+			if levelRange.HasMax {
+				return existing.Level >= levelRange.Min && existing.Level <= levelRange.Max
+			}
+			return existing.Level == levelRange.Min
+		}
 		for _, existing := range tracked {
-			if removeIDs[existing.PokemonID] {
+			if removeIDs[existing.PokemonID] || matchesLevel(&existing) {
 				uids = append(uids, existing.UID)
 				removed = append(removed, existing)
 			}

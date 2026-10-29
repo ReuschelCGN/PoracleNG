@@ -92,6 +92,7 @@ func (ps *ProcessorService) ProcessPokemon(raw json.RawMessage) error {
 		matched = ps.filterBlocked(matched)
 		matched = ps.filterValidation("pokemon", raw, matchedAreas, matched)
 		matched = ps.filterMuted(matched, matchedAreas, mute.Event{PokemonID: pokemon.PokemonID})
+		applyDefaultEdit(matched, ps.cfg.Tracking, "pokemon")
 
 		// Track when someone matches the new state OR an entry already
 		// exists (post-match changes still need diffing so prior

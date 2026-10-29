@@ -63,6 +63,15 @@ func (c *LureCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 		return []bot.Reply{*overrideReply}
 	}
 
+	// Remove by rule id needs no lure type — this is the form `/untrack lure`
+	// and `!untrack lure id:N` send, so it must run before the type check.
+	if parsed.HasKeyword("arg.remove") && len(parsed.RemoveUIDs) > 0 {
+		return removeByUIDs(ctx, ctx.Tracking.Lures, parsed.RemoveUIDs,
+			store.LureGetUID,
+			func(r *db.LureTrackingAPI) string { return ctx.RowText.LureRowText(tr, lureAPIToTracking(r)) },
+		)
+	}
+
 	// Collect lure IDs — one tracking rule per named type, or the 0
 	// sentinel (any lure) for the everything keyword.
 	var lureIDs []int
@@ -82,13 +91,6 @@ func (c *LureCommand) Run(ctx *bot.CommandContext, args []string) []bot.Reply {
 	}
 
 	if parsed.HasKeyword("arg.remove") {
-		if len(parsed.RemoveUIDs) > 0 {
-			tr := ctx.Tr()
-			return removeByUIDs(ctx, ctx.Tracking.Lures, parsed.RemoveUIDs,
-				store.LureGetUID,
-				func(r *db.LureTrackingAPI) string { return ctx.RowText.LureRowText(tr, lureAPIToTracking(r)) },
-			)
-		}
 		return removeLures(ctx, lureIDs)
 	}
 
