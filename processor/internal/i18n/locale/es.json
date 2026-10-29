@@ -536,5 +536,7 @@
   "msg.summary.updated": "Updated schedule for {0} summaries: {1}",
   "msg.summary.no_buffered": "No buffered {0} entries.",
   "msg.summary.buffer_count": "{0} buffered {1} entries — fires at scheduled time, or use `{2}summary {1} now` to deliver immediately.",
-  "msg.summary.delivered": "Triggered delivery of buffered {0} entries."
+  "msg.summary.delivered": "Triggered delivery of buffered {0} entries.",
+  "arg.myshiny": "mishiny",
+  "msg.track.myshiny_not_linked": "Para alertas shiny personales necesitas un entrenador vinculado con ID shiny. Vincúlalo en el mapa en Perfil → Perfil de entrenador."
 }

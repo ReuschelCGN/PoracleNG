@@ -132,6 +132,10 @@ func (g *Generator) MonsterRowText(tr *i18n.Translator, monster *db.MonsterTrack
 		s += " | " + tr.Tf("tracking.min_time_fmt", monster.MinTime)
 	}
 
+	if monster.ShinyPredict != 0 {
+		s += " | " + tr.T("tracking.myshiny")
+	}
+
 	s += " " + standardText(tr, monster.Template, g.DefaultTemplateName, monster.Clean, g.defaultEdit("pokemon"))
 	s = appendOverride(tr, s, monster.OverrideLocationLabel, monster.OverrideAreas)
 

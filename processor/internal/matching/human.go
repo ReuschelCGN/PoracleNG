@@ -128,6 +128,7 @@ func ValidateHumans(
 			TrackDistance:     monster.Distance,
 			RuleUID:           monster.UID,
 			RuleTable:         "pokemon",
+			PersonalShiny:     monster.ShinyPredict != 0,
 		})
 	}
 	return result

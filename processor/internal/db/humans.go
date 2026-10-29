@@ -22,6 +22,7 @@ type humanRow struct {
 	Language         sql.NullString `db:"language"`
 	CurrentProfileNo int            `db:"current_profile_no"`
 	BlockedAlerts    sql.NullString `db:"blocked_alerts"`
+	ShinyPlayerID    sql.NullString `db:"shiny_player_id"`
 }
 
 // Human represents a processed human record ready for matching.
@@ -40,6 +41,7 @@ type Human struct {
 	BlockedAlerts    string
 	BlockedAlertsSet map[string]bool          // parsed from BlockedAlerts JSON
 	Locations        map[string]*UserLocation // lowercased label → location; nil if user has none
+	ShinyPlayerID    string                   // internal player id for personal shiny prediction; empty if not linked
 }
 
 // SetBlockedAlerts sets both the raw BlockedAlerts string and the parsed BlockedAlertsSet.
@@ -53,7 +55,8 @@ func LoadHumans(db *sqlx.DB) (map[string]*Human, error) {
 	var rows []humanRow
 	err := db.Select(&rows,
 		`SELECT id, name, type, enabled, admin_disable, area, area_restriction,
-		        latitude, longitude, language, current_profile_no, blocked_alerts
+		        latitude, longitude, language, current_profile_no, blocked_alerts,
+		        shiny_player_id
 		 FROM humans
 		 WHERE enabled = 1 AND admin_disable = 0`)
 	if err != nil {
@@ -75,6 +78,7 @@ func LoadHumans(db *sqlx.DB) (map[string]*Human, error) {
 			BlockedAlerts:    r.BlockedAlerts.String,
 			BlockedAlertsSet: parseBlockedAlerts(r.BlockedAlerts.String),
 			Area:             parseAndNormalizeAreas(r.Area),
+			ShinyPlayerID:    r.ShinyPlayerID.String,
 		}
 		if r.AreaRestriction.Valid {
 			h.AreaRestriction = parseAndNormalizeAreas(r.AreaRestriction.String)

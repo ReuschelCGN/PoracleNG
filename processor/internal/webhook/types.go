@@ -218,6 +218,10 @@ type MatchedUser struct {
 	// it drives the clean-alert TTH and the "too short to bother" drop.
 	CaresUntil int64 `json:"cares_until,omitempty"`
 
+	// PersonalShiny is set when the match came from a shiny-predict rule:
+	// the spawn is shiny for this user's linked player id.
+	PersonalShiny bool `json:"personal_shiny,omitempty"`
+
 	// RuleUID is the database UID of the tracking rule that produced this
 	// match. Used by snapshot.TrackingUIDs (#108) and by ScopeTracking
 	// mute enforcement in filterMuted (#109). Zero means "no rule UID
