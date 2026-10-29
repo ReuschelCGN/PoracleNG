@@ -93,6 +93,7 @@
   "tracking.any": "cualquiera",
   "tracking.male": "macho",
   "tracking.female": "hembra",
+  "tracking.myshiny": "✨ only your shinies"
 
   "tracking.unchanged": "Sin cambios: ",
   "tracking.updated": "Actualizado: ",
@@ -179,6 +180,7 @@
   "arg.allprofiles": "todosperfiles",
   "arg.ex": "ex",
   "arg.shiny": "shiny",
+  "arg.myshiny": "mishiny",
   "arg.gmax": "gmax",
   "arg.stardust": "polvo estelar",
   "arg.energy": "energía",
@@ -537,6 +539,6 @@
   "msg.summary.no_buffered": "No buffered {0} entries.",
   "msg.summary.buffer_count": "{0} buffered {1} entries — fires at scheduled time, or use `{2}summary {1} now` to deliver immediately.",
   "msg.summary.delivered": "Triggered delivery of buffered {0} entries.",
-  "arg.myshiny": "mishiny",
+
   "msg.track.myshiny_not_linked": "Para alertas shiny personales necesitas un entrenador vinculado con ID shiny. Vincúlalo en el mapa en Perfil → Perfil de entrenador."
 }
