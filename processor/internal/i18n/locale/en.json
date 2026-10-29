@@ -114,6 +114,7 @@
   "tracking.boss": "Boss",
   "tracking.male": "male",
   "tracking.female": "female",
+  "tracking.myshiny": "✨ only your shinies"
 
   "tracking.unchanged": "Unchanged: ",
   "tracking.updated": "Updated: ",
@@ -269,6 +270,7 @@
   "arg.allprofiles": "allprofiles",
   "arg.ex": "ex",
   "arg.shiny": "shiny",
+  "arg.myshiny": "myshiny",
   "arg.gmax": "gmax",
   "arg.stardust": "stardust",
   "arg.pokecoin": "pokecoins",
@@ -1415,7 +1417,5 @@
   "showcase_focus_shiny": "Shiny",
   "showcase_class_ultra_beast": "Ultra Beast",
 
-  "arg.myshiny": "myshiny",
-  "msg.track.myshiny_not_linked": "Personal shiny alerts need a linked trainer. Link it on the map under Profile → Trainer profile.",
-  "tracking.myshiny": "✨ only your shinies"
+  "msg.track.myshiny_not_linked": "Personal shiny alerts need a linked trainer. Link it on the map under Profile → Trainer profile."
 }
